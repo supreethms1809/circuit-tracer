@@ -186,4 +186,5 @@ class KANEncoder(nn.Module):
         """
         if x.dim() > 2:
             x = x.reshape(-1, self.d_model)
-        self.kan_linear.update_grid(x)
+        # update_grid uses torch.linalg.lstsq which doesn't support bfloat16
+        self.kan_linear.update_grid(x.float())
