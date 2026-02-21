@@ -247,8 +247,8 @@ def evaluate(
         x_in = x_in.permute(1, 0, 2, 3).reshape(n_l, b * s, d)
         y_true = y_true.permute(1, 0, 2, 3).reshape(n_l, b * s, d)
 
-        features = model.encode(x_in).to_sparse()
-        y_hat = model.decode(features, input_acts=x_in)
+        activations = model.encode(x_in)
+        y_hat = model.decode_dense(activations, input_acts=x_in)
         loss = reconstruction_loss(y_hat, y_true)
         total_loss_val += loss.item()
         n_batches += 1

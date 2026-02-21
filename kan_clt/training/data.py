@@ -18,7 +18,8 @@ class DataConfig:
     """Configuration for activation dataset collection."""
 
     model_name: str = "gpt2"
-    dataset_name: str = "stas/openwebtext-10k"  # small subset for development
+    dataset_name: str = "Salesforce/wikitext"  # uses Parquet, no deprecated scripts
+    dataset_config: str = "wikitext-2-raw-v1"  # small subset for development (~37k rows)
     n_tokens: int = 10_000_000
     seq_len: int = 128
     batch_size: int = 32
@@ -106,8 +107,12 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
     n_layers = model.cfg.n_layers
     d_model = model.cfg.d_model
 
-    # Load dataset
-    dataset = load_dataset(config.dataset_name, split="train")
+    # Load dataset (use Parquet-based datasets; script-based ones like stas/openwebtext-10k
+    # are no longer supported by Hugging Face)
+    load_kwargs = {"path": config.dataset_name, "split": "train"}
+    if config.dataset_config:
+        load_kwargs["name"] = config.dataset_config
+    dataset = load_dataset(**load_kwargs)
     tokenizer = model.tokenizer
     assert tokenizer is not None
 

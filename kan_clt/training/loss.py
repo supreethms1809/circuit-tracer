@@ -102,10 +102,10 @@ def total_loss(
         Tuple of (total_loss, metrics_dict) where metrics_dict contains
         individual loss components for logging.
     """
-    # Forward pass
+    # Forward pass — use dense decode to avoid OOM from materializing
+    # (n_active * n_layers * d_model) during early training when sparsity is low
     activations = model.encode(x_in)
-    features_sparse = activations.to_sparse()
-    y_hat = model.decode(features_sparse, input_acts=x_in)
+    y_hat = model.decode_dense(activations, input_acts=x_in)
 
     # Reconstruction loss
     l_recon = reconstruction_loss(y_hat, y_true)

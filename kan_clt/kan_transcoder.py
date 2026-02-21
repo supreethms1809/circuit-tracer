@@ -76,6 +76,7 @@ class KANCrossLayerTranscoder(nn.Module):
         self.scan = scan
 
         # KAN encoders — one per layer
+        # KANLinear (efficient_kan) initializes on CPU by default; move to target device/dtype
         self.encoders = nn.ModuleList([
             KANEncoder(
                 d_model=d_model,
@@ -85,6 +86,7 @@ class KANCrossLayerTranscoder(nn.Module):
             )
             for _ in range(n_layers)
         ])
+        self.encoders.to(device=device, dtype=dtype)
 
         # Encoder biases (applied after KAN forward, before activation)
         self.b_enc = nn.Parameter(
@@ -300,7 +302,7 @@ class KANCrossLayerTranscoder(nn.Module):
             current_layer_features = feat_idx[current_layer]
             unique_feats, inv = current_layer_features.unique(return_inverse=True)
 
-            unique_decoders = self._get_decoder_vectors(layer_id, unique_feats.cpu())
+            unique_decoders = self._get_decoder_vectors(layer_id, unique_feats)
             scaled_decoders = (
                 unique_decoders[inv] * activations[current_layer, None, None]
             )
@@ -387,6 +389,42 @@ class KANCrossLayerTranscoder(nn.Module):
         return self.compute_reconstruction(
             pos_ids, layer_ids, decoder_vectors, input_acts
         )
+
+    def decode_dense(
+        self, activations: torch.Tensor, input_acts: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Decode dense feature activations to reconstructed MLP outputs.
+
+        Memory-efficient alternative to decode() for use during training when
+        features are not yet sparse (JumpReLU threshold near zero). Uses einsum
+        instead of materializing the full (n_active, n_layers, d_model) tensor.
+
+        Args:
+            activations: Dense feature activations of shape (n_layers, n_pos, d_transcoder).
+            input_acts: Optional input activations for skip connection.
+
+        Returns:
+            Reconstructed MLP outputs of shape (n_layers, n_pos, d_model).
+        """
+        n_layers, n_pos, _ = activations.shape
+        y_hat = self.b_dec[:, None, :].expand(n_layers, n_pos, self.d_model).clone()
+
+        for source_l in range(n_layers):
+            # activations[source_l]: (n_pos, d_transcoder)
+            # W_dec[source_l]:       (d_transcoder, n_remaining, d_model)
+            # result:                (n_remaining, n_pos, d_model)
+            contrib = torch.einsum(
+                "pf,fld->lpd", activations[source_l], self.W_dec[source_l]
+            )
+            y_hat[source_l:] += contrib
+
+        if self.W_skip is not None:
+            assert input_acts is not None, (
+                "Transcoder has skip connection but no input_acts were provided"
+            )
+            y_hat = y_hat + input_acts @ self.W_skip
+
+        return y_hat
 
     def compute_skip(self, layer_id: int, inputs: torch.Tensor) -> torch.Tensor:
         """Compute skip connection output for a layer.

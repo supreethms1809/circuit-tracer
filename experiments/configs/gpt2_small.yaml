@@ -29,7 +29,7 @@ update_grid_every: 10000
 update_grid_from: 2000
 
 # Data
-data_dir: data/activations/gpt2_small
+data_dir: data/activations
 device: cuda
-dtype: float32
+dtype: bfloat16
 val_fraction: 0.05
