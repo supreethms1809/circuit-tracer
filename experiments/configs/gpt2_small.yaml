@@ -1,0 +1,35 @@
+# KAN-CLT training config for GPT-2 small
+# 12 layers, 768-dim residual stream
+
+# Model architecture
+n_layers: 12
+d_model: 768
+d_transcoder: 4096
+grid_size: 5
+spline_order: 3
+
+# Training
+learning_rate: 1.0e-4
+warmup_steps: 1000
+total_steps: 50000
+batch_size: 4
+lambda_sparsity: 0.05
+c_sparsity: 1.0
+grad_clip: 1.0
+
+# Logging & checkpointing
+log_every: 100
+eval_every: 5000
+save_every: 5000
+checkpoint_dir: checkpoints/gpt2_small
+run_name: kan_clt_gpt2
+
+# Grid update
+update_grid_every: 10000
+update_grid_from: 2000
+
+# Data
+data_dir: data/activations/gpt2_small
+device: cuda
+dtype: float32
+val_fraction: 0.05

@@ -1,0 +1,175 @@
+"""Activation dataset collection for KAN-CLT training.
+
+Runs a transformer model on text data and caches residual stream activations
+and MLP outputs at all layers. These cached activations are used to train
+the KAN-CLT to reconstruct MLP outputs.
+"""
+
+import os
+from dataclasses import dataclass
+
+import torch
+from torch.utils.data import Dataset
+from tqdm import tqdm
+
+
+@dataclass
+class DataConfig:
+    """Configuration for activation dataset collection."""
+
+    model_name: str = "gpt2"
+    dataset_name: str = "stas/openwebtext-10k"  # small subset for development
+    n_tokens: int = 10_000_000
+    seq_len: int = 128
+    batch_size: int = 32
+    save_dir: str = "data/activations"
+    feature_input_hook: str = "hook_resid_mid"
+    feature_output_hook: str = "hook_mlp_out"
+    device: str = "cuda"
+
+
+class ActivationDataset(Dataset):
+    """Dataset of cached transformer activations for KAN-CLT training.
+
+    Each item is a dict with:
+        - mlp_inputs: (n_layers, seq_len, d_model) — residual stream before MLP
+        - mlp_outputs: (n_layers, seq_len, d_model) — MLP outputs
+
+    Can be created by collecting activations from a model, or loaded from disk.
+
+    Args:
+        mlp_inputs: Tensor of shape (n_samples, n_layers, seq_len, d_model).
+        mlp_outputs: Tensor of shape (n_samples, n_layers, seq_len, d_model).
+    """
+
+    def __init__(
+        self,
+        mlp_inputs: torch.Tensor,
+        mlp_outputs: torch.Tensor,
+    ):
+        assert mlp_inputs.shape == mlp_outputs.shape
+        self.mlp_inputs = mlp_inputs
+        self.mlp_outputs = mlp_outputs
+
+    def __len__(self) -> int:
+        return self.mlp_inputs.shape[0]
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        return {
+            "mlp_inputs": self.mlp_inputs[idx],
+            "mlp_outputs": self.mlp_outputs[idx],
+        }
+
+    def save(self, path: str) -> None:
+        """Save dataset to disk as memory-mapped tensors."""
+        os.makedirs(path, exist_ok=True)
+        torch.save(self.mlp_inputs, os.path.join(path, "mlp_inputs.pt"))
+        torch.save(self.mlp_outputs, os.path.join(path, "mlp_outputs.pt"))
+
+    @classmethod
+    def load(cls, path: str) -> "ActivationDataset":
+        """Load dataset from disk."""
+        mlp_inputs = torch.load(
+            os.path.join(path, "mlp_inputs.pt"), map_location="cpu", weights_only=True
+        )
+        mlp_outputs = torch.load(
+            os.path.join(path, "mlp_outputs.pt"), map_location="cpu", weights_only=True
+        )
+        return cls(mlp_inputs, mlp_outputs)
+
+
+@torch.no_grad()
+def collect_activations(config: DataConfig) -> ActivationDataset:
+    """Run a transformer on text data and collect MLP input/output activations.
+
+    Uses TransformerLens HookedTransformer for hook-based activation extraction.
+
+    Args:
+        config: Data collection configuration.
+
+    Returns:
+        ActivationDataset with cached activations.
+    """
+    from transformer_lens import HookedTransformer
+    from datasets import load_dataset
+
+    device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+
+    # Load model
+    model = HookedTransformer.from_pretrained(
+        config.model_name,
+        device=device,
+        fold_ln=False,
+        center_writing_weights=False,
+        center_unembed=False,
+    )
+    n_layers = model.cfg.n_layers
+    d_model = model.cfg.d_model
+
+    # Load dataset
+    dataset = load_dataset(config.dataset_name, split="train")
+    tokenizer = model.tokenizer
+    assert tokenizer is not None
+
+    # Tokenize
+    n_sequences = config.n_tokens // config.seq_len
+    all_tokens = []
+
+    for item in dataset:
+        tokens = tokenizer(
+            item["text"],
+            truncation=True,
+            max_length=config.seq_len,
+            return_tensors="pt",
+        ).input_ids.squeeze(0)
+        if len(tokens) == config.seq_len:
+            all_tokens.append(tokens)
+        if len(all_tokens) >= n_sequences:
+            break
+
+    all_tokens = torch.stack(all_tokens[:n_sequences]).to(device)
+
+    # Collect activations in batches
+    all_mlp_inputs = []
+    all_mlp_outputs = []
+
+    for batch_start in tqdm(
+        range(0, len(all_tokens), config.batch_size),
+        desc="Collecting activations",
+    ):
+        batch_tokens = all_tokens[batch_start : batch_start + config.batch_size]
+
+        # Cache MLP inputs and outputs
+        hook_names_in = [
+            f"blocks.{i}.{config.feature_input_hook}" for i in range(n_layers)
+        ]
+        hook_names_out = [
+            f"blocks.{i}.{config.feature_output_hook}" for i in range(n_layers)
+        ]
+
+        _, cache = model.run_with_cache(
+            batch_tokens,
+            names_filter=hook_names_in + hook_names_out,
+        )
+
+        # Stack per-layer activations: (batch, n_layers, seq_len, d_model)
+        mlp_in = torch.stack(
+            [cache[name] for name in hook_names_in], dim=1
+        )
+        mlp_out = torch.stack(
+            [cache[name] for name in hook_names_out], dim=1
+        )
+
+        all_mlp_inputs.append(mlp_in.cpu())
+        all_mlp_outputs.append(mlp_out.cpu())
+
+    mlp_inputs = torch.cat(all_mlp_inputs, dim=0)
+    mlp_outputs = torch.cat(all_mlp_outputs, dim=0)
+
+    dataset = ActivationDataset(mlp_inputs, mlp_outputs)
+
+    # Save to disk
+    os.makedirs(config.save_dir, exist_ok=True)
+    dataset.save(config.save_dir)
+
+    return dataset
