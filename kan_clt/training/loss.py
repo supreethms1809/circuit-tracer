@@ -21,9 +21,9 @@ def reconstruction_loss(y_hat: torch.Tensor, y_true: torch.Tensor) -> torch.Tens
         y_true: True MLP outputs, shape (n_layers, n_pos, d_model).
 
     Returns:
-        Scalar MSE loss summed across layers.
+        Scalar MSE loss averaged across all dimensions.
     """
-    return ((y_hat - y_true) ** 2).sum(dim=-1).mean()
+    return ((y_hat.float() - y_true.float()) ** 2).mean()
 
 
 def sparsity_loss(
@@ -50,12 +50,12 @@ def sparsity_loss(
     Returns:
         Scalar sparsity loss.
     """
-    total = torch.tensor(0.0, device=activations.device, dtype=activations.dtype)
+    total = torch.tensor(0.0, device=activations.device, dtype=torch.float32)
 
     for layer_id in range(activations.shape[0]):
         # decoder_norms[layer_id]: (d_transcoder,)
         # activations[layer_id]: (n_pos, d_transcoder)
-        weighted = c * decoder_norms[layer_id].unsqueeze(0) * activations[layer_id]
+        weighted = c * decoder_norms[layer_id].unsqueeze(0) * activations[layer_id].float()
         total = total + torch.tanh(weighted).sum()
 
     return lambda_ * total / activations.shape[1]  # normalize by n_pos
@@ -115,7 +115,7 @@ def total_loss(
     l_sparse = sparsity_loss(activations, dec_norms, lambda_sparsity, c_sparsity)
 
     # KAN regularization (L1 on spline weights + entropy)
-    l_kan_reg = torch.tensor(0.0, device=x_in.device)
+    l_kan_reg = torch.tensor(0.0, device=x_in.device, dtype=torch.float32)
     for encoder in model.encoders:
         l_kan_reg = l_kan_reg + encoder.kan_linear.regularization_loss(
             regularize_activation=0.01, regularize_entropy=0.01
