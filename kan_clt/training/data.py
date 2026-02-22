@@ -133,24 +133,34 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
             break
 
     all_tokens = torch.stack(all_tokens[:n_sequences]).to(device)
+    n_sequences = len(all_tokens)  # actual count (may be < config.n_tokens // seq_len)
 
-    # Collect activations in batches
-    all_mlp_inputs = []
-    all_mlp_outputs = []
+    # Pre-compute hook names once
+    hook_names_in = [
+        f"blocks.{i}.{config.feature_input_hook}" for i in range(n_layers)
+    ]
+    hook_names_out = [
+        f"blocks.{i}.{config.feature_output_hook}" for i in range(n_layers)
+    ]
 
+    # Preallocate output tensors in bfloat16 on CPU.
+    # Avoids accumulating a list of float32 tensors and the subsequent torch.cat,
+    # which would require 2× peak RAM (~160 GB for 8500 wikitext-2 sequences at float32).
+    # bfloat16 + in-place fill keeps peak usage to ~20 GB for the same dataset.
+    mlp_inputs = torch.empty(
+        n_sequences, n_layers, config.seq_len, d_model, dtype=torch.bfloat16
+    )
+    mlp_outputs = torch.empty(
+        n_sequences, n_layers, config.seq_len, d_model, dtype=torch.bfloat16
+    )
+
+    sample_idx = 0
     for batch_start in tqdm(
-        range(0, len(all_tokens), config.batch_size),
+        range(0, n_sequences, config.batch_size),
         desc="Collecting activations",
     ):
         batch_tokens = all_tokens[batch_start : batch_start + config.batch_size]
-
-        # Cache MLP inputs and outputs
-        hook_names_in = [
-            f"blocks.{i}.{config.feature_input_hook}" for i in range(n_layers)
-        ]
-        hook_names_out = [
-            f"blocks.{i}.{config.feature_output_hook}" for i in range(n_layers)
-        ]
+        actual_bs = len(batch_tokens)
 
         _, cache = model.run_with_cache(
             batch_tokens,
@@ -158,18 +168,12 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
         )
 
         # Stack per-layer activations: (batch, n_layers, seq_len, d_model)
-        mlp_in = torch.stack(
-            [cache[name] for name in hook_names_in], dim=1
-        )
-        mlp_out = torch.stack(
-            [cache[name] for name in hook_names_out], dim=1
-        )
+        mlp_in = torch.stack([cache[name] for name in hook_names_in], dim=1)
+        mlp_out = torch.stack([cache[name] for name in hook_names_out], dim=1)
 
-        all_mlp_inputs.append(mlp_in.cpu())
-        all_mlp_outputs.append(mlp_out.cpu())
-
-    mlp_inputs = torch.cat(all_mlp_inputs, dim=0)
-    mlp_outputs = torch.cat(all_mlp_outputs, dim=0)
+        mlp_inputs[sample_idx : sample_idx + actual_bs] = mlp_in.cpu().bfloat16()
+        mlp_outputs[sample_idx : sample_idx + actual_bs] = mlp_out.cpu().bfloat16()
+        sample_idx += actual_bs
 
     dataset = ActivationDataset(mlp_inputs, mlp_outputs)
 
