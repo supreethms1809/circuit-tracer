@@ -105,7 +105,7 @@ def train(
         batch_size=config.batch_size,
         shuffle=True,
         drop_last=True,
-        pin_memory=True,
+        pin_memory=False,  # mmap-backed tensors can't be pinned
     )
 
     # Create model

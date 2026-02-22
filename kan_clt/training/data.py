@@ -69,12 +69,14 @@ class ActivationDataset(Dataset):
 
     @classmethod
     def load(cls, path: str) -> "ActivationDataset":
-        """Load dataset from disk."""
+        """Load dataset from disk using memory mapping to avoid loading 40 GB into RAM."""
         mlp_inputs = torch.load(
-            os.path.join(path, "mlp_inputs.pt"), map_location="cpu", weights_only=True
+            os.path.join(path, "mlp_inputs.pt"), map_location="cpu", weights_only=True,
+            mmap=True,
         )
         mlp_outputs = torch.load(
-            os.path.join(path, "mlp_outputs.pt"), map_location="cpu", weights_only=True
+            os.path.join(path, "mlp_outputs.pt"), map_location="cpu", weights_only=True,
+            mmap=True,
         )
         return cls(mlp_inputs, mlp_outputs)
 
