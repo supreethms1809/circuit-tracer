@@ -114,11 +114,13 @@ def total_loss(
     dec_norms = compute_decoder_norms(model)
     l_sparse = sparsity_loss(activations, dec_norms, lambda_sparsity, c_sparsity)
 
-    # KAN regularization (L1 on spline weights + entropy)
+    # KAN regularization (L1 on spline weights only — entropy term disabled)
+    # efficient_kan entropy reg computes p * log(p); after a grid update some spline
+    # weight columns can go to zero → p = 0/0 or log(0) = -inf → NaN.
     l_kan_reg = torch.tensor(0.0, device=x_in.device, dtype=torch.float32)
     for encoder in model.encoders:
         l_kan_reg = l_kan_reg + encoder.kan_linear.regularization_loss(
-            regularize_activation=0.01, regularize_entropy=0.01
+            regularize_activation=0.01, regularize_entropy=0.0
         )
 
     l_total = l_recon + l_sparse + l_kan_reg

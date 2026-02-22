@@ -160,6 +160,13 @@ def train(
             c_sparsity=config.c_sparsity,
         )
 
+        # NaN guard: skip update if loss is non-finite (can happen after grid update)
+        if not loss.isfinite():
+            pbar.write(f"Step {step}: non-finite loss ({loss.item():.4f}), skipping update")
+            step += 1
+            pbar.update(1)
+            continue
+
         # Backward
         loss.backward()
         if config.grad_clip > 0:
