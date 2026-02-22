@@ -68,16 +68,35 @@ class ActivationDataset(Dataset):
         torch.save(self.mlp_outputs, os.path.join(path, "mlp_outputs.pt"))
 
     @classmethod
-    def load(cls, path: str) -> "ActivationDataset":
-        """Load dataset from disk using memory mapping to avoid loading 40 GB into RAM."""
-        mlp_inputs = torch.load(
+    def load(cls, path: str, max_samples: int | None = None) -> "ActivationDataset":
+        """Load dataset from disk.
+
+        Uses mmap to avoid touching 40 GB at once, then copies a subset into
+        contiguous RAM. mmap=True on WSL2 causes SIGBUS when Hyper-V reclaims
+        pages under memory pressure; copying a bounded subset avoids this.
+
+        Args:
+            path: Directory containing mlp_inputs.pt and mlp_outputs.pt.
+            max_samples: If given, only the first max_samples sequences are
+                loaded into RAM. Default: 3000 (~14 GB total for GPT-2 small).
+        """
+        if max_samples is None:
+            max_samples = 3000
+
+        # mmap to avoid touching all 40 GB at once during the slice copy
+        mlp_inputs_mm = torch.load(
             os.path.join(path, "mlp_inputs.pt"), map_location="cpu", weights_only=True,
             mmap=True,
         )
-        mlp_outputs = torch.load(
+        mlp_outputs_mm = torch.load(
             os.path.join(path, "mlp_outputs.pt"), map_location="cpu", weights_only=True,
             mmap=True,
         )
+        n = min(max_samples, mlp_inputs_mm.shape[0])
+        # .clone() copies the slice into a plain contiguous tensor — no mmap backing,
+        # so no SIGBUS risk if the OS reclaims pages later.
+        mlp_inputs = mlp_inputs_mm[:n].clone()
+        mlp_outputs = mlp_outputs_mm[:n].clone()
         return cls(mlp_inputs, mlp_outputs)
 
 
