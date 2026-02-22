@@ -76,7 +76,12 @@ class KANCrossLayerTranscoder(nn.Module):
         self.scan = scan
 
         # KAN encoders — one per layer
-        # KANLinear (efficient_kan) initializes on CPU by default; move to target device/dtype
+        # Keep encoders in float32 regardless of training dtype.
+        # KANLinear stores a `grid` buffer for B-spline knot positions; converting it to
+        # bfloat16 causes adjacent knots to quantize to the same value → degenerate basis
+        # matrix in update_grid's lstsq → NaN spline weights after every grid update.
+        # KANEncoder.forward() casts inputs to float32 and outputs back to model dtype,
+        # so the rest of the network is unaffected.
         self.encoders = nn.ModuleList([
             KANEncoder(
                 d_model=d_model,
@@ -86,7 +91,7 @@ class KANCrossLayerTranscoder(nn.Module):
             )
             for _ in range(n_layers)
         ])
-        self.encoders.to(device=device, dtype=dtype)
+        self.encoders.to(device=device)  # move to device only; dtype stays float32
 
         # Encoder biases (applied after KAN forward, before activation)
         self.b_enc = nn.Parameter(

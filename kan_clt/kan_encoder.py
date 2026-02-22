@@ -70,13 +70,17 @@ class KANEncoder(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute feature pre-activations from residual stream activations.
 
+        KANLinear parameters are kept in float32 for numerical stability (see
+        KANCrossLayerTranscoder.__init__). Input is cast up to float32 for the
+        B-spline computation and the result is cast back to the caller's dtype.
+
         Args:
             x: Input tensor of shape (..., d_model).
 
         Returns:
             Feature pre-activations of shape (..., n_features).
         """
-        return self.kan_linear(x)
+        return self.kan_linear(x.float()).to(x.dtype)
 
     def get_encoder_vectors(
         self, x: torch.Tensor, active_mask: torch.Tensor
@@ -186,5 +190,5 @@ class KANEncoder(nn.Module):
         """
         if x.dim() > 2:
             x = x.reshape(-1, self.d_model)
-        # update_grid uses torch.linalg.lstsq which doesn't support bfloat16
-        self.kan_linear.update_grid(x.float())
+        # Encoder parameters are float32, so x just needs to be on the right device
+        self.kan_linear.update_grid(x.float())  # .float() handles bfloat16 input dtype
