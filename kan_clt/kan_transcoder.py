@@ -20,14 +20,16 @@ from safetensors.torch import save_file, load_file
 
 from circuit_tracer.transcoder.activation_functions import JumpReLU
 from kan_clt.kan_encoder import KANEncoder
+from kan_clt.linear_encoder import LinearEncoder
 
 
 class KANCrossLayerTranscoder(nn.Module):
-    """Cross-layer transcoder with KAN (B-spline) encoders and linear decoders.
+    """Cross-layer transcoder with pluggable encoders and linear decoders.
 
-    Each layer has a KANEncoder that reads from the residual stream and produces
-    feature pre-activations. JumpReLU is applied for sparsity. Each feature writes
-    to all subsequent layers via linear decoder matrices.
+    Each layer has one encoder (KAN or linear) that reads from the residual
+    stream and produces feature pre-activations. JumpReLU is applied for
+    sparsity. Each feature writes to all subsequent layers via linear decoder
+    matrices.
 
     Interface is compatible with circuit_tracer.transcoder.CrossLayerTranscoder
     so it can be used with the existing ReplacementModel and AttributionContext.
@@ -36,8 +38,9 @@ class KANCrossLayerTranscoder(nn.Module):
         n_layers: Number of transformer layers.
         d_transcoder: Number of features per layer.
         d_model: Dimension of the residual stream.
-        grid_size: KAN grid size for B-spline basis.
-        spline_order: KAN spline order.
+        encoder_type: "kan" (default) or "linear" (baseline comparison).
+        grid_size: KAN grid size for B-spline basis (ignored for linear).
+        spline_order: KAN spline order (ignored for linear).
         activation_function: "jump_relu" or "relu".
         skip_connection: Whether to include a learned skip connection.
         feature_input_hook: Hook point where features read from.
@@ -50,6 +53,7 @@ class KANCrossLayerTranscoder(nn.Module):
         n_layers: int,
         d_transcoder: int,
         d_model: int,
+        encoder_type: str = "kan",
         grid_size: int = 5,
         spline_order: int = 3,
         activation_function: str = "jump_relu",
@@ -64,10 +68,13 @@ class KANCrossLayerTranscoder(nn.Module):
 
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if encoder_type not in ("kan", "linear"):
+            raise ValueError(f"encoder_type must be 'kan' or 'linear', got {encoder_type!r}")
 
         self.n_layers = n_layers
         self.d_transcoder = d_transcoder
         self.d_model = d_model
+        self.encoder_type = encoder_type
         self.grid_size = grid_size
         self.spline_order = spline_order
         self.feature_input_hook = feature_input_hook
@@ -75,23 +82,30 @@ class KANCrossLayerTranscoder(nn.Module):
         self.skip_connection = skip_connection
         self.scan = scan
 
-        # KAN encoders — one per layer
-        # Keep encoders in float32 regardless of training dtype.
-        # KANLinear stores a `grid` buffer for B-spline knot positions; converting it to
-        # bfloat16 causes adjacent knots to quantize to the same value → degenerate basis
-        # matrix in update_grid's lstsq → NaN spline weights after every grid update.
-        # KANEncoder.forward() casts inputs to float32 and outputs back to model dtype,
-        # so the rest of the network is unaffected.
-        self.encoders = nn.ModuleList([
-            KANEncoder(
-                d_model=d_model,
-                n_features=d_transcoder,
-                grid_size=grid_size,
-                spline_order=spline_order,
-            )
-            for _ in range(n_layers)
-        ])
-        self.encoders.to(device=device)  # move to device only; dtype stays float32
+        # Encoders — one per layer.
+        # KAN encoders are kept in float32 regardless of training dtype:
+        #   KANLinear stores a `grid` buffer (B-spline knot positions); bfloat16
+        #   causes adjacent knots to quantize identically → degenerate lstsq in
+        #   update_grid → NaN spline weights. KANEncoder.forward() casts inputs
+        #   to float32 and outputs back to model dtype.
+        # Linear encoders follow the model dtype normally.
+        if encoder_type == "kan":
+            self.encoders = nn.ModuleList([
+                KANEncoder(
+                    d_model=d_model,
+                    n_features=d_transcoder,
+                    grid_size=grid_size,
+                    spline_order=spline_order,
+                )
+                for _ in range(n_layers)
+            ])
+            self.encoders.to(device=device)  # device only; float32 dtype preserved
+        else:
+            self.encoders = nn.ModuleList([
+                LinearEncoder(d_model=d_model, n_features=d_transcoder)
+                for _ in range(n_layers)
+            ])
+            self.encoders.to(device=device, dtype=dtype)
 
         # Encoder biases (applied after KAN forward, before activation)
         self.b_enc = nn.Parameter(

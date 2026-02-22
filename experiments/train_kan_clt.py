@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--collect-data", action="store_true", help="Collect activations first")
     parser.add_argument("--model", type=str, default="gpt2", help="Model name for data collection")
     parser.add_argument("--n-tokens", type=int, default=None, help="Number of tokens to collect")
+    parser.add_argument("--encoder-type", type=str, default=None,
+                        choices=["kan", "linear"], help="Encoder type (overrides config)")
     parser.add_argument("--lambda-sparsity", type=float, default=None)
     parser.add_argument("--grid-size", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
@@ -53,6 +55,8 @@ def main():
         config = TrainConfig()
 
     # Override with CLI args
+    if args.encoder_type is not None:
+        config.encoder_type = args.encoder_type
     if args.lambda_sparsity is not None:
         config.lambda_sparsity = args.lambda_sparsity
     if args.grid_size is not None:

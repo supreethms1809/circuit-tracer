@@ -26,6 +26,7 @@ class TrainConfig:
     n_layers: int = 12
     d_model: int = 768
     d_transcoder: int = 4096
+    encoder_type: str = "kan"  # "kan" or "linear" (baseline)
     grid_size: int = 5
     spline_order: int = 3
 
@@ -113,6 +114,7 @@ def train(
         n_layers=config.n_layers,
         d_model=config.d_model,
         d_transcoder=config.d_transcoder,
+        encoder_type=config.encoder_type,
         grid_size=config.grid_size,
         spline_order=config.spline_order,
         activation_function="jump_relu",
@@ -184,9 +186,10 @@ def train(
                 "lr": f"{lr:.2e}",
             })
 
-        # Grid update (adapt B-spline knots to data distribution)
+        # Grid update (adapt B-spline knots to data distribution) — KAN only
         if (
-            config.update_grid_every > 0
+            config.encoder_type == "kan"
+            and config.update_grid_every > 0
             and step >= config.update_grid_from
             and step % config.update_grid_every == 0
         ):

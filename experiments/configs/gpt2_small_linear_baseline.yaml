@@ -1,0 +1,42 @@
+# Linear CLT baseline config for GPT-2 small — matched feature count to KAN-CLT
+# Same architecture as gpt2_small.yaml but with linear encoder (W_enc @ x)
+# for direct comparison against KAN-CLT.
+#
+# Parameter counts at matched d_transcoder=4096:
+#   Linear CLT encoder:  4096 × 768 = 3.1M params/layer
+#   KAN-CLT encoder:     4096 × 768 × 10 = 31.5M params/layer  (10× more)
+# Decoder is identical for both.
+
+# Model architecture
+n_layers: 12
+d_model: 768
+d_transcoder: 4096
+encoder_type: linear
+grid_size: 5         # unused for linear encoder
+spline_order: 3      # unused for linear encoder
+
+# Training (identical to KAN-CLT for fair comparison)
+learning_rate: 1.0e-4
+warmup_steps: 1000
+total_steps: 50000
+batch_size: 8
+lambda_sparsity: 0.05
+c_sparsity: 1.0
+grad_clip: 1.0
+
+# Logging & checkpointing
+log_every: 100
+eval_every: 5000
+save_every: 5000
+checkpoint_dir: checkpoints/gpt2_small_linear
+run_name: linear_clt_gpt2
+
+# Grid update (disabled for linear encoder)
+update_grid_every: 0
+update_grid_from: 0
+
+# Data
+data_dir: data/activations
+device: cuda
+dtype: bfloat16
+val_fraction: 0.05
