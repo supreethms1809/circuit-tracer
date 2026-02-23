@@ -95,7 +95,7 @@ def _checkpoint_exists(path: str | None) -> bool:
 
 def _section(title: str) -> None:
     bar = "=" * 60
-    print(f"\n{bar}\n  {title}\n{bar}")
+    print(f"\n{bar}\n  {title}\n{bar}", flush=True)
 
 
 def _elapsed(t0: float) -> str:
