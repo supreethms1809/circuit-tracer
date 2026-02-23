@@ -25,7 +25,46 @@ d_transcoder: 4096       # can go to 8192 or 16384 if you want
 data_dir: data/activations  # default collection path
 ```
 
-## Data Collection (run on the GH200)
+## Full End-to-End Pipeline (recommended)
+
+Runs data collection → KAN-CLT training → linear CLT baseline → evaluation → comparison.
+All stages auto-skip if outputs already exist.
+
+```bash
+conda activate ct
+
+# Quick smoke-test (2–3 min, CPU-only, verifies the full pipeline works)
+python experiments/run_e2e.py \
+    --device cpu --dtype float32 \
+    --n-tokens 5000 --total-steps 20 --d-transcoder 64 --batch-size 2
+
+# Full GH200 run (collect 10M tokens, train 50k steps, d_transcoder=4096)
+python experiments/run_e2e.py \
+    --device cuda --dtype bfloat16 \
+    --n-tokens 10000000 --total-steps 50000 \
+    --d-transcoder 4096 --grid-size 5 \
+    --batch-size 32 \
+    --output-dir results/gh200_run1
+
+# Full run + circuit tracing, spline analysis, monosemanticity
+python experiments/run_e2e.py \
+    --device cuda --dtype bfloat16 \
+    --n-tokens 10000000 --total-steps 50000 \
+    --d-transcoder 4096 --batch-size 32 \
+    --run-circuits --run-splines --run-monosemanticity \
+    --output-dir results/gh200_run1_full
+```
+
+Final output is a side-by-side comparison table showing KAN-CLT vs linear CLT:
+- MSE, cosine similarity, relative error per layer
+- Sparsity (active features/position, activation density)
+- Verdict: "KAN-CLT better/worse by X% MSE"
+
+Results and a Markdown report are written to `--output-dir`.
+
+## Step-by-Step (if you need to run stages individually)
+
+### Data Collection
 
 Uses `Salesforce/wikitext` (wikitext-2-raw-v1) by default — Parquet-based, no deprecated
 HuggingFace dataset scripts required.
@@ -37,12 +76,36 @@ python experiments/train_kan_clt.py --collect-data --model gpt2 --device cuda
 
 Activations are saved to `data/activations/` (configured via `data_dir` in the YAML).
 
-## Training
+### Training (KAN-CLT only)
 
 ```bash
 conda activate ct
 python experiments/train_kan_clt.py \
     --config experiments/configs/gpt2_small.yaml \
+    --device cuda
+```
+
+### Evaluation only (with existing checkpoints)
+
+```bash
+# Reconstruction metrics + comparison table
+python experiments/compare_models.py \
+    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
+    --data-dir data/activations --device cuda
+
+# Full evaluation pipeline (circuits, splines, monosemanticity)
+python experiments/run_pipeline.py \
+    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
+    --data-dir data/activations \
+    --output-dir results/eval_run1 \
+    --device cuda --dtype bfloat16
+
+# Circuit tracing for a single prompt
+python experiments/run_circuit.py \
+    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --prompt "The Eiffel Tower is located in" \
     --device cuda
 ```
 
