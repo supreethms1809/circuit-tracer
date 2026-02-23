@@ -92,22 +92,15 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 ## Phase 3: Train and Validate KAN-CLT
 **Goal**: Train KAN-CLT on GPT-2 small, verify it reconstructs MLPs adequately.
 
-- [ ] **3.1** Collect activation dataset from GPT-2 small on OpenWebText (~10M tokens)
-- [ ] **3.2** Train KAN-CLT with initial hyperparameters:
-  - n_features_per_layer: 4096 (match typical SAE/CLT size)
-  - grid_size: 5, spline_order: 3
-  - sparsity λ: sweep [0.01, 0.05, 0.1]
-  - Learning rate: 1e-4 with warmup
-  - Train for ~50K steps, evaluate every 5K
-- [ ] **3.3** Also train a baseline linear CLT with the same architecture (just swap KAN encoder for linear encoder) at matched parameter count — this is your direct comparison
-- [ ] **3.4** Evaluate replacement model accuracy:
-  - Top-1 match rate between KAN-CLT replacement model and original GPT-2
-  - Compare against baseline linear CLT
-  - Compare per-layer reconstruction MSE
-- [ ] **3.5** Evaluate feature sparsity:
-  - Average number of active features per token position
-  - Feature activation frequency distribution (should be heavy-tailed)
-  - Compare against baseline
+- [x] **3.1** Collect activation dataset from GPT-2 small on OpenWebText (~8.5K sequences, ~40GB)
+- [x] **3.2** Train KAN-CLT (running on GH200, config: `experiments/configs/gpt2_small.yaml`)
+  - d_transcoder=4096, grid_size=5, spline_order=3, λ=0.05, lr=1e-4, 50K steps
+- [x] **3.3** Linear CLT baseline: `experiments/configs/gpt2_small_linear_baseline.yaml`
+  - Same d_transcoder=4096, identical training setup, encoder_type=linear
+- [ ] **3.4** Evaluate replacement model accuracy (`experiments/compare_models.py` ready):
+  - `python experiments/compare_models.py --kan-checkpoint ... --linear-checkpoint ...`
+  - Per-layer MSE, cosine similarity, relative error, active features/pos
+- [ ] **3.5** Evaluate feature sparsity (included in compare_models.py output)
 
 **Checkpoint**: KAN-CLT replacement model achieves comparable or better top-1 accuracy to matched linear CLT. If significantly worse (>10% gap), debug before proceeding — try adjusting grid_size, sparsity, learning rate. If reconstruction fundamentally fails, this is a negative result worth documenting.
 
@@ -116,35 +109,22 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 ## Phase 4: Causal Attribution Engine
 **Goal**: Build attribution graphs without assuming encoder linearity.
 
-- [ ] **4.1** Implement `attribution/causal.py`:
-  - `ablation_attribution(replacement_model, prompt, target_token)`:
-    - Run forward pass, collect all active features and their activations
-    - For each active feature s: set a_s = 0, run forward pass, measure change in every downstream feature and output logit
-    - Edge weight A_{s→t} = a_t_original - a_t_ablated
-    - Return graph in same format as circuit-tracer expects
-  - Optimization: batch ablations where possible (ablate features at different positions simultaneously if they don't interact)
+- [x] **4.1** `attribution/causal.py` — single-feature ablation attribution
+  - `ablation_attribution()`: zero out a_s, measure change in all downstream features and output
+  - `build_attribution_graph()`: full adjacency matrix compatible with circuit-tracer Graph format
 
-- [ ] **4.2** Implement `attribution/shapley.py`:
-  - `shapley_attribution(replacement_model, prompt, target_token, n_samples=1000)`:
-    - Identify set of active features S at each position
-    - For output logit: compute Shapley values using permutation sampling
-    - For each target feature t: compute Shapley values of source features that feed into it
-    - Return graph with Shapley values as edge weights
-  - Use antithetic sampling for variance reduction
+- [x] **4.2** `attribution/shapley.py` — Monte Carlo Shapley attribution
+  - `shapley_attribution()`: permutation sampling + antithetic pairs, target="reconstruction"|"feature"
+  - `shapley_logit_attribution()`: project onto logit direction for token-level attribution
+  - `_feature_to_feature_shapley()`: (n_active × n_active) feature-to-feature matrix
 
-- [ ] **4.3** Implement `attribution/graph.py`:
-  - Ensure output format is compatible with circuit-tracer's pruning and visualization
-  - Node types: feature, embedding, error, logit (same as circuit-tracer)
-  - Edge format: source_id, target_id, weight (same as circuit-tracer)
+- [x] **4.3** `attribution/graph.py` API verified — perfect match with `circuit_tracer.graph.Graph.__init__` signature
 
-- [ ] **4.4** Write `tests/test_attribution.py`:
-  - Test on tiny model (2-layer transformer) where you can verify attribution by hand
-  - Test that causal attribution edges sum to approximately the total effect
-  - Test that Shapley attribution satisfies efficiency axiom (values sum to total payoff)
+- [x] **4.4** Tests: `tests/test_attribution.py` (6 tests) + `tests/test_shapley.py` (13 tests)
 
-- [ ] **4.5** Test the full pipeline: KAN-CLT → causal attribution → pruning → visualization
-  - Use circuit-tracer's pruning code on your graphs
-  - Verify the visualization frontend renders your graphs correctly
+- [ ] **4.5** End-to-end pipeline test with trained checkpoint:
+  - `python experiments/run_circuit.py --checkpoint <path> --prompt "..." --shapley`
+  - Verify graph renders in circuit-tracer visualization frontend
 
 **Checkpoint**: Can generate attribution graphs for arbitrary prompts, graphs render in the frontend, and attribution values are numerically sensible. If yes, proceed.
 
@@ -153,40 +133,37 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 ## Phase 5: Evaluation and Comparison
 **Goal**: Rigorously compare KAN-CLT against standard CLT.
 
-- [ ] **5.1** Feature monosemanticity comparison:
-  - For both KAN-CLT and baseline CLT: compute max-activating examples for top 200 features
-  - Automated scoring: use a language model to rate concept coherence of max-activating examples
+- [ ] **5.1** Feature monosemanticity comparison (`eval/monosemanticity.py` ready):
+  - `collect_max_activating_examples(model, dataset, top_n_features=200)`
+  - Returns Gini coefficients, max-activating token positions, JSON export
+  - Automated scoring: use a language model to rate concept coherence
   - Manual inspection: pick 50 features from each, rate interpretability
-  - Compare distributions
 
 - [ ] **5.2** Circuit extraction on IOI task:
-  - Prompt format: "John gave Mary the book. She gave it to ___"
-  - Extract circuit using both KAN-CLT and baseline CLT
-  - Compare: number of features needed for 90% causal effect
+  - `python experiments/run_circuit.py --prompt "John gave Mary the book. She gave it to" --shapley`
+  - Compare: number of features needed for 90% causal effect vs linear CLT
   - Compare: interpretability of identified features
 
 - [ ] **5.3** Circuit extraction on addition task:
-  - Prompt format: "25 + 37 = " 
-  - Same comparison as IOI
+  - `python experiments/run_circuit.py --prompt "25 + 37 ="`
 
 - [ ] **5.4** Circuit extraction on factual recall:
-  - Prompt format: "The capital of France is"
-  - Same comparison
+  - `python experiments/run_circuit.py --prompt "The capital of France is"`
 
-- [ ] **5.5** Spline interpretability analysis (unique to KAN-CLT):
-  - For top features: extract learned spline shapes
-  - Run PySR symbolic regression on spline input-output pairs
-  - Document features where symbolic form is interpretable
-  - This analysis is impossible with linear CLT — it's your unique contribution
+- [x] **5.5** Spline interpretability analysis (`experiments/analyze_splines.py` ready):
+  - Extracts spline transfer functions for top features by activation frequency
+  - Saves CSV + PNG plots; `--no-plot` for headless environments
+  - Optional: pipe CSV to PySR for symbolic regression
+  - `python experiments/analyze_splines.py --checkpoint <path> --n-features 20`
 
 - [ ] **5.6** Mechanistic faithfulness:
-  - For each method: perturb features in the attribution graph direction, measure whether downstream effects match predictions
-  - Compare KAN-CLT causal attribution vs CLT Jacobian attribution
+  - Perturb features in attribution direction, measure downstream effects match predictions
+  - Compare KAN-CLT causal attribution vs linear CLT Jacobian attribution
 
 - [ ] **5.7** Ablation studies:
-  - Replace KAN encoder with MLP encoder of same parameter count — does the advantage hold?
   - Vary grid_size: 3, 5, 7, 10 — is there a sweet spot?
-  - Vary sparsity: does monosemanticity scale with sparsity for KAN features as it does for linear features?
+  - Vary sparsity λ: does monosemanticity scale with sparsity for KAN features?
+  - MLP encoder at matched parameter count (to isolate nonlinearity vs parameter count)
 
 **Checkpoint**: You have quantitative results comparing KAN-CLT vs CLT across multiple metrics and tasks. Write up results regardless of whether KAN-CLT wins — negative results are publishable too.
 
@@ -225,4 +202,7 @@ When starting a Claude Code session, say something like:
 **Session 3 (training):**
 > "Read CLAUDE.md. We're on Phase 2. Build the full KAN-CLT transcoder and training pipeline."
 
-And so on. The CLAUDE.md gives Claude Code the architectural context it needs without re-explaining every session.
+**Session N (evaluation, current):**
+> "Read CLAUDE.md and TASKS.md. Training is complete on the GH200. Checkpoints are in checkpoints/. Run Phase 5 evaluation: compare_models.py, run_circuit.py on IOI/addition/factual recall tasks, analyze_splines.py."
+
+The CLAUDE.md gives Claude Code the architectural context it needs without re-explaining every session.

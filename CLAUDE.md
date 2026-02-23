@@ -22,16 +22,16 @@ y_hat^l = Σ W_dec^(l'→l) · a^(l')       # linear decoder stays the same
 
 The decoder MUST remain linear — features need clean directions in residual stream space for activation patching and steering to work.
 
-### Attribution Difference
-- Anthropic: edge weight = a_s · w_{s→t} (exact, because encoder is linear)
-- Ours: feature interactions are nonlinear → use causal interventions or Shapley values instead of backward Jacobians
-- Jacobian-based encoder directions (local linear approximation) are available for compatibility with the existing attribution pipeline
+### Attribution Methods
+- **Causal ablation** (`attribution/causal.py`): zero out one feature at a time, measure downstream change. Exact causal effect, O(n_active) forward passes.
+- **Shapley values** (`attribution/shapley.py`): Monte Carlo permutation sampling with antithetic pairs. Game-theoretically sound for nonlinear interactions. O(n_active × n_samples) forward passes.
+- **Jacobian encoder vectors**: local linear approximation of KAN encoder direction at each input point. Available for compatibility with existing circuit-tracer attribution pipeline.
 
 ## Key Dependencies
 - `circuit-tracer` (forked to github.com/supreethms1809/circuit-tracer) — provides ReplacementModel, graph pruning, visualization
 - `efficient-kan` (github.com/Blealtan/efficient-kan) — fast B-spline KAN implementation
-- `transformer-lens` — model hooking (already in circuit-tracer)
-- Target model: GPT-2 small (standard mechinterp testbed, 12 layers, 768-dim residual stream)
+- `transformer-lens` — model hooking for activation collection
+- Target model: GPT-2 small (12 layers, 768-dim residual stream)
 
 ## Project Structure
 ```
@@ -41,25 +41,34 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 ├── GH200_SETUP.md                       # GH200 node setup guide
 ├── kan_clt/
 │   ├── kan_encoder.py                   # KAN encoder wrapping efficient-kan
-│   ├── kan_transcoder.py                # Full KAN-CLT module (CLT-compatible interface)
+│   ├── kan_transcoder.py                # Full KAN-CLT module (encoder_type="kan"|"linear")
+│   ├── linear_encoder.py                # Linear encoder baseline (same interface as KANEncoder)
 │   ├── utils.py                         # Parameter counting, comparison utilities
 │   └── training/
 │       ├── train.py                     # Training loop with Adam + cosine decay
-│       ├── data.py                      # Activation dataset collection from GPT-2
-│       └── loss.py                      # Reconstruction + sparsity losses
+│       ├── data.py                      # Activation dataset collection (mmap + clone)
+│       └── loss.py                      # Reconstruction + sparsity + KAN reg losses
 ├── attribution/
 │   ├── causal.py                        # Ablation-based causal attribution
+│   ├── shapley.py                       # Monte Carlo Shapley attribution
 │   └── graph.py                         # Graph adapter for circuit-tracer format
 ├── eval/
-│   └── replacement_accuracy.py          # Top-1 match, KL divergence, sparsity stats
+│   ├── replacement_accuracy.py          # Top-1 match, KL divergence, sparsity stats
+│   └── monosemanticity.py               # Gini coefficient, max-activating examples
 ├── experiments/
-│   ├── configs/gpt2_small.yaml          # Default training config
-│   └── train_kan_clt.py                 # Main training entry point
+│   ├── configs/
+│   │   ├── gpt2_small.yaml              # KAN-CLT training config
+│   │   └── gpt2_small_linear_baseline.yaml  # Matched linear CLT baseline
+│   ├── train_kan_clt.py                 # Main training entry point
+│   ├── compare_models.py                # KAN-CLT vs linear CLT evaluation table
+│   ├── analyze_splines.py               # Spline shape extraction and visualization
+│   └── run_circuit.py                   # End-to-end circuit tracing pipeline
 ├── circuit_tracer/                      # upstream circuit-tracer library (unmodified)
 └── tests/
     ├── test_kan_encoder.py              # 14 tests
-    ├── test_kan_transcoder.py           # 19 tests
-    └── test_attribution.py              # 6 tests
+    ├── test_kan_transcoder.py           # 20 tests (includes linear encoder save/load)
+    ├── test_attribution.py              # 6 tests
+    └── test_shapley.py                  # 13 tests
 ```
 
 ## Important Technical Notes
@@ -70,40 +79,85 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 
 3. **Cross-layer structure**: Each feature reads from ONE layer but writes to ALL subsequent layers via separate decoder weight matrices. This is critical for the attribution graph structure.
 
-4. **Jacobian-based encoder vectors**: For attribution, KANEncoder.get_encoder_vectors() computes d(output[f])/d(input) at each input point. This gives local linear encoder directions that plug into the existing AttributionContext. Verified correct via finite difference tests.
+4. **Jacobian-based encoder vectors**: For attribution, KANEncoder.get_encoder_vectors() computes d(output[f])/d(input) at each input point. This gives local linear encoder directions that plug into the existing AttributionContext.
 
-5. **Training objective**: Same as Anthropic's CLT:
+5. **Training objective**:
    - L_MSE = Σ_l ||y_hat^l - y^l||^2
    - L_sparsity = λ Σ tanh(c · ||W_dec_i|| · a_i)
-   - L_kan_reg = KAN L1 + entropy regularization on spline weights
+   - L_kan_reg = 0.01 × spline_weight.abs().mean()  (KAN only — DO NOT use KANLinear.regularization_loss(), it produces NaN when spline_weight=0 via 0*log(0))
    - Total = L_MSE + L_sparsity + L_kan_reg
 
-6. **Parameter ratio**: KAN-CLT has ~2.2x more parameters than linear CLT at matched dimensions due to B-spline basis expansion. This is expected and tractable.
+6. **Parameter ratio**: KAN-CLT has ~10x more encoder parameters than linear CLT at matched d_transcoder (due to B-spline basis expansion). Decoder is identical.
+
+7. **Data loading**: Dataset is ~40GB total. Use `ActivationDataset.load(path, max_samples=3000)` which mmap-slices then clones into RAM (~14GB). Avoid loading the full dataset — causes OOM or SIGBUS on WSL2.
+
+8. **encoder_type**: `KANCrossLayerTranscoder(encoder_type="kan"|"linear")`. Both use the same interface. `to_safetensors`/`load_kan_clt` handle both correctly.
 
 ## Code Style
 - PyTorch throughout
 - Type hints on function signatures
 - Docstrings on public methods
-- Config via dataclasses or simple YAML, not argparse spaghetti
-- Tests for core components (encoder, transcoder, attribution)
+- Config via dataclasses or YAML
+- Tests for all core components
 
 ## Common Commands
+
 ```bash
-# Run all KAN-CLT tests (39 tests)
-pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py tests/test_attribution.py -v
+# --- Testing ---
+# Run all KAN-CLT tests (53 tests)
+conda run -n ct pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py \
+    tests/test_attribution.py tests/test_shapley.py -v
 
-# Collect activations from GPT-2
-python experiments/train_kan_clt.py --collect-data --model gpt2 --device cuda
+# Run everything including upstream circuit-tracer tests
+conda run -n ct pytest tests/ -v
 
+# --- Data collection ---
+# Collect GPT-2 small activations (~40GB, takes ~30 min on GPU)
+conda run -n ct python experiments/train_kan_clt.py \
+    --collect-data --model gpt2 --device cuda
+
+# --- Training ---
 # Train KAN-CLT
-python experiments/train_kan_clt.py --config experiments/configs/gpt2_small.yaml
+conda run -n ct python experiments/train_kan_clt.py \
+    --config experiments/configs/gpt2_small.yaml
 
-# Run all tests including upstream circuit-tracer
-pytest tests/ -v
+# Train linear CLT baseline
+conda run -n ct python experiments/train_kan_clt.py \
+    --config experiments/configs/gpt2_small_linear_baseline.yaml
+
+# --- Evaluation ---
+# Compare KAN-CLT vs linear CLT (needs both checkpoints)
+conda run -n ct python experiments/compare_models.py \
+    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
+    --data-dir data/activations \
+    --n-samples 200
+
+# --- Circuit tracing ---
+# End-to-end circuit trace for a prompt
+conda run -n ct python experiments/run_circuit.py \
+    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --prompt "The Eiffel Tower is located in" \
+    --model gpt2 \
+    --max-features 64 \
+    --output results/circuits/eiffel.pt
+
+# Same with Shapley attribution (slower)
+conda run -n ct python experiments/run_circuit.py \
+    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --prompt "The Eiffel Tower is located in" \
+    --shapley --shapley-samples 128
+
+# --- Spline analysis (KAN encoder only) ---
+conda run -n ct python experiments/analyze_splines.py \
+    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --n-features 20 \
+    --output-dir results/splines
 ```
 
 ## Current Status
-- Phases 1-2 complete: KAN encoder, KAN transcoder, training pipeline
-- Phase 4.1 complete: Ablation-based causal attribution with Jacobian encoder directions
-- 39/39 tests passing, 0 regressions on upstream circuit-tracer tests
-- Next: Phase 3 (train on GPT-2 activations on GH200), Phase 4.2 (Shapley values)
+- **53/53 tests passing**
+- Phases 1-4 complete: KAN encoder, KAN transcoder, training pipeline, linear baseline, causal attribution, Shapley attribution
+- Phase 4.3 verified: `attribution/graph.py` API matches `circuit_tracer.graph.Graph` exactly
+- Training running on GH200 (separate machine) — checkpoints not yet available locally
+- Next: Phase 5 evaluation once checkpoints are ready (compare_models.py, analyze_splines.py, run_circuit.py are all ready to run)
