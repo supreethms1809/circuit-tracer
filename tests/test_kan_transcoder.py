@@ -171,7 +171,7 @@ class TestSaveLoad:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             jumprelu_model.to_safetensors(tmpdir)
-            loaded = load_kan_clt(tmpdir)
+            loaded = load_kan_clt(tmpdir, device=torch.device("cpu"))
 
             loaded_out = loaded.forward(x)
             assert torch.allclose(original_out, loaded_out, atol=1e-5), (
@@ -186,13 +186,36 @@ class TestSaveLoad:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             jumprelu_model.to_safetensors(tmpdir)
-            loaded = load_kan_clt(tmpdir)
+            loaded = load_kan_clt(tmpdir, device=torch.device("cpu"))
 
             assert isinstance(loaded.activation_function, JumpReLU)
             assert torch.allclose(
                 loaded.activation_function.threshold,
                 original_threshold,
                 atol=1e-6,
+            )
+
+    def test_save_and_load_linear_encoder(self):
+        """Test that linear encoder save/load round-trip preserves behavior."""
+        model = KANCrossLayerTranscoder(
+            n_layers=2,
+            d_transcoder=16,
+            d_model=8,
+            encoder_type="linear",
+            activation_function="relu",
+            device=torch.device("cpu"),
+        )
+        x = torch.randn(2, 4, 8)
+        original_out = model.forward(x)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.to_safetensors(tmpdir)
+            loaded = load_kan_clt(tmpdir, device=torch.device("cpu"))
+
+            assert loaded.encoder_type == "linear"
+            loaded_out = loaded.forward(x)
+            assert torch.allclose(original_out, loaded_out, atol=1e-5), (
+                f"Linear save/load mismatch: max diff = {(original_out - loaded_out).abs().max():.4e}"
             )
 
 
