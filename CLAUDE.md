@@ -60,9 +60,10 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 │   │   ├── gpt2_small.yaml              # KAN-CLT training config
 │   │   └── gpt2_small_linear_baseline.yaml  # Matched linear CLT baseline
 │   ├── train_kan_clt.py                 # Main training entry point
+│   ├── run_pipeline.py                  # ← Full evaluation pipeline (run this)
 │   ├── compare_models.py                # KAN-CLT vs linear CLT evaluation table
 │   ├── analyze_splines.py               # Spline shape extraction and visualization
-│   └── run_circuit.py                   # End-to-end circuit tracing pipeline
+│   └── run_circuit.py                   # Single-prompt circuit tracing
 ├── circuit_tracer/                      # upstream circuit-tracer library (unmodified)
 └── tests/
     ├── test_kan_encoder.py              # 14 tests
@@ -107,6 +108,21 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 # Run all KAN-CLT tests (53 tests)
 conda run -n ct pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py \
     tests/test_attribution.py tests/test_shapley.py -v
+
+# --- Full evaluation pipeline (run this once training is complete) ---
+conda run -n ct python experiments/run_pipeline.py \
+    --kan-checkpoint    checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
+    --data-dir data/activations \
+    --output-dir results/eval_run1 \
+    --shapley \
+    --no-plot           # omit for matplotlib PNG plots
+
+# KAN-CLT only, skip slow stages:
+conda run -n ct python experiments/run_pipeline.py \
+    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --data-dir data/activations \
+    --skip-circuits --skip-monosemanticity
 
 # Run everything including upstream circuit-tracer tests
 conda run -n ct pytest tests/ -v
