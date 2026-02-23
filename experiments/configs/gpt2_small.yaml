@@ -12,7 +12,7 @@ spline_order: 3
 learning_rate: 1.0e-4
 warmup_steps: 1000
 total_steps: 50000
-batch_size: 4
+batch_size: 8
 lambda_sparsity: 0.05
 c_sparsity: 1.0
 grad_clip: 1.0

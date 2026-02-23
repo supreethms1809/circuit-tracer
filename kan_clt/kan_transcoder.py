@@ -533,9 +533,15 @@ class KANCrossLayerTranscoder(nn.Module):
         has_threshold = isinstance(self.activation_function, JumpReLU)
 
         for i in range(self.n_layers):
-            # Save encoder (full state dict for KAN layer)
-            enc_state = self.encoders[i].kan_linear.state_dict()
-            enc_dict = {f"encoder_{i}.{k}": v.cpu() for k, v in enc_state.items()}
+            enc_dict = {}
+            if self.encoder_type == "kan":
+                # Save full KAN encoder state dict
+                enc_state = self.encoders[i].kan_linear.state_dict()
+                enc_dict = {f"encoder_{i}.{k}": v.cpu() for k, v in enc_state.items()}
+            else:
+                # Save linear encoder weight matrix
+                enc_dict[f"encoder_{i}.W_enc"] = self.encoders[i].W_enc.cpu()
+
             enc_dict[f"b_enc_{i}"] = self.b_enc[i].cpu()
             enc_dict[f"b_dec_{i}"] = self.b_dec[i].cpu()
 
@@ -550,13 +556,15 @@ class KANCrossLayerTranscoder(nn.Module):
             dec_dict = {f"W_dec_{i}": self.W_dec[i].cpu()}
             save_file(dec_dict, os.path.join(save_path, f"W_dec_{i}.safetensors"))
 
-        # Save metadata
+        # Save metadata (include encoder_type so load_kan_clt can reconstruct correctly)
         metadata = {
             "n_layers": torch.tensor(self.n_layers),
             "d_transcoder": torch.tensor(self.d_transcoder),
             "d_model": torch.tensor(self.d_model),
             "grid_size": torch.tensor(self.grid_size),
             "spline_order": torch.tensor(self.spline_order),
+            # encoder_type stored as 0=kan, 1=linear
+            "encoder_type_linear": torch.tensor(self.encoder_type == "linear"),
         }
         save_file(metadata, os.path.join(save_path, "metadata.safetensors"))
 
@@ -595,6 +603,14 @@ def load_kan_clt(
         d_model = f.get_tensor("d_model").item()
         grid_size = f.get_tensor("grid_size").item()
         spline_order = f.get_tensor("spline_order").item()
+        # encoder_type_linear key was added after initial checkpoints; default to KAN
+        keys = f.keys()
+        is_linear = (
+            f.get_tensor("encoder_type_linear").item()
+            if "encoder_type_linear" in keys
+            else False
+        )
+    encoder_type = "linear" if is_linear else "kan"
 
     # Detect activation function from first encoder file
     enc_path = os.path.join(clt_path, "encoder_0.safetensors")
@@ -607,6 +623,7 @@ def load_kan_clt(
         n_layers=n_layers,
         d_transcoder=d_transcoder,
         d_model=d_model,
+        encoder_type=encoder_type,
         grid_size=grid_size,
         spline_order=spline_order,
         activation_function=act_fn,
@@ -622,14 +639,20 @@ def load_kan_clt(
         enc_file = os.path.join(clt_path, f"encoder_{i}.safetensors")
         enc_data = load_file(enc_file, device=str(device))
 
-        # Load KAN encoder state
-        kan_state = {}
         prefix = f"encoder_{i}."
-        for k, v in enc_data.items():
-            if k.startswith(prefix):
-                kan_state[k[len(prefix):]] = v.to(dtype=dtype)
+        if encoder_type == "kan":
+            kan_state = {
+                k[len(prefix):]: v.to(dtype=dtype)
+                for k, v in enc_data.items()
+                if k.startswith(prefix)
+            }
+            instance.encoders[i].kan_linear.load_state_dict(kan_state)
+        else:
+            # Linear encoder: restore W_enc directly
+            instance.encoders[i].W_enc.data.copy_(
+                enc_data[f"encoder_{i}.W_enc"].to(dtype=dtype)
+            )
 
-        instance.encoders[i].kan_linear.load_state_dict(kan_state)
         instance.b_enc.data[i] = enc_data[f"b_enc_{i}"].to(dtype=dtype)
         instance.b_dec.data[i] = enc_data[f"b_dec_{i}"].to(dtype=dtype)
 
