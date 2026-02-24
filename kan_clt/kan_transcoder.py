@@ -372,7 +372,15 @@ class KANCrossLayerTranscoder(nn.Module):
         Returns:
             Reconstructed MLP outputs of shape (n_layers, n_pos, d_model).
         """
-        n_pos = pos_ids.max() + 1
+        # Use input_acts.shape[1] when available: pos_ids.max()+1 can undercount
+        # if ablation removes the only active feature at the last token position,
+        # causing a shape mismatch between baseline and ablated reconstructions.
+        if input_acts is not None:
+            n_pos = input_acts.shape[1]
+        elif pos_ids.numel() > 0:
+            n_pos = int(pos_ids.max().item()) + 1
+        else:
+            n_pos = 0
         flat_idx = layer_ids * n_pos + pos_ids
         recon = torch.zeros(
             n_pos * self.n_layers,
