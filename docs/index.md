@@ -17,6 +17,7 @@ KAN-CLT replaces the linear encoder with a **B-spline-based KAN encoder** that c
 | [Attribution](attribution.md) | Causal ablation, Shapley values, circuit graph construction |
 | [Evaluation](evaluation.md) | Reconstruction accuracy, monosemanticity, spline analysis |
 | [Getting Started](getting-started.md) | Setup, data collection, training, and evaluation walkthrough |
+| [Metrics Reference](metrics.md) | Every metric: definitions, formulas, ideal values |
 | [API Reference](api-reference.md) | Classes, methods, and function signatures |
 
 ## Project Structure
