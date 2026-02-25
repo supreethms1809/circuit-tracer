@@ -130,6 +130,8 @@ def train(
     step = 0
     best_val_loss = float("inf")
     train_iter = iter(train_loader)
+    n_nan_consecutive = 0          # consecutive non-finite loss steps
+    _NAN_RECOVERY_THRESHOLD = 100  # reload best ckpt after this many consecutive NaN steps
 
     pbar = tqdm(total=config.total_steps, desc="Training")
     while step < config.total_steps:
@@ -162,12 +164,40 @@ def train(
             c_sparsity=config.c_sparsity,
         )
 
-        # NaN guard: skip update if loss is non-finite (can happen after grid update)
+        # NaN guard: skip update; after _NAN_RECOVERY_THRESHOLD consecutive NaN steps,
+        # reload the best checkpoint and halve the peak learning rate.
+        # This handles the case where a grid update permanently destabilizes training
+        # (Adam's accumulated momentum becomes invalid after knot repositioning and
+        # can drive parameters into inf territory within a few hundred steps).
         if not loss.isfinite():
-            pbar.write(f"Step {step}: non-finite loss ({loss.item():.4f}), skipping update")
+            n_nan_consecutive += 1
+            if n_nan_consecutive == 1:
+                pbar.write(f"Step {step}: non-finite loss ({loss.item():.4f}), skipping update")
+            if n_nan_consecutive >= _NAN_RECOVERY_THRESHOLD:
+                best_path = os.path.join(config.checkpoint_dir, f"{config.run_name}_best")
+                if os.path.isdir(best_path):
+                    pbar.write(
+                        f"  {_NAN_RECOVERY_THRESHOLD} consecutive NaN steps — "
+                        f"reloading best checkpoint and halving peak LR "
+                        f"({config.learning_rate:.2e} → {config.learning_rate/2:.2e})"
+                    )
+                    from kan_clt.kan_transcoder import load_kan_clt as _load_for_recovery
+                    recovered = _load_for_recovery(best_path, device=device, dtype=dtype)
+                    model.load_state_dict(recovered.state_dict())
+                    del recovered
+                    config.learning_rate /= 2
+                    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+                else:
+                    pbar.write(
+                        f"  {_NAN_RECOVERY_THRESHOLD} consecutive NaN steps but no best "
+                        f"checkpoint at {best_path!r} — resetting NaN counter and continuing"
+                    )
+                n_nan_consecutive = 0
             step += 1
             pbar.update(1)
             continue
+
+        n_nan_consecutive = 0
 
         # Backward
         loss.backward()
@@ -193,9 +223,24 @@ def train(
             and step >= config.update_grid_from
             and step % config.update_grid_every == 0
         ):
+            # Save a pre-update snapshot so NaN recovery always has a clean state.
+            pre_update_path = os.path.join(
+                config.checkpoint_dir, f"{config.run_name}_pre_grid{step}"
+            )
+            model.to_safetensors(pre_update_path)
+
             with torch.no_grad():
                 for layer_id in range(model.n_layers):
                     model.encoders[layer_id].update_grid(x_in[layer_id])
+
+            # Reset Adam state after grid update: the accumulated first/second moments
+            # correspond to old spline knot positions and will drive the new parameters
+            # in the wrong direction, causing the inf spiral seen in practice.
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            pbar.write(
+                f"Step {step}: grid updated and optimizer state reset "
+                f"(pre-update checkpoint saved to {pre_update_path})"
+            )
 
         # Evaluation
         if step > 0 and step % config.eval_every == 0:

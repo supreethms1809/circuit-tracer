@@ -149,7 +149,11 @@ def _build_train_config(args, encoder_type: str):
         save_every=max(1, args.total_steps // 10),
         checkpoint_dir=ckpt_dir,
         run_name=run_name,
-        update_grid_every=max(0, args.total_steps // 5) if encoder_type == "kan" else 0,
+        # Grid updates: 3 updates spread across the first 75% of training.
+        # Stopping at 75% avoids late-training instability — knot repositioning
+        # causes large gradient spikes; letting the model stabilise in the final
+        # quarter significantly reduces the risk of the inf spiral.
+        update_grid_every=max(0, args.total_steps // 4) if encoder_type == "kan" else 0,
         update_grid_from=min(2000, args.total_steps // 20),
         data_dir=args.data_dir,
         device=args.device,
