@@ -413,17 +413,25 @@ def main() -> None:
     # ---- Data collection ----
     parser.add_argument("--lm-model", default="gpt2")
     parser.add_argument("--data-dir", default="data/activations")
-    parser.add_argument("--n-tokens", type=int, default=10_000_000,
-                        help="Tokens to collect (default 10M ≈ 78K sequences)")
+    parser.add_argument("--n-tokens", type=int, default=2_000_000,
+                        help="Tokens to collect from wikitext-103. "
+                             "2M ≈ 15.6K sequences at seq_len=128 (~73 GB bfloat16 on disk). "
+                             "Previous default (10M on wikitext-2) was capped at ~8.5K sequences "
+                             "by dataset exhaustion; wikitext-103 has enough text to fill any budget.")
 
     # ---- Training ----
     parser.add_argument("--kan-checkpoint-dir",    default="checkpoints/gpt2_small")
     parser.add_argument("--linear-checkpoint-dir", default="checkpoints/gpt2_small_linear")
     parser.add_argument("--d-transcoder",    type=int,   default=4096)
     parser.add_argument("--grid-size",       type=int,   default=5)
-    parser.add_argument("--total-steps",     type=int,   default=50_000)
-    parser.add_argument("--batch-size",      type=int,   default=8)
+    parser.add_argument("--total-steps",     type=int,   default=200_000,
+                        help="Training steps (increased from 50K; more steps needed for good reconstruction)")
+    parser.add_argument("--batch-size",      type=int,   default=16,
+                        help="Sequences per batch (increased from 8 for better GPU utilization on GH200)")
     parser.add_argument("--learning-rate",   type=float, default=1e-4)
+    parser.add_argument("--max-train-samples", type=int, default=8000,
+                        help="Max sequences loaded into RAM for training "
+                             "(increased from implicit 3000; GH200 handles ~38 GB easily)")
     parser.add_argument("--lambda-sparsity", type=float, default=0.01,
                         help="Sparsity penalty weight. Default lowered to 0.01 "
                              "(0.05 over-sparsifies KAN, killing reconstruction).")
@@ -518,8 +526,8 @@ def main() -> None:
             from kan_clt.training.data import ActivationDataset
             print("\nLoading dataset into memory for training...")
             t_load = time.time()
-            dataset = ActivationDataset.load(args.data_dir)
-            print(f"  {len(dataset)} sequences loaded  [{_elapsed(t_load)}]")
+            dataset = ActivationDataset.load(args.data_dir, max_samples=args.max_train_samples)
+            print(f"  {len(dataset)} sequences loaded (max_train_samples={args.max_train_samples})  [{_elapsed(t_load)}]")
 
         run_train(args, encoder_type="kan",    dataset=dataset)
         run_train(args, encoder_type="linear", dataset=dataset)

@@ -19,7 +19,7 @@ class DataConfig:
 
     model_name: str = "gpt2"
     dataset_name: str = "Salesforce/wikitext"  # uses Parquet, no deprecated scripts
-    dataset_config: str = "wikitext-2-raw-v1"  # small subset for development (~37k rows)
+    dataset_config: str = "wikitext-103-raw-v1"  # full corpus (~1.8M rows, enough for 100K+ sequences)
     n_tokens: int = 10_000_000
     seq_len: int = 128
     batch_size: int = 32
