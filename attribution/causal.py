@@ -143,8 +143,9 @@ def _batch_encoder_directions(
         feat = int(feat_idx[i])
 
         x_pos = x_in[layer, pos].detach().requires_grad_(True)
-        output = model.encoders[layer](x_pos.unsqueeze(0))  # (1, n_features)
-        output[0, feat].backward()
+        with torch.enable_grad():
+            output = model.encoders[layer](x_pos.unsqueeze(0))  # (1, n_features)
+            output[0, feat].backward()
         directions[i] = x_pos.grad.detach()
 
     return directions
