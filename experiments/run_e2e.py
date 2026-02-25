@@ -200,6 +200,8 @@ def run_evaluate(args) -> dict:
         run_circuits,
         run_splines,
         run_monosemanticity,
+        run_weight_norms,
+        run_checkpoint_scan,
         write_report,
     )
 
@@ -230,6 +232,33 @@ def run_evaluate(args) -> dict:
         device=device,
         dtype=dtype,
     )
+
+    # Diagnostic: per-layer encoder weight norms (collapse detection)
+    if not args.skip_weight_norms:
+        run_weight_norms(
+            kan_ckpt, lin_ckpt,
+            output_dir=args.output_dir,
+            device=device,
+            dtype=dtype,
+        )
+
+    # Diagnostic: loss curve across saved step checkpoints
+    if not args.skip_checkpoint_scan:
+        scan_samples = min(50, args.n_eval_samples)
+        for ckpt_dir, run_name in [
+            (args.kan_checkpoint_dir,    "kan_clt_gpt2"),
+            (args.linear_checkpoint_dir, "linear_clt_gpt2"),
+        ]:
+            if os.path.isdir(ckpt_dir):
+                run_checkpoint_scan(
+                    checkpoint_dir=ckpt_dir,
+                    run_name=run_name,
+                    data_dir=args.data_dir,
+                    n_samples=scan_samples,
+                    output_dir=args.output_dir,
+                    device=device,
+                    dtype=dtype,
+                )
 
     circuits = {}
     if not args.skip_circuits:
@@ -395,16 +424,21 @@ def main() -> None:
     parser.add_argument("--total-steps",     type=int,   default=50_000)
     parser.add_argument("--batch-size",      type=int,   default=8)
     parser.add_argument("--learning-rate",   type=float, default=1e-4)
-    parser.add_argument("--lambda-sparsity", type=float, default=0.05)
+    parser.add_argument("--lambda-sparsity", type=float, default=0.01,
+                        help="Sparsity penalty weight. Default lowered to 0.01 "
+                             "(0.05 over-sparsifies KAN, killing reconstruction).")
 
     # ---- Evaluation ----
     parser.add_argument("--output-dir",         default="results/e2e")
-    parser.add_argument("--n-eval-samples",      type=int,  default=200)
+    parser.add_argument("--n-eval-samples",      type=int,  default=500,
+                        help="Sequences for reconstruction/monosemanticity eval "
+                             "(increased from 200 for more reliable Gini estimates)")
     parser.add_argument("--max-features",        type=int,  default=64)
     parser.add_argument("--shapley",             action="store_true")
     parser.add_argument("--shapley-samples",     type=int,  default=64)
     parser.add_argument("--n-spline-features",   type=int,  default=20)
-    parser.add_argument("--n-mono-features",     type=int,  default=100)
+    parser.add_argument("--n-mono-features",     type=int,  default=200,
+                        help="Features to analyse for monosemanticity (doubled for broader coverage)")
     parser.add_argument("--no-plot",             action="store_true")
 
     # ---- Skip flags ----
@@ -423,6 +457,15 @@ def main() -> None:
                         help="Enable B-spline transfer function extraction")
     parser.add_argument("--run-monosemanticity",  action="store_true",
                         help="Enable monosemanticity (Gini) evaluation")
+    # Diagnostic stages (off by default, slow but useful for debugging)
+    parser.add_argument("--skip-weight-norms",    action="store_true", default=True)
+    parser.add_argument("--skip-checkpoint-scan", action="store_true", default=True)
+    parser.add_argument("--run-weight-norms",     action="store_true",
+                        help="Per-layer encoder L2 norms — detects feature collapse "
+                             "(layer 1 dominating >50%% of norm = collapse)")
+    parser.add_argument("--run-checkpoint-scan",  action="store_true",
+                        help="Evaluate every step checkpoint to show loss progression. "
+                             "Flat curve = undertrained or lambda_sparsity too high.")
 
     # ---- Force flags ----
     parser.add_argument("--force-recollect", action="store_true",
@@ -439,6 +482,10 @@ def main() -> None:
         args.skip_splines = False
     if args.run_monosemanticity:
         args.skip_monosemanticity = False
+    if args.run_weight_norms:
+        args.skip_weight_norms = False
+    if args.run_checkpoint_scan:
+        args.skip_checkpoint_scan = False
 
     t_total = time.time()
     os.makedirs(args.output_dir, exist_ok=True)

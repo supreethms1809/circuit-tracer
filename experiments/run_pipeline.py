@@ -439,6 +439,163 @@ def run_monosemanticity(
 
 
 # --------------------------------------------------------------------------- #
+# Diagnostic: Encoder weight norms                                             #
+# --------------------------------------------------------------------------- #
+
+def run_weight_norms(
+    kan_ckpt: str | None,
+    lin_ckpt: str | None,
+    output_dir: str,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Print per-layer encoder L2 norms to diagnose feature collapse.
+
+    If a single layer dominates (>50% of total norm), the encoder has likely
+    collapsed — all features are being driven by one layer's activations.
+    Common fix: lower lambda_sparsity or learning rate.
+    """
+    from kan_clt.kan_transcoder import load_kan_clt
+
+    _section("Diagnostic: Encoder Weight Norms per Layer")
+    t0 = time.time()
+
+    checkpoints = {}
+    if _checkpoint_exists(kan_ckpt):
+        checkpoints["KAN-CLT"] = kan_ckpt
+    if _checkpoint_exists(lin_ckpt):
+        checkpoints["Linear CLT"] = lin_ckpt
+
+    if not checkpoints:
+        print("  No checkpoints found — skipping weight norm diagnostic.")
+        return
+
+    norms_report = {}
+    for label, ckpt in checkpoints.items():
+        print(f"\nLoading {label} from {ckpt}...")
+        model = load_kan_clt(ckpt, device=device, dtype=dtype)
+        model.eval()
+
+        print(f"\n  {label} — encoder L2 norm per layer")
+        print(f"  {'Layer':<8} {'Encoder norm':>14}")
+        print(f"  {'─'*24}")
+
+        with torch.no_grad():
+            layer_norms = []
+            for layer_id in range(model.n_layers):
+                enc = model.encoders[layer_id]
+                norm = sum(p.norm(2).item() ** 2 for p in enc.parameters()) ** 0.5
+                layer_norms.append(norm)
+                print(f"  {layer_id:<8} {norm:>14.4f}")
+
+        norms_report[label] = layer_norms
+        total = sum(layer_norms) + 1e-9
+        max_layer = max(range(len(layer_norms)), key=lambda i: layer_norms[i])
+        max_frac = layer_norms[max_layer] / total
+        if max_frac > 0.5:
+            print(f"\n  WARNING: Layer {max_layer} dominates ({max_frac*100:.1f}% of total norm).")
+            print(f"  Feature collapse suspected — try lowering --lambda-sparsity.")
+        else:
+            print(f"\n  OK: Layer {max_layer} is largest at {max_frac*100:.1f}% of total norm.")
+
+        del model
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+    out_path = os.path.join(output_dir, "weight_norms.json")
+    with open(out_path, "w") as f:
+        json.dump(norms_report, f, indent=2)
+    print(f"\nSaved to {out_path}  [{_elapsed(t0)}]")
+
+
+# --------------------------------------------------------------------------- #
+# Diagnostic: Checkpoint loss progression                                      #
+# --------------------------------------------------------------------------- #
+
+def run_checkpoint_scan(
+    checkpoint_dir: str,
+    run_name: str,
+    data_dir: str,
+    n_samples: int,
+    output_dir: str,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Evaluate all saved step checkpoints to show whether loss is still decreasing.
+
+    Loads every *_step<N> checkpoint in checkpoint_dir (plus _best), evaluates
+    reconstruction MSE and cosine similarity on a small sample, and prints a
+    table sorted by step number.  If MSE plateaued early, the model is
+    undertrained or lambda_sparsity is too high.
+    """
+    import glob as _glob
+    from kan_clt.kan_transcoder import load_kan_clt
+    from kan_clt.training.data import ActivationDataset
+    from experiments.compare_models import evaluate_model
+
+    _section(f"Diagnostic: Loss Progression — {run_name}")
+    t0 = time.time()
+
+    # Collect step checkpoints sorted by step number, then append _best
+    pattern = os.path.join(checkpoint_dir, f"{run_name}_step*")
+    def _step_num(p: str) -> int:
+        try:
+            return int(p.rsplit("step", 1)[-1])
+        except ValueError:
+            return -1
+
+    step_dirs = sorted(_glob.glob(pattern), key=_step_num)
+    best_dir = os.path.join(checkpoint_dir, f"{run_name}_best")
+    if os.path.isdir(best_dir):
+        step_dirs.append(best_dir)
+
+    if not step_dirs:
+        print(f"  No step checkpoints found in {checkpoint_dir!r} — skipping.")
+        return
+
+    print(f"  Found {len(step_dirs)} checkpoint(s). Loading dataset ({n_samples} samples)...")
+    dataset = ActivationDataset.load(data_dir, max_samples=n_samples + 50)
+
+    results = []
+    print(f"\n  {'Checkpoint':<38} {'MSE':>10} {'Cos Sim':>10} {'Active/pos':>12}")
+    print(f"  {'─'*72}")
+
+    for ckpt_path in step_dirs:
+        name = os.path.basename(ckpt_path)
+        try:
+            model = load_kan_clt(ckpt_path, device=device, dtype=dtype)
+            model.eval()
+            m = evaluate_model(model, dataset, device, dtype, n_samples=n_samples)
+            del model
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            print(f"  {name:<38} {m['mse_total']:>10.4f} "
+                  f"{m['cosine_similarity']:>10.4f} {m['active_per_pos']:>12.2f}")
+            results.append({
+                "checkpoint": name,
+                **{k: v for k, v in m.items() if k != "mse_per_layer"},
+            })
+        except Exception as e:
+            print(f"  {name:<38} ERROR: {e}")
+
+    if len(results) >= 2:
+        first_mse = results[0]["mse_total"]
+        last_mse = results[-2]["mse_total"] if results[-1]["checkpoint"].endswith("best") \
+            else results[-1]["mse_total"]
+        if last_mse >= first_mse * 0.99:
+            print(f"\n  WARNING: MSE did not improve significantly ({first_mse:.4f} → {last_mse:.4f}).")
+            print(f"  Model may be undertrained or lambda_sparsity is too high.")
+        else:
+            pct = (first_mse - last_mse) / first_mse * 100
+            print(f"\n  MSE improved by {pct:.1f}% over training ({first_mse:.4f} → {last_mse:.4f}).")
+
+    out_path = os.path.join(output_dir, f"checkpoint_scan_{run_name}.json")
+    with open(out_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Saved to {out_path}  [{_elapsed(t0)}]")
+
+
+# --------------------------------------------------------------------------- #
 # Report                                                                       #
 # --------------------------------------------------------------------------- #
 
