@@ -1,21 +1,22 @@
-# KAN Circuit Tracer Documentation
+# Spline Circuit Tracer Documentation
 
-KAN Circuit Tracer (KAN-CLT) replaces the linear encoder in Anthropic's Cross-Layer Transcoder with a KAN (Kolmogorov-Arnold Network) encoder, enabling nonlinear feature detection while preserving circuit tracing capability.
+Spline Circuit Tracer (Spline-CLT) replaces the linear encoder in Anthropic's Cross-Layer Transcoder with a KAN (Kolmogorov-Arnold Network) encoder, enabling nonlinear feature detection while preserving circuit tracing capability.
 
 ## What This Project Does
 
 Anthropic's circuit tracing pipeline decomposes language model computations into interpretable features. Their Cross-Layer Transcoder (CLT) uses a **linear encoder** to detect features, followed by JumpReLU activation for sparsity, and a linear decoder to reconstruct MLP outputs. This linearity assumption means features must be defined by linear boundaries in activation space.
 
-KAN-CLT replaces the linear encoder with a **B-spline-based KAN encoder** that can learn nonlinear feature boundaries. The decoder remains linear (required for activation patching and steering). Attribution is handled by causal ablation and game-theoretic Shapley values, which work correctly with nonlinear encoders without falling back to linearization.
+Spline-CLT replaces the linear encoder with a **B-spline-based KAN encoder** that can learn nonlinear feature boundaries. The decoder remains linear (required for activation patching and steering). Attribution is handled by causal ablation and game-theoretic Shapley values, which work correctly with nonlinear encoders without falling back to linearization.
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](architecture.md) | How KAN-CLT works: encoder, decoder, activation, cross-layer structure |
+| [Architecture](architecture.md) | How Spline-CLT works: encoder, decoder, activation, cross-layer structure |
 | [Training](training.md) | Data collection, training loop, loss functions, hyperparameters |
 | [Attribution](attribution.md) | Causal ablation, Shapley values, circuit graph construction |
 | [Evaluation](evaluation.md) | Reconstruction accuracy, monosemanticity, spline analysis |
+| [Paper Evaluation Runner](paper-evaluation.md) | Config-driven NeurIPS suite execution, outputs, and result interpretation |
 | [Getting Started](getting-started.md) | Setup, data collection, training, and evaluation walkthrough |
 | [Visualization](visualization.md) | Interactive web UI, notebook SVG, spline plots |
 | [Metrics Reference](metrics.md) | Every metric: definitions, formulas, ideal values |
@@ -25,7 +26,7 @@ KAN-CLT replaces the linear encoder with a **B-spline-based KAN encoder** that c
 
 ```
 circuit-tracer/
-├── kan_clt/                         # Core library
+├── spline_clt/                         # Core library
 │   ├── kan_encoder.py               # KAN encoder (B-spline nonlinear)
 │   ├── linear_encoder.py            # Linear encoder baseline
 │   ├── kan_transcoder.py            # Full cross-layer transcoder
@@ -43,7 +44,7 @@ circuit-tracer/
 │   └── monosemanticity.py           # Feature interpretability scoring
 ├── experiments/
 │   ├── configs/                     # YAML training configs
-│   ├── train_kan_clt.py             # Training entry point
+│   ├── train_spline_clt.py             # Training entry point
 │   ├── run_pipeline.py              # Full evaluation pipeline
 │   ├── compare_models.py            # KAN vs linear comparison
 │   ├── analyze_splines.py           # Spline shape visualization

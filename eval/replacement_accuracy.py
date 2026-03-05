@@ -1,6 +1,6 @@
-"""Replacement model accuracy evaluation for KAN-CLT.
+"""Replacement model accuracy evaluation for Spline-CLT.
 
-Measures how well the KAN-CLT replacement model matches the original model's outputs.
+Measures how well the Spline-CLT replacement model matches the original model's outputs.
 Key metrics:
     - Top-1 match rate: fraction of tokens where replacement model's top prediction matches original
     - Per-layer reconstruction MSE
@@ -11,7 +11,7 @@ import torch
 from torch.nn import functional as F
 from tqdm import tqdm
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 
 
 @torch.no_grad()
@@ -23,7 +23,7 @@ def evaluate_reconstruction(
     """Evaluate MLP output reconstruction quality.
 
     Args:
-        model: Trained KAN-CLT.
+        model: Trained Spline-CLT.
         mlp_inputs: Residual stream inputs, shape (n_samples, n_layers, seq_len, d_model).
         mlp_outputs: True MLP outputs, shape (n_samples, n_layers, seq_len, d_model).
 
@@ -79,17 +79,17 @@ def evaluate_reconstruction(
 @torch.no_grad()
 def evaluate_replacement_accuracy(
     original_model,
-    kan_clt: KANCrossLayerTranscoder,
+    spline_clt: KANCrossLayerTranscoder,
     prompts: list[str],
     device: torch.device | None = None,
 ) -> dict[str, float]:
-    """Evaluate top-1 accuracy of KAN-CLT replacement model vs original.
+    """Evaluate top-1 accuracy of Spline-CLT replacement model vs original.
 
     Requires a TransformerLens HookedTransformer as the original model.
 
     Args:
         original_model: HookedTransformer original model.
-        kan_clt: Trained KAN-CLT.
+        spline_clt: Trained Spline-CLT.
         prompts: List of text prompts to evaluate on.
         device: Device to run on.
 
@@ -113,12 +113,12 @@ def evaluate_replacement_accuracy(
 
         # Collect MLP inputs/outputs via hooks
         hook_names_in = [
-            f"blocks.{i}.{kan_clt.feature_input_hook}"
-            for i in range(kan_clt.n_layers)
+            f"blocks.{i}.{spline_clt.feature_input_hook}"
+            for i in range(spline_clt.n_layers)
         ]
         hook_names_out = [
-            f"blocks.{i}.{kan_clt.feature_output_hook}"
-            for i in range(kan_clt.n_layers)
+            f"blocks.{i}.{spline_clt.feature_output_hook}"
+            for i in range(spline_clt.n_layers)
         ]
 
         _, cache = original_model.run_with_cache(
@@ -132,9 +132,9 @@ def evaluate_replacement_accuracy(
             [cache[name].squeeze(0) for name in hook_names_out]
         )
 
-        # KAN-CLT reconstruction
-        features = kan_clt.encode(mlp_in).to_sparse()
-        recon = kan_clt.decode(features, input_acts=mlp_in)
+        # Spline-CLT reconstruction
+        features = spline_clt.encode(mlp_in).to_sparse()
+        recon = spline_clt.decode(features, input_acts=mlp_in)
 
         # Compute replacement logits by replacing MLP outputs
         # Simple approximation: adjust final residual by reconstruction difference
@@ -176,7 +176,7 @@ def evaluate_sparsity(
     """Evaluate feature sparsity statistics.
 
     Args:
-        model: Trained KAN-CLT.
+        model: Trained Spline-CLT.
         mlp_inputs: Residual stream inputs, shape (n_samples, n_layers, seq_len, d_model).
 
     Returns:

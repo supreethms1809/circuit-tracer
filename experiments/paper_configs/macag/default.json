@@ -1,0 +1,54 @@
+{
+  "macag": {
+    "enabled": true,
+    "annotate_graphs": true,
+    "oracle": {
+      "backend": "transformerlens",
+      "score_kind": "logit_gap",
+      "freeze_attention": true,
+      "cache_enabled": true
+    },
+    "candidate_policy": {
+      "strategy": "graph_features",
+      "feature_types": [
+        "cross layer transcoder"
+      ],
+      "top_k": 40,
+      "min_group_size": 2,
+      "max_group_size": 8,
+      "min_salience": 0.0
+    },
+    "game1_runs": [
+      {
+        "name": "faithful_eps_0_10",
+        "alpha": 0.5,
+        "lam": 0.01,
+        "faithfulness_eps": 0.1,
+        "prefilter_top_k": 24,
+        "connected": false,
+        "min_gain": 0.0
+      },
+      {
+        "name": "faithful_eps_0_05",
+        "alpha": 0.7,
+        "lam": 0.01,
+        "faithfulness_eps": 0.05,
+        "prefilter_top_k": 24,
+        "connected": false,
+        "min_gain": 0.0
+      }
+    ],
+    "game2_runs": [
+      {
+        "name": "contrastive_default",
+        "alpha": 0.5,
+        "lam": 0.01,
+        "beta": 0.1,
+        "abr_iters": 8,
+        "prefilter_top_k": 24,
+        "connected": false,
+        "min_gain": 0.0
+      }
+    ]
+  }
+}

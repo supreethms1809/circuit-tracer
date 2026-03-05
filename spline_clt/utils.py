@@ -1,4 +1,4 @@
-"""Utility functions for KAN-CLT."""
+"""Utility functions for Spline-CLT."""
 
 import torch
 
@@ -20,15 +20,15 @@ def count_parameters_breakdown(model: torch.nn.Module) -> dict[str, int]:
 
 
 def compare_parameter_counts(
-    kan_clt: torch.nn.Module,
+    spline_clt: torch.nn.Module,
     d_model: int,
     d_transcoder: int,
     n_layers: int,
 ) -> dict[str, int]:
-    """Compare KAN-CLT parameter count against equivalent linear CLT.
+    """Compare Spline-CLT parameter count against equivalent linear CLT.
 
     Args:
-        kan_clt: KAN-CLT model.
+        spline_clt: Spline-CLT model.
         d_model: Model dimension.
         d_transcoder: Number of features.
         n_layers: Number of layers.
@@ -36,7 +36,7 @@ def compare_parameter_counts(
     Returns:
         Dict with kan_params, linear_params, ratio.
     """
-    kan_params = count_parameters(kan_clt)
+    kan_params = count_parameters(spline_clt)
 
     # Linear CLT encoder params: n_layers * d_transcoder * d_model (W_enc)
     #                           + n_layers * d_transcoder (b_enc)

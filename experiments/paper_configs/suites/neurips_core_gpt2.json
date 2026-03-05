@@ -1,0 +1,24 @@
+{
+  "defaults": [
+    "../base/common.json",
+    "../macag/default.json",
+    "../models/gpt2_spline_default.json",
+    "../models/gpt2_linear_param_match.json",
+    "../models/gpt2_linear_feature_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "neurips_core_gpt2",
+  "description": "Core NeurIPS spline-CLT study on GPT-2 small with three seeds and fixed curated benchmarks.",
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "reporting": {
+    "primary_variant": "spline_default_gpt2",
+    "baseline_variant": "linear_param_match_gpt2",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

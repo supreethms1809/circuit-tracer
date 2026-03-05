@@ -49,7 +49,7 @@ All 53 tests should pass.
 Collect MLP input/output activations from GPT-2 small:
 
 ```bash
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --collect-data --model gpt2 --device cuda
 ```
 
@@ -59,10 +59,10 @@ This runs GPT-2 on the wikitext-2 dataset and saves activations to `data/activat
 
 ## Step 2: Train Models
 
-### Train KAN-CLT
+### Train Spline-CLT
 
 ```bash
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small.yaml
 ```
 
@@ -77,7 +77,7 @@ Checkpoints are saved to `checkpoints/gpt2_small/`.
 ### Train Linear Baseline
 
 ```bash
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small_linear_baseline.yaml
 ```
 
@@ -86,7 +86,7 @@ Same architecture and hyperparameters, but with a standard linear encoder instea
 ### Training Time
 
 On an NVIDIA GH200 or A100:
-- KAN-CLT: ~10-15 hours (50K steps)
+- Spline-CLT: ~10-15 hours (50K steps)
 - Linear CLT: ~3-5 hours (50K steps, simpler encoder)
 
 ## Step 3: Evaluate
@@ -97,7 +97,7 @@ Compare reconstruction quality between KAN and linear:
 
 ```bash
 conda run -n ct python experiments/compare_models.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --n-samples 200
@@ -111,7 +111,7 @@ Trace a circuit for a specific prompt:
 
 ```bash
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --max-features 64 \
     --output results/circuits/eiffel.pt
@@ -123,7 +123,7 @@ Add `--shapley` for game-theoretic attribution (slower but handles feature inter
 
 ```bash
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --shapley --shapley-samples 128
 ```
@@ -134,7 +134,7 @@ Visualize what nonlinear functions the KAN encoder learned:
 
 ```bash
 conda run -n ct python experiments/analyze_splines.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --n-features 20 \
     --output-dir results/splines
 ```
@@ -147,7 +147,7 @@ Run all evaluation stages at once:
 
 ```bash
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --output-dir results/eval_run1 \
@@ -165,7 +165,7 @@ Results are saved to `results/eval_run1/` with a `report.md` summary.
 To skip slow stages:
 ```bash
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --data-dir data/activations \
     --skip-circuits --skip-monosemanticity --no-plot
 ```
@@ -173,7 +173,7 @@ conda run -n ct python experiments/run_pipeline.py \
 ## Workflow Summary
 
 ```
-collect data → train KAN-CLT → train linear baseline → evaluate
+collect data → train Spline-CLT → train linear baseline → evaluate
      ↓              ↓                    ↓                  ↓
 data/activations/  checkpoints/gpt2_small/  checkpoints/gpt2_small_linear/  results/
 ```

@@ -1,6 +1,6 @@
 # Evaluation
 
-This document covers how to evaluate trained KAN-CLT models: reconstruction quality, replacement accuracy, sparsity, monosemanticity, and spline analysis.
+This document covers how to evaluate trained Spline-CLT models: reconstruction quality, replacement accuracy, sparsity, monosemanticity, and spline analysis.
 
 ## Reconstruction Quality
 
@@ -53,7 +53,7 @@ from eval.replacement_accuracy import evaluate_replacement_accuracy
 
 metrics = evaluate_replacement_accuracy(
     original_model,  # HookedTransformer (GPT-2)
-    kan_clt,         # trained transcoder
+    spline_clt,         # trained transcoder
     prompts,         # list of text strings
 )
 
@@ -162,7 +162,7 @@ This produces curves showing how the encoder transforms each input dimension int
 
 ```bash
 conda run -n ct python experiments/analyze_splines.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --n-features 20 \
     --output-dir results/splines
 ```
@@ -215,21 +215,21 @@ The pipeline traces circuits on these prompts:
 ```bash
 # Full pipeline with both models
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --output-dir results/eval_run1 \
     --shapley
 
-# KAN-CLT only, skip slow stages
+# Spline-CLT only, skip slow stages
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --data-dir data/activations \
     --skip-circuits --skip-monosemanticity
 
 # Quick comparison without full pipeline
 conda run -n ct python experiments/compare_models.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --n-samples 200

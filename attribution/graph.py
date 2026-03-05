@@ -1,6 +1,6 @@
-"""Graph adapter for converting KAN-CLT attribution results to circuit-tracer format.
+"""Graph adapter for converting Spline-CLT attribution results to circuit-tracer format.
 
-Bridges KAN-CLT's attribution output to circuit_tracer.graph.Graph so we can reuse
+Bridges Spline-CLT's attribution output to circuit_tracer.graph.Graph so we can reuse
 the existing pruning, visualization, and evaluation infrastructure.
 """
 
@@ -18,7 +18,7 @@ def create_graph_from_attribution(
     cfg,
     scan: str | list[str] | None = None,
 ) -> Graph:
-    """Convert KAN-CLT attribution results to a circuit-tracer Graph.
+    """Convert Spline-CLT attribution results to a circuit-tracer Graph.
 
     Args:
         attribution_result: Output from attribution.causal.build_attribution_graph().
@@ -36,10 +36,11 @@ def create_graph_from_attribution(
     activation_values = attribution_result["activation_values"]
     adjacency_matrix = attribution_result["adjacency_matrix"]
 
-    # selected_features is a boolean mask over all possible features
-    # For KAN-CLT, we just mark all returned features as selected
+    # circuit_tracer.Graph expects selected_features to be an index tensor into
+    # active_features, not a boolean mask. Since active_features already contains
+    # only the selected nodes, this is the identity index map.
     n_active = len(active_features)
-    selected_features = torch.ones(n_active, dtype=torch.bool)
+    selected_features = torch.arange(n_active, dtype=torch.long)
 
     return Graph(
         input_string=input_string,

@@ -179,7 +179,7 @@ def _load_local_transcoders(
     model_kwargs: Mapping[str, Any],
     clt_scan: str | list[str] | None,
 ):
-    """Load either a standard CLT or a KAN-CLT checkpoint from a local directory."""
+    """Load either a standard CLT or a Spline-CLT checkpoint from a local directory."""
     import yaml
 
     feature_input_hook = "hook_resid_mid"
@@ -205,10 +205,10 @@ def _load_local_transcoders(
         load_kwargs["device"] = model_kwargs["device"]
 
     if metadata_path.exists():
-        from kan_clt.kan_transcoder import load_kan_clt
+        from spline_clt.kan_transcoder import load_spline_clt
 
-        LOGGER.info("Loading KAN-CLT checkpoint from %s", clt_path)
-        return load_kan_clt(str(clt_path), **load_kwargs)
+        LOGGER.info("Loading Spline-CLT checkpoint from %s", clt_path)
+        return load_spline_clt(str(clt_path), **load_kwargs)
 
     from circuit_tracer.transcoder.cross_layer_transcoder import load_clt
 
@@ -246,7 +246,7 @@ def create_replacement_model_scorer(
 
     `local_clt_path` may point to either:
     - a standard `circuit_tracer` CLT checkpoint directory (`load_clt` format), or
-    - a `kan_clt` checkpoint directory (`load_kan_clt` format, includes `metadata.safetensors`).
+    - a `spline_clt` checkpoint directory (`load_spline_clt` format, includes `metadata.safetensors`).
     """
     from circuit_tracer import ReplacementModel
 

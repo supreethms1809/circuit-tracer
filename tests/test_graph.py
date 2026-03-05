@@ -1,11 +1,12 @@
 import gc
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import torch
 from transformer_lens import HookedTransformerConfig
 
-from circuit_tracer.graph import Graph, compute_edge_influence, compute_node_influence
+from circuit_tracer.graph import Graph, compute_edge_influence, compute_graph_scores, compute_node_influence
 from circuit_tracer.utils import get_default_device
 
 
@@ -141,3 +142,19 @@ def test_small_graph():
 
     edge_influence_on_logits = compute_edge_influence(pruned_adjacency_matrix, logit_weights)
     assert torch.allclose(edge_influence_on_logits, post_pruning_edge_matrix)
+
+
+def test_compute_graph_scores_handles_zero_token_and_error_influence():
+    graph = SimpleNamespace(
+        logit_tokens=torch.tensor([0]),
+        input_tokens=torch.tensor([0]),
+        selected_features=torch.tensor([0]),
+        cfg=SimpleNamespace(n_layers=1),
+        adjacency_matrix=torch.zeros(4, 4),
+        logit_probabilities=torch.tensor([1.0]),
+    )
+
+    replacement_score, completeness_score = compute_graph_scores(graph)
+
+    assert replacement_score == 1.0
+    assert completeness_score == 1.0

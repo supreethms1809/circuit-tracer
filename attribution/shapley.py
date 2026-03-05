@@ -1,4 +1,4 @@
-"""Shapley value attribution for KAN-CLT.
+"""Shapley value attribution for Spline-CLT.
 
 Since the KAN encoder is nonlinear, edge weights cannot be computed as
 a · w_{s→t}. Instead we use game-theoretic Shapley values:
@@ -19,7 +19,8 @@ Reference: Shapley (1953), Lundberg & Lee (2017, SHAP).
 import torch
 from tqdm import tqdm
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.seed import seed_everything
 
 
 @torch.no_grad()
@@ -30,11 +31,12 @@ def shapley_attribution(
     n_samples: int = 256,
     max_features: int = 64,
     antithetic: bool = True,
+    seed: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Compute Shapley value attribution for active features.
 
     Args:
-        model: Trained KAN-CLT model.
+        model: Trained Spline-CLT model.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
         target: "reconstruction" (MSE improvement) or "feature" (feature-to-feature).
         n_samples: Number of permutation samples per feature. More → lower variance.
@@ -51,6 +53,8 @@ def shapley_attribution(
     n_layers, n_pos, d_model = x_in.shape
     device = x_in.device
     dtype = x_in.dtype
+    if seed is not None:
+        seed_everything(seed)
 
     # --- Baseline activations ---
     baseline_acts = model.encode(x_in)  # (n_layers, n_pos, d_transcoder)
@@ -220,11 +224,12 @@ def shapley_logit_attribution(
     logit_target: torch.Tensor,
     n_samples: int = 128,
     max_features: int = 64,
+    seed: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Compute Shapley values for feature contributions to a target logit direction.
 
     Args:
-        model: Trained KAN-CLT.
+        model: Trained Spline-CLT.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
         logit_target: Direction in residual stream space (e.g., W_U[:, token_id]),
             shape (d_model,).
@@ -236,6 +241,8 @@ def shapley_logit_attribution(
         to target logit from each feature).
     """
     n_layers, n_pos, d_model = x_in.shape
+    if seed is not None:
+        seed_everything(seed)
 
     baseline_acts = model.encode(x_in)
     sparse = baseline_acts.to_sparse().coalesce()

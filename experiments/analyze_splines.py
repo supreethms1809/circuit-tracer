@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spline shape analysis for KAN-CLT encoders.
+"""Spline shape analysis for Spline-CLT encoders.
 
 Extracts and visualizes the learned B-spline functions for the most active
 features. Useful for understanding what nonlinear patterns the KAN encoder
@@ -12,7 +12,7 @@ For each top feature we plot:
 
 Usage:
     python experiments/analyze_splines.py \
-        --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+        --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
         --data-dir data/activations \
         --n-features 20 \
         --output-dir results/splines \
@@ -29,8 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import numpy as np
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder, load_kan_clt
-from kan_clt.training.data import ActivationDataset
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder, load_spline_clt
+from spline_clt.seed import seed_everything
+from spline_clt.training.data import ActivationDataset
 
 
 @torch.no_grad()
@@ -40,6 +41,7 @@ def collect_feature_stats(
     device: torch.device,
     dtype: torch.dtype,
     n_samples: int = 500,
+    seed: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Collect per-feature activation statistics across dataset.
 
@@ -52,6 +54,8 @@ def collect_feature_stats(
     n_layers = model.n_layers
     d_transcoder = model.d_transcoder
     n_samples = min(n_samples, len(dataset))
+    if seed is not None:
+        seed_everything(seed)
 
     sum_act = torch.zeros(n_layers, d_transcoder)
     sum_freq = torch.zeros(n_layers, d_transcoder)
@@ -93,7 +97,7 @@ def extract_spline_curve(
     t sweeps over x_range. Returns (t_values, feature_output).
 
     Args:
-        model: KAN-CLT model (encoder_type must be "kan").
+        model: Spline-CLT model (encoder_type must be "kan").
         layer_id: Which encoder layer to probe.
         feature_id: Which output feature to trace.
         input_dim: Which input dimension to sweep.
@@ -132,7 +136,7 @@ def top_input_dims(
     Uses the base_weight (linear part of the KAN) to identify most influential dims.
 
     Args:
-        model: KAN-CLT model.
+        model: Spline-CLT model.
         layer_id: Encoder layer.
         feature_id: Feature index.
         top_k: Number of top input dims to return.
@@ -167,7 +171,7 @@ def save_curves_csv(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze KAN spline shapes")
     parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to KAN-CLT checkpoint directory")
+                        help="Path to Spline-CLT checkpoint directory")
     parser.add_argument("--data-dir", type=str, default="data/activations")
     parser.add_argument("--n-features", type=int, default=20,
                         help="Number of top features (by activation frequency) to analyze")
@@ -186,7 +190,7 @@ def main() -> None:
     )
 
     print(f"Loading checkpoint from {args.checkpoint}...")
-    model = load_kan_clt(args.checkpoint, device=device, dtype=torch.float32)
+    model = load_spline_clt(args.checkpoint, device=device, dtype=torch.float32)
     model.eval()
 
     if model.encoder_type != "kan":

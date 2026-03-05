@@ -4,7 +4,7 @@ This document covers the data collection pipeline, training loop, and loss funct
 
 ## Data Collection
 
-**File**: `kan_clt/training/data.py`
+**File**: `spline_clt/training/data.py`
 
 Training data consists of paired MLP inputs and outputs collected from GPT-2 small. The idea is to train the transcoder to reconstruct what each MLP layer does, given the residual stream.
 
@@ -47,7 +47,7 @@ This avoids loading the entire dataset. Loading all 40GB causes OOM or SIGBUS er
 ### Running Data Collection
 
 ```bash
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --collect-data --model gpt2 --device cuda
 ```
 
@@ -55,7 +55,7 @@ This takes ~30 minutes on a GPU. Output goes to `data/activations/`.
 
 ## Loss Functions
 
-**File**: `kan_clt/training/loss.py`
+**File**: `spline_clt/training/loss.py`
 
 The training objective has three components:
 
@@ -112,13 +112,13 @@ The loss function returns both the scalar loss and a metrics dictionary:
 
 ## Training Loop
 
-**File**: `kan_clt/training/train.py`
+**File**: `spline_clt/training/train.py`
 
 ### Configuration
 
 Training is configured via a `TrainConfig` dataclass, typically loaded from a YAML file.
 
-**KAN-CLT config** (`experiments/configs/gpt2_small.yaml`):
+**Spline-CLT config** (`experiments/configs/gpt2_small.yaml`):
 ```yaml
 n_layers: 12
 d_model: 768
@@ -199,16 +199,16 @@ Training uses `decode_dense()` instead of `decode()`. Dense decoding operates on
 ## Running Training
 
 ```bash
-# Train KAN-CLT
-conda run -n ct python experiments/train_kan_clt.py \
+# Train Spline-CLT
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small.yaml
 
 # Train linear baseline
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small_linear_baseline.yaml
 
 # Override specific config values via CLI
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small.yaml \
     --learning-rate 5e-5 \
     --total-steps 100000 \
@@ -220,12 +220,12 @@ conda run -n ct python experiments/train_kan_clt.py \
 Training produces checkpoints in the configured directory:
 ```
 checkpoints/gpt2_small/
-├── kan_clt_gpt2_best/        # Best validation loss
+├── spline_clt_gpt2_best/        # Best validation loss
 │   ├── metadata.safetensors
 │   ├── encoder_layer_0.safetensors
 │   ├── ...
 │   └── b_dec.safetensors
-├── kan_clt_gpt2_step_5000/   # Periodic checkpoints
-├── kan_clt_gpt2_step_10000/
-└── kan_clt_gpt2_final/       # End of training
+├── spline_clt_gpt2_step_5000/   # Periodic checkpoints
+├── spline_clt_gpt2_step_10000/
+└── spline_clt_gpt2_final/       # End of training
 ```

@@ -27,7 +27,7 @@ data_dir: data/activations  # default collection path
 
 ## Full End-to-End Pipeline (recommended)
 
-Runs data collection → KAN-CLT training → linear CLT baseline → evaluation → comparison.
+Runs data collection → Spline-CLT training → linear CLT baseline → evaluation → comparison.
 All stages auto-skip if outputs already exist.
 
 ```bash
@@ -55,10 +55,10 @@ python experiments/run_e2e.py \
     --output-dir results/gh200_run1_full
 ```
 
-Final output is a side-by-side comparison table showing KAN-CLT vs linear CLT:
+Final output is a side-by-side comparison table showing Spline-CLT vs linear CLT:
 - MSE, cosine similarity, relative error per layer
 - Sparsity (active features/position, activation density)
-- Verdict: "KAN-CLT better/worse by X% MSE"
+- Verdict: "Spline-CLT better/worse by X% MSE"
 
 Results and a Markdown report are written to `--output-dir`.
 
@@ -71,16 +71,16 @@ HuggingFace dataset scripts required.
 
 ```bash
 conda activate ct
-python experiments/train_kan_clt.py --collect-data --model gpt2 --device cuda
+python experiments/train_spline_clt.py --collect-data --model gpt2 --device cuda
 ```
 
 Activations are saved to `data/activations/` (configured via `data_dir` in the YAML).
 
-### Training (KAN-CLT only)
+### Training (Spline-CLT only)
 
 ```bash
 conda activate ct
-python experiments/train_kan_clt.py \
+python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small.yaml \
     --device cuda
 ```
@@ -90,13 +90,13 @@ python experiments/train_kan_clt.py \
 ```bash
 # Reconstruction metrics + comparison table
 python experiments/compare_models.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations --device cuda
 
 # Full evaluation pipeline (circuits, splines, monosemanticity)
 python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --output-dir results/eval_run1 \
@@ -104,7 +104,7 @@ python experiments/run_pipeline.py \
 
 # Circuit tracing for a single prompt
 python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --device cuda
 ```

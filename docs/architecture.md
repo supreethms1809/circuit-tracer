@@ -1,6 +1,6 @@
 # Architecture
 
-This document explains how KAN-CLT works, from the encoder through the decoder to the full cross-layer transcoder.
+This document explains how Spline-CLT works, from the encoder through the decoder to the full cross-layer transcoder.
 
 ## Overview
 
@@ -16,7 +16,7 @@ a = JumpReLU(W_enc · x + b_enc)        # linear encoder
 y_hat = W_dec · a + b_dec               # linear decoder
 ```
 
-**KAN-CLT** (this project):
+**Spline-CLT** (this project):
 ```
 a = JumpReLU(KAN(x) + b_enc)           # KAN encoder (nonlinear)
 y_hat = W_dec · a + b_dec               # linear decoder (unchanged)
@@ -26,7 +26,7 @@ The decoder stays linear because features need clean directions in residual stre
 
 ## KAN Encoder
 
-**File**: `kan_clt/kan_encoder.py`
+**File**: `spline_clt/kan_encoder.py`
 
 The KAN encoder wraps the efficient-kan library's `KANLinear` layer, which implements Kolmogorov-Arnold Networks using B-spline basis functions.
 
@@ -74,7 +74,7 @@ This Jacobian row gives the local linear approximation at each input point. Two 
 
 ## Linear Encoder (Baseline)
 
-**File**: `kan_clt/linear_encoder.py`
+**File**: `spline_clt/linear_encoder.py`
 
 Drop-in replacement for `KANEncoder` that computes `F.linear(x, W_enc)`. Same interface:
 - `forward(x)` → feature pre-activations
@@ -83,7 +83,7 @@ Drop-in replacement for `KANEncoder` that computes `F.linear(x, W_enc)`. Same in
 
 ## Cross-Layer Transcoder
 
-**File**: `kan_clt/kan_transcoder.py`
+**File**: `spline_clt/kan_transcoder.py`
 
 ### Cross-Layer Structure
 
@@ -150,13 +150,13 @@ checkpoint_dir/
 └── jump_relu_thresholds.safetensors  # (n_layers, 1, d_transcoder) if JumpReLU
 ```
 
-`load_kan_clt(path)` auto-detects encoder type and activation function from saved metadata and reconstructs the model.
+`load_spline_clt(path)` auto-detects encoder type and activation function from saved metadata and reconstructs the model.
 
 ## Parameter Counts
 
 At GPT-2 small dimensions (d_model=768, d_transcoder=4096, 12 layers):
 
-| Component | KAN-CLT | Linear CLT |
+| Component | Spline-CLT | Linear CLT |
 |-----------|---------|------------|
 | Encoder (per layer) | ~25M params | ~3.1M params |
 | Encoder (all layers) | ~300M params | ~37M params |
@@ -166,4 +166,4 @@ At GPT-2 small dimensions (d_model=768, d_transcoder=4096, 12 layers):
 
 The parameter increase comes from the B-spline basis expansion: each of 768 input dimensions produces 8 basis features (6144 total), and the linear combination `(n_features, 6144)` is larger than `(n_features, 768)`.
 
-The `kan_clt/utils.py` module provides `count_parameters()`, `count_parameters_breakdown()`, and `compare_parameter_counts()` for inspecting these.
+The `spline_clt/utils.py` module provides `count_parameters()`, `count_parameters_breakdown()`, and `compare_parameter_counts()` for inspecting these.

@@ -1,6 +1,6 @@
 # Metrics Reference
 
-A complete reference of every metric used in the KAN-CLT project — what it measures, how it's computed, and what values to aim for.
+A complete reference of every metric used in the Spline-CLT project — what it measures, how it's computed, and what values to aim for.
 
 ---
 
@@ -19,7 +19,7 @@ A complete reference of every metric used in the KAN-CLT project — what it mea
 
 ## 1. Training Loss Metrics
 
-These metrics are computed at every training step and logged periodically. Defined in `kan_clt/training/loss.py` and logged in `kan_clt/training/train.py`.
+These metrics are computed at every training step and logged periodically. Defined in `spline_clt/training/loss.py` and logged in `spline_clt/training/train.py`.
 
 ### 1.1 Total Loss (`loss/total`)
 
@@ -29,7 +29,7 @@ These metrics are computed at every training step and logged periodically. Defin
 | **Formula** | `L_total = L_reconstruction + L_sparsity + L_kan_regularization` |
 | **Range** | [0, ∞) |
 | **Ideal value** | As low as possible; typical converged values are 0.001–0.01 |
-| **Computed in** | `total_loss()` in `kan_clt/training/loss.py` |
+| **Computed in** | `total_loss()` in `spline_clt/training/loss.py` |
 
 The total loss is the sum of three components described below. It balances reconstruction fidelity against sparsity and regularization.
 
@@ -44,7 +44,7 @@ The total loss is the sum of three components described below. It balances recon
 | **Inputs** | `y_hat`: predicted MLP output `(n_layers, n_pos, d_model)`, `y_true`: ground truth MLP output (same shape) |
 | **Range** | [0, ∞) |
 | **Ideal value** | As close to 0 as possible. Values < 0.005 indicate good reconstruction |
-| **Computed in** | `reconstruction_loss()` in `kan_clt/training/loss.py` |
+| **Computed in** | `reconstruction_loss()` in `spline_clt/training/loss.py` |
 
 This is the mean squared error averaged over all layers, all token positions, and all residual stream dimensions. Both tensors are cast to float32 before computation for numerical stability.
 
@@ -65,7 +65,7 @@ This is the mean squared error averaged over all layers, all token positions, an
 | **Inputs** | `activations`: post-JumpReLU features `(n_layers, n_pos, d_transcoder)`, `decoder_norms`: L2 norm of decoder vectors per feature |
 | **Range** | [0, ∞) |
 | **Ideal value** | Depends on desired sparsity level; typically 0.01–0.1 at convergence |
-| **Computed in** | `sparsity_loss()` in `kan_clt/training/loss.py` |
+| **Computed in** | `sparsity_loss()` in `spline_clt/training/loss.py` |
 
 **How it works:**
 - `a_i` is the activation of feature i (post-JumpReLU, always ≥ 0)
@@ -91,7 +91,7 @@ This is the mean squared error averaged over all layers, all token positions, an
 | **Range** | [0, ∞) |
 | **Ideal value** | Small but nonzero; typically 0.001–0.01. Zero means splines collapsed to linear |
 | **Applies to** | KAN encoders only. Skipped (returns 0.0) for linear encoders |
-| **Computed in** | `total_loss()` in `kan_clt/training/loss.py` |
+| **Computed in** | `total_loss()` in `spline_clt/training/loss.py` |
 
 **Why this specific formulation:**
 - The efficient-kan library provides `KANLinear.regularization_loss()`, but it computes an entropy term `p × log(p)` which produces NaN when spline weights are exactly zero (because `0 × log(0) = 0 × -∞ = NaN` in IEEE 754 floating point)
@@ -115,7 +115,7 @@ This is the mean squared error averaged over all layers, all token positions, an
 | **Inputs** | `activations`: post-JumpReLU features `(n_layers, n_pos, d_transcoder)` |
 | **Range** | [0, d_transcoder] (i.e., [0, 4096] with default config) |
 | **Ideal value** | 50–200 (1–5% of features). Depends on task |
-| **Computed in** | `total_loss()` in `kan_clt/training/loss.py` |
+| **Computed in** | `total_loss()` in `spline_clt/training/loss.py` |
 
 **Interpretation:**
 - This is the primary sparsity indicator during training
@@ -134,7 +134,7 @@ This is the mean squared error averaged over all layers, all token positions, an
 | **Formula** | Warmup: `lr_base × step / warmup_steps`. Cosine: `lr_base × 0.5 × (1 + cos(π × progress))` |
 | **Range** | [0, learning_rate] (default [0, 1e-4]) |
 | **Schedule** | Steps 0–1000: linear warmup. Steps 1000–50000: cosine decay to 0 |
-| **Computed in** | `get_lr()` in `kan_clt/training/train.py` |
+| **Computed in** | `get_lr()` in `spline_clt/training/train.py` |
 
 ---
 
@@ -146,7 +146,7 @@ This is the mean squared error averaged over all layers, all token positions, an
 | **Formula** | `mean((y_hat - y_true)²)` averaged over all validation batches |
 | **Range** | [0, ∞) |
 | **Ideal value** | Close to training reconstruction loss. Large gap → overfitting |
-| **Computed in** | `evaluate()` in `kan_clt/training/train.py` |
+| **Computed in** | `evaluate()` in `spline_clt/training/train.py` |
 
 Only reconstruction loss is measured during validation — sparsity and KAN regularization are training-only signals. The best checkpoint is saved when validation loss reaches a new minimum.
 
@@ -329,11 +329,11 @@ activation_density ≈ average_active_per_pos / d_transcoder
 | **What it measures** | Total number of trainable parameters in the model |
 | **Formula** | `Σ p.numel() for p in model.parameters() if p.requires_grad` |
 | **Range** | Positive integer |
-| **KAN-CLT typical value** | ~300M encoder + shared decoder |
+| **Spline-CLT typical value** | ~300M encoder + shared decoder |
 | **Linear CLT typical value** | ~37M encoder + shared decoder |
 | **Computed in** | `evaluate_model()` in `experiments/compare_models.py` |
 
-Used for fair comparison — KAN-CLT has ~8x more encoder parameters than linear CLT at the same d_transcoder, due to B-spline basis expansion.
+Used for fair comparison — Spline-CLT has ~8x more encoder parameters than linear CLT at the same d_transcoder, due to B-spline basis expansion.
 
 ---
 
@@ -539,7 +539,7 @@ The graph is compatible with `circuit_tracer.graph.Graph` for use with the upstr
 
 ## 7. Spline Analysis Metrics
 
-These metrics describe the learned B-spline transfer functions in KAN encoders. Computed in `experiments/analyze_splines.py`. Only applicable to KAN-CLT models.
+These metrics describe the learned B-spline transfer functions in KAN encoders. Computed in `experiments/analyze_splines.py`. Only applicable to Spline-CLT models.
 
 ### 7.1 Top Input Dimensions
 

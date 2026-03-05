@@ -1,6 +1,6 @@
 # API Reference
 
-## kan_clt.kan_encoder
+## spline_clt.kan_encoder
 
 ### `KANEncoder(nn.Module)`
 
@@ -32,7 +32,7 @@ KANEncoder(
 
 ---
 
-## kan_clt.linear_encoder
+## spline_clt.linear_encoder
 
 ### `LinearEncoder(nn.Module)`
 
@@ -56,7 +56,7 @@ LinearEncoder(
 
 ---
 
-## kan_clt.kan_transcoder
+## spline_clt.kan_transcoder
 
 ### `KANCrossLayerTranscoder(nn.Module)`
 
@@ -105,11 +105,11 @@ KANCrossLayerTranscoder(
 | Method | Description |
 |--------|-------------|
 | `to_safetensors(save_path)` | Save model to safetensors directory |
-| `load_kan_clt(save_path, ...)` | Module-level function: load from safetensors |
+| `load_spline_clt(save_path, ...)` | Module-level function: load from safetensors |
 
 ---
 
-## kan_clt.training.data
+## spline_clt.training.data
 
 ### `ActivationDataset(Dataset)`
 
@@ -147,7 +147,7 @@ DataConfig(
 
 ---
 
-## kan_clt.training.loss
+## spline_clt.training.loss
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -158,7 +158,7 @@ DataConfig(
 
 ---
 
-## kan_clt.training.train
+## spline_clt.training.train
 
 ### `TrainConfig`
 
@@ -175,7 +175,7 @@ TrainConfig(
     update_grid_every: int = 10_000, update_grid_from: int = 2000,
     # Checkpointing
     log_every: int = 100, eval_every: int = 5000, save_every: int = 5000,
-    checkpoint_dir: str = "checkpoints", run_name: str = "kan_clt",
+    checkpoint_dir: str = "checkpoints", run_name: str = "spline_clt",
     # Data
     data_dir: str = "data/activations", device: str = "cuda",
     dtype: str = "float32", val_fraction: float = 0.05,
@@ -221,7 +221,7 @@ TrainConfig(
 | Function | Returns |
 |----------|---------|
 | `evaluate_reconstruction(model, mlp_inputs, mlp_outputs)` | `{mse_total, mse_per_layer, cosine_similarity, relative_error}` |
-| `evaluate_replacement_accuracy(original_model, kan_clt, prompts)` | `{top1_match_rate, kl_divergence}` |
+| `evaluate_replacement_accuracy(original_model, spline_clt, prompts)` | `{top1_match_rate, kl_divergence}` |
 | `evaluate_sparsity(model, mlp_inputs)` | `{average_active_per_pos, activation_density}` |
 
 ---
@@ -251,10 +251,10 @@ FeatureReport(
 
 ---
 
-## kan_clt.utils
+## spline_clt.utils
 
 | Function | Description |
 |----------|-------------|
 | `count_parameters(model)` | Total trainable parameters |
 | `count_parameters_breakdown(model)` | Parameters grouped by component name |
-| `compare_parameter_counts(kan_clt, d_model, d_transcoder, n_layers)` | KAN vs linear parameter comparison |
+| `compare_parameter_counts(spline_clt, d_model, d_transcoder, n_layers)` | KAN vs linear parameter comparison |

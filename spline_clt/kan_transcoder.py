@@ -1,4 +1,4 @@
-"""KAN Cross-Layer Transcoder — replaces linear encoder in CLT with KAN encoder.
+"""Spline Cross-Layer Transcoder — replaces linear encoder in CLT with KAN encoder.
 
 Architecture:
     a^l = JumpReLU(KAN_enc^l(x^l))          # KAN encoder (nonlinear)
@@ -19,8 +19,8 @@ import torch.nn as nn
 from safetensors.torch import save_file, load_file
 
 from circuit_tracer.transcoder.activation_functions import JumpReLU
-from kan_clt.kan_encoder import KANEncoder
-from kan_clt.linear_encoder import LinearEncoder
+from spline_clt.kan_encoder import KANEncoder
+from spline_clt.linear_encoder import LinearEncoder
 
 
 class KANCrossLayerTranscoder(nn.Module):
@@ -529,7 +529,7 @@ class KANCrossLayerTranscoder(nn.Module):
         }
 
     def to_safetensors(self, save_path: str) -> None:
-        """Save KAN-CLT to safetensors format.
+        """Save Spline-CLT to safetensors format.
 
         Saves encoder state dicts, decoder weights, biases, and thresholds.
 
@@ -564,7 +564,7 @@ class KANCrossLayerTranscoder(nn.Module):
             dec_dict = {f"W_dec_{i}": self.W_dec[i].cpu()}
             save_file(dec_dict, os.path.join(save_path, f"W_dec_{i}.safetensors"))
 
-        # Save metadata (include encoder_type so load_kan_clt can reconstruct correctly)
+        # Save metadata (include encoder_type so load_spline_clt can reconstruct correctly)
         metadata = {
             "n_layers": torch.tensor(self.n_layers),
             "d_transcoder": torch.tensor(self.d_transcoder),
@@ -577,7 +577,7 @@ class KANCrossLayerTranscoder(nn.Module):
         save_file(metadata, os.path.join(save_path, "metadata.safetensors"))
 
 
-def load_kan_clt(
+def load_spline_clt(
     clt_path: str,
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
@@ -585,7 +585,7 @@ def load_kan_clt(
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
 ) -> KANCrossLayerTranscoder:
-    """Load a KAN-CLT from safetensors files.
+    """Load a Spline-CLT from safetensors files.
 
     Args:
         clt_path: Path to directory containing saved safetensors files.

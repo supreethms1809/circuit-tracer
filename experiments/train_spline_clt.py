@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Main training script for KAN-CLT.
+"""Main training script for Spline-CLT.
 
 Usage:
     # Train with default config
-    python experiments/train_kan_clt.py
+    python experiments/train_spline_clt.py
 
     # Train with custom config
-    python experiments/train_kan_clt.py --config experiments/configs/gpt2_small.yaml
+    python experiments/train_spline_clt.py --config experiments/configs/gpt2_small.yaml
 
     # Collect activations first
-    python experiments/train_kan_clt.py --collect-data --model gpt2
+    python experiments/train_spline_clt.py --collect-data --model gpt2
 
     # Train with specific hyperparameters
-    python experiments/train_kan_clt.py --config experiments/configs/gpt2_small.yaml \\
+    python experiments/train_spline_clt.py --config experiments/configs/gpt2_small.yaml \\
         --lambda-sparsity 0.1 --grid-size 3
 """
 
@@ -25,12 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 
-from kan_clt.training.train import TrainConfig, train, load_config
-from kan_clt.training.data import DataConfig, collect_activations, ActivationDataset
+from spline_clt.training.train import TrainConfig, train, load_config
+from spline_clt.training.data import DataConfig, collect_activations, ActivationDataset
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train KAN-CLT")
+    parser = argparse.ArgumentParser(description="Train Spline-CLT")
     parser.add_argument(
         "--config", type=str, default=None,
         help="Path to YAML config file",
@@ -90,7 +90,7 @@ def main():
         dataset = None
 
     # Train
-    print(f"Training KAN-CLT: {config.d_transcoder} features, "
+    print(f"Training Spline-CLT: {config.d_transcoder} features, "
           f"grid_size={config.grid_size}, λ={config.lambda_sparsity}")
     print(f"Device: {config.device}, Steps: {config.total_steps}")
 

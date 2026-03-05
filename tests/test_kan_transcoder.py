@@ -1,4 +1,4 @@
-"""Tests for KAN Cross-Layer Transcoder."""
+"""Tests for Spline Cross-Layer Transcoder."""
 
 import sys
 import os
@@ -9,12 +9,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import torch
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder, load_kan_clt
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder, load_spline_clt
 
 
 @pytest.fixture
 def small_model():
-    """Create a small KAN-CLT for testing."""
+    """Create a small Spline-CLT for testing."""
     return KANCrossLayerTranscoder(
         n_layers=3,
         d_transcoder=32,
@@ -28,7 +28,7 @@ def small_model():
 
 @pytest.fixture
 def jumprelu_model():
-    """Create a KAN-CLT with JumpReLU activation."""
+    """Create a Spline-CLT with JumpReLU activation."""
     return KANCrossLayerTranscoder(
         n_layers=3,
         d_transcoder=32,
@@ -171,7 +171,7 @@ class TestSaveLoad:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             jumprelu_model.to_safetensors(tmpdir)
-            loaded = load_kan_clt(tmpdir, device=torch.device("cpu"))
+            loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
 
             loaded_out = loaded.forward(x)
             assert torch.allclose(original_out, loaded_out, atol=1e-5), (
@@ -186,7 +186,7 @@ class TestSaveLoad:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             jumprelu_model.to_safetensors(tmpdir)
-            loaded = load_kan_clt(tmpdir, device=torch.device("cpu"))
+            loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
 
             assert isinstance(loaded.activation_function, JumpReLU)
             assert torch.allclose(
@@ -210,7 +210,7 @@ class TestSaveLoad:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             model.to_safetensors(tmpdir)
-            loaded = load_kan_clt(tmpdir, device=torch.device("cpu"))
+            loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
 
             assert loaded.encoder_type == "linear"
             loaded_out = loaded.forward(x)
@@ -256,7 +256,7 @@ class TestGradientFlow:
 class TestLossComputation:
     def test_total_loss_runs(self, small_model):
         """Test that total loss computation runs without error."""
-        from kan_clt.training.loss import total_loss
+        from spline_clt.training.loss import total_loss
 
         x = torch.randn(3, 8, 16)
         y = torch.randn(3, 8, 16)
@@ -269,7 +269,7 @@ class TestLossComputation:
 
     def test_loss_decreases_with_training(self, small_model):
         """Test that loss decreases after a few optimization steps."""
-        from kan_clt.training.loss import total_loss
+        from spline_clt.training.loss import total_loss
 
         x = torch.randn(3, 8, 16)
         y = torch.randn(3, 8, 16)

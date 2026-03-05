@@ -49,6 +49,11 @@ def _dedupe_preserve_order(items: list[str]) -> list[str]:
 
 def _build_groups(macag_result: dict[str, Any], label_prefix: str) -> tuple[list[str], list[list[str]]]:
     evidence = macag_result.get("evidence", {})
+    if isinstance(evidence, list):
+        evidence = {
+            "E_star": evidence,
+            "E_y": evidence,
+        }
     game = macag_result.get("game")
 
     if game == "game2":

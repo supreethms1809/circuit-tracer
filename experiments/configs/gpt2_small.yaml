@@ -1,4 +1,4 @@
-# KAN-CLT training config for GPT-2 small
+# Spline-CLT training config for GPT-2 small
 # 12 layers, 768-dim residual stream
 #
 # v2 calibration (2026-03-04):
@@ -34,7 +34,7 @@ log_every: 200
 eval_every: 10000
 save_every: 10000
 checkpoint_dir: checkpoints/gpt2_small
-run_name: kan_clt_gpt2
+run_name: spline_clt_gpt2
 
 # Grid update
 update_grid_every: 100000

@@ -1,4 +1,4 @@
-"""Causal (ablation-based) attribution for KAN-CLT.
+"""Causal (ablation-based) attribution for Spline-CLT.
 
 Since the KAN encoder is nonlinear, we cannot rely solely on backward Jacobians
 for attribution. This module implements ablation-based causal attribution:
@@ -16,7 +16,7 @@ This gives exact causal effects without linear approximation.
 import torch
 from tqdm import tqdm
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 
 
 def ablation_attribution(
@@ -29,7 +29,7 @@ def ablation_attribution(
     """Compute causal attribution via single-feature ablation.
 
     Args:
-        model: Trained KAN-CLT model.
+        model: Trained Spline-CLT model.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
         y_true: Optional true MLP outputs for error computation.
         max_features: Maximum number of features to attribute (by activation magnitude).
@@ -124,7 +124,7 @@ def _batch_encoder_directions(
     """Compute encoder directions (Jacobian rows) for a batch of active features.
 
     Args:
-        model: KAN-CLT model.
+        model: Spline-CLT model.
         x_in: Input activations, shape (n_layers, n_pos, d_model).
         layer_idx: Layer indices for each feature.
         pos_idx: Position indices for each feature.
@@ -162,7 +162,7 @@ def build_attribution_graph(
     Node ordering: [active_features, error_nodes, token_nodes, logit_nodes]
 
     Args:
-        model: Trained KAN-CLT model.
+        model: Trained Spline-CLT model.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
         logit_effects: Optional pre-computed logit attribution, shape (n_logits, n_nodes).
         max_features: Max features to include.

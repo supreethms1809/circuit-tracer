@@ -1,9 +1,9 @@
-# Linear CLT baseline config for GPT-2 small — matched feature count to KAN-CLT
+# Linear CLT baseline config for GPT-2 small — matched feature count to Spline-CLT
 # Same architecture as gpt2_small.yaml but with linear encoder (W_enc @ x)
-# for direct comparison against KAN-CLT.
+# for direct comparison against Spline-CLT.
 #
-# Parameter counts — matched to KAN-CLT total:
-#   KAN-CLT (d_transcoder=4096):  622.96M total params
+# Parameter counts — matched to Spline-CLT total:
+#   Spline-CLT (d_transcoder=4096):  622.96M total params
 #     encoder: base_weight(4096×768) + spline_weight(4096×768×8) + spline_scaler(4096×768) = 31.5M/layer × 12 = 377.5M
 #     decoder: 4096 × 768 × 78 = 245.4M  (78 = Σk=1..12 k)
 #   Linear CLT (d_transcoder=9216): 637.3M total params  (+2.3% vs KAN; rounds to nearest clean multiple)
@@ -29,7 +29,7 @@ encoder_type: linear
 grid_size: 5         # unused for linear encoder
 spline_order: 3      # unused for linear encoder
 
-# Training (identical to KAN-CLT for fair comparison)
+# Training (identical to Spline-CLT for fair comparison)
 learning_rate: 1.0e-4
 warmup_steps: 5000
 total_steps: 400000

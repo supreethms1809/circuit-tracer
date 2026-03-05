@@ -1,0 +1,27 @@
+{
+  "defaults": [
+    "../base/common.json",
+    "../macag/default.json",
+    "../models/gpt2_spline_default.json",
+    "../models/gpt2_linear_param_match.json",
+    "../models/gpt2_linear_feature_match.json",
+    "../models/gpt2_spline_grid7.json",
+    "../benchmarks/neurips_high.json"
+  ],
+  "suite_name": "neurips_high_gpt2",
+  "description": "High-budget GPT-2 suite with five seeds, the full 120-prompt benchmark, and spline grid ablations.",
+  "seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "reporting": {
+    "primary_variant": "spline_default_gpt2",
+    "baseline_variant": "linear_param_match_gpt2",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "factual_eiffel_tower"
+  }
+}

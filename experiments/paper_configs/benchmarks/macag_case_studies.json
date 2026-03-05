@@ -1,0 +1,19 @@
+{
+  "benchmark_manifest_version": "neurips-macag-cases-v1",
+  "benchmark_entries": [
+    {"prompt_id": "ioi_john_mary", "family": "ioi", "prompt": "John gave Mary the book. She handed it to", "target_token": " Mary", "foil_token": " John", "split": "case_study", "include_macag": true},
+    {"prompt_id": "ioi_alice_bob", "family": "ioi", "prompt": "Alice thanked Bob for the gift. He passed it to", "target_token": " Bob", "foil_token": " Alice", "split": "case_study", "include_macag": true},
+    {"prompt_id": "ioi_daniel_olivia", "family": "ioi", "prompt": "Daniel told Olivia the secret. She whispered it to", "target_token": " Olivia", "foil_token": " Daniel", "split": "case_study", "include_macag": true},
+    {"prompt_id": "ioi_logan_chloe", "family": "ioi", "prompt": "Logan bought Chloe a notebook. She showed it to", "target_token": " Chloe", "foil_token": " Logan", "split": "case_study", "include_macag": true},
+
+    {"prompt_id": "factual_capital_france", "family": "factual", "prompt": "The capital of France is", "target_token": " Paris", "foil_token": " Lyon", "split": "case_study", "include_macag": true},
+    {"prompt_id": "factual_capital_japan", "family": "factual", "prompt": "The capital of Japan is", "target_token": " Tokyo", "foil_token": " Osaka", "split": "case_study", "include_macag": true},
+    {"prompt_id": "factual_eiffel_tower", "family": "factual", "prompt": "The Eiffel Tower is located in", "target_token": " Paris", "foil_token": " London", "split": "case_study", "include_macag": true},
+    {"prompt_id": "factual_sagrada_familia", "family": "factual", "prompt": "The Sagrada Familia is in", "target_token": " Barcelona", "foil_token": " Madrid", "split": "case_study", "include_macag": true},
+
+    {"prompt_id": "arith_25_37", "family": "arithmetic", "prompt": "25 + 37 =", "target_token": " 62", "foil_token": " 63", "split": "case_study", "include_macag": true},
+    {"prompt_id": "arith_31_18", "family": "arithmetic", "prompt": "31 + 18 =", "target_token": " 49", "foil_token": " 50", "split": "case_study", "include_macag": true},
+    {"prompt_id": "arith_56_11", "family": "arithmetic", "prompt": "56 + 11 =", "target_token": " 67", "foil_token": " 68", "split": "case_study", "include_macag": true},
+    {"prompt_id": "arith_41_17", "family": "arithmetic", "prompt": "41 + 17 =", "target_token": " 58", "foil_token": " 59", "split": "case_study", "include_macag": true}
+  ]
+}

@@ -600,7 +600,7 @@ class TransformerLensReplacementModel(HookedTransformer):
             if isinstance(inputs, torch.Tensor):
                 n_pos = inputs.size(0)
             else:
-                n_pos = len(self.tokenizer(inputs).input_ids)  # type: ignore
+                n_pos = int(self.ensure_tokenized(inputs).numel())
 
         layer_deltas = torch.zeros(
             [self.cfg.n_layers, n_pos, self.cfg.d_model],

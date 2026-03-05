@@ -293,7 +293,11 @@ def compute_graph_scores(graph: Graph) -> tuple[float, float]:
     token_influence = node_influence[error_end:token_end].sum()
     error_influence = node_influence[error_start:error_end].sum()
 
-    replacement_score = token_influence / (token_influence + error_influence)
+    denominator = token_influence + error_influence
+    if float(torch.abs(denominator).item()) <= 1e-8:
+        replacement_score = torch.tensor(1.0, device=normalized_matrix.device)
+    else:
+        replacement_score = token_influence / denominator
 
     non_error_fractions = 1 - normalized_matrix[:, error_start:error_end].sum(dim=-1)
     output_influence = node_influence + logit_weights

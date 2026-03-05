@@ -8,13 +8,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import torch
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 from attribution.shapley import shapley_attribution, shapley_logit_attribution
 
 
 @pytest.fixture
 def small_kan_model():
-    """Tiny KAN-CLT for Shapley tests (fast, CPU)."""
+    """Tiny Spline-CLT for Shapley tests (fast, CPU)."""
     return KANCrossLayerTranscoder(
         n_layers=2,
         d_transcoder=16,

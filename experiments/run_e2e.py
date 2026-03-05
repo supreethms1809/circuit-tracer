@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Full end-to-end KAN-CLT pipeline: collect → train → evaluate → compare.
+"""Full end-to-end Spline-CLT pipeline: collect → train → evaluate → compare.
 
 Runs every step from scratch and prints a final side-by-side comparison
-between KAN-CLT and the matched linear CLT baseline.
+between Spline-CLT and the matched linear CLT baseline.
 
 Pipeline stages:
   1. collect   — run GPT-2 on text data, cache MLP activations to disk
-  2. train-kan — train KAN-CLT on cached activations
+  2. train-kan — train Spline-CLT on cached activations
   3. train-lin — train linear CLT baseline (same config, encoder_type=linear)
   4. evaluate  — reconstruct metrics, circuit tracing, spline analysis, monosemanticity
   5. compare   — print final KAN vs Linear comparison table
@@ -90,7 +90,7 @@ def _checkpoint_exists(ckpt_dir: str, run_name: str) -> bool:
 
 def run_collect(args) -> None:
     """Collect GPT-2 activations and cache to disk."""
-    from kan_clt.training.data import DataConfig, collect_activations
+    from spline_clt.training.data import DataConfig, collect_activations
 
     _section("Stage 1 / 5 — Collect Activations")
     t0 = time.time()
@@ -121,11 +121,11 @@ def run_collect(args) -> None:
 
 def _build_train_config(args, encoder_type: str):
     """Build a TrainConfig from CLI args, overriding key fields."""
-    from kan_clt.training.train import TrainConfig
+    from spline_clt.training.train import TrainConfig
 
     if encoder_type == "kan":
         ckpt_dir = args.kan_checkpoint_dir
-        run_name = "kan_clt_gpt2"
+        run_name = "spline_clt_gpt2"
     else:
         ckpt_dir = args.linear_checkpoint_dir
         run_name = "linear_clt_gpt2"
@@ -176,11 +176,11 @@ def _build_train_config(args, encoder_type: str):
 
 def run_train(args, encoder_type: str, dataset=None):
     """Train one model (KAN or linear). Returns the trained model."""
-    from kan_clt.training.train import train
+    from spline_clt.training.train import train
 
-    label = "KAN-CLT" if encoder_type == "kan" else "Linear CLT"
+    label = "Spline-CLT" if encoder_type == "kan" else "Linear CLT"
     ckpt_dir = args.kan_checkpoint_dir if encoder_type == "kan" else args.linear_checkpoint_dir
-    run_name = "kan_clt_gpt2" if encoder_type == "kan" else "linear_clt_gpt2"
+    run_name = "spline_clt_gpt2" if encoder_type == "kan" else "linear_clt_gpt2"
 
     _section(f"Stage {'2' if encoder_type == 'kan' else '3'} / 5 — Train {label}")
     t0 = time.time()
@@ -225,7 +225,7 @@ def run_evaluate(args) -> dict:
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16 if args.dtype == "bfloat16" else torch.float32
 
-    kan_ckpt = _best_checkpoint(args.kan_checkpoint_dir, "kan_clt_gpt2")
+    kan_ckpt = _best_checkpoint(args.kan_checkpoint_dir, "spline_clt_gpt2")
     lin_ckpt = _best_checkpoint(args.linear_checkpoint_dir, "linear_clt_gpt2")
 
     if not os.path.isdir(kan_ckpt):
@@ -261,7 +261,7 @@ def run_evaluate(args) -> dict:
     if not args.skip_checkpoint_scan:
         scan_samples = min(50, args.n_eval_samples)
         for ckpt_dir, run_name in [
-            (args.kan_checkpoint_dir,    "kan_clt_gpt2"),
+            (args.kan_checkpoint_dir,    "spline_clt_gpt2"),
             (args.linear_checkpoint_dir, "linear_clt_gpt2"),
         ]:
             if os.path.isdir(ckpt_dir):
@@ -330,8 +330,8 @@ def run_evaluate(args) -> dict:
 # --------------------------------------------------------------------------- #
 
 def print_final_comparison(metrics: dict) -> None:
-    """Print a clean final summary comparing KAN-CLT vs Linear CLT."""
-    _section("Stage 5 / 5 — Final Comparison: KAN-CLT vs Linear CLT")
+    """Print a clean final summary comparing Spline-CLT vs Linear CLT."""
+    _section("Stage 5 / 5 — Final Comparison: Spline-CLT vs Linear CLT")
 
     recon = metrics.get("reconstruction", {})
     mono  = metrics.get("monosemanticity", {})
@@ -392,13 +392,13 @@ def print_final_comparison(metrics: dict) -> None:
                   f"{m['high_gini_count']:>10} {m['n_features']:>10}")
 
     # ---- Verdict ----
-    if len(models) == 2 and "KAN-CLT" in recon and "Linear CLT" in recon:
-        kan_mse = recon["KAN-CLT"]["mse_total"]
+    if len(models) == 2 and "Spline-CLT" in recon and "Linear CLT" in recon:
+        kan_mse = recon["Spline-CLT"]["mse_total"]
         lin_mse = recon["Linear CLT"]["mse_total"]
         pct = (lin_mse - kan_mse) / lin_mse * 100
-        verdict = f"KAN-CLT {'better' if pct > 0 else 'worse'} by {abs(pct):.1f}% MSE"
+        verdict = f"Spline-CLT {'better' if pct > 0 else 'worse'} by {abs(pct):.1f}% MSE"
 
-        kan_cos = recon["KAN-CLT"]["cosine_similarity"]
+        kan_cos = recon["Spline-CLT"]["cosine_similarity"]
         lin_cos = recon["Linear CLT"]["cosine_similarity"]
         verdict_cos = f"cosine sim {'better' if kan_cos > lin_cos else 'worse'} by {abs(kan_cos-lin_cos):.4f}"
 
@@ -417,7 +417,7 @@ def print_final_comparison(metrics: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="KAN-CLT full end-to-end pipeline: collect → train → evaluate → compare",
+        description="Spline-CLT full end-to-end pipeline: collect → train → evaluate → compare",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -438,7 +438,7 @@ def main() -> None:
     parser.add_argument("--kan-checkpoint-dir",    default="checkpoints/gpt2_small")
     parser.add_argument("--linear-checkpoint-dir", default="checkpoints/gpt2_small_linear")
     parser.add_argument("--d-transcoder",        type=int,   default=4096,
-                        help="KAN-CLT feature count")
+                        help="Spline-CLT feature count")
     parser.add_argument("--linear-d-transcoder", type=int,   default=9216,
                         help="Linear CLT feature count. Default 9216 is parameter-matched to "
                              "KAN d_transcoder=4096 (637M vs 623M, +2.3%%). "
@@ -522,7 +522,7 @@ def main() -> None:
     os.makedirs(args.output_dir, exist_ok=True)
 
     print(f"\n{'='*64}")
-    print(f"  KAN-CLT End-to-End Pipeline")
+    print(f"  Spline-CLT End-to-End Pipeline")
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*64}")
     print(f"  device: {args.device}  |  dtype: {args.dtype}")
@@ -540,13 +540,13 @@ def main() -> None:
     else:
         print("\n[Stage 1/5] Data collection skipped (--skip-collect)")
 
-    # ---- Stage 2: Train KAN-CLT ----
+    # ---- Stage 2: Train Spline-CLT ----
     # Keep dataset in memory to share between both training runs
     dataset = None
     if not args.skip_train:
         # Load dataset once, reuse for both models
         if _data_exists(args.data_dir):
-            from kan_clt.training.data import ActivationDataset
+            from spline_clt.training.data import ActivationDataset
             print("\nLoading dataset into memory for training...")
             t_load = time.time()
             dataset = ActivationDataset.load(args.data_dir, max_samples=args.max_train_samples)
@@ -560,7 +560,7 @@ def main() -> None:
         dataset = None
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
     else:
-        print("\n[Stage 2/5] KAN-CLT training skipped (--skip-train)")
+        print("\n[Stage 2/5] Spline-CLT training skipped (--skip-train)")
         print("[Stage 3/5] Linear CLT training skipped (--skip-train)")
 
     # ---- Stage 4: Evaluate ----

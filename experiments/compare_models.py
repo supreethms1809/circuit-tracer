@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Compare KAN-CLT vs linear CLT baseline on reconstruction and sparsity metrics.
+"""Compare Spline-CLT vs linear CLT baseline on reconstruction and sparsity metrics.
 
 Loads two trained checkpoints and evaluates both on the same held-out data,
 printing a side-by-side comparison table.
 
 Usage:
     python experiments/compare_models.py \
-        --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+        --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
         --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
         --data-dir data/activations \
         --n-samples 200
@@ -22,8 +22,9 @@ import torch
 from torch.nn import functional as F
 from tqdm import tqdm
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder, load_kan_clt
-from kan_clt.training.data import ActivationDataset
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder, load_spline_clt
+from spline_clt.seed import seed_everything
+from spline_clt.training.data import ActivationDataset
 
 
 @torch.no_grad()
@@ -33,11 +34,12 @@ def evaluate_model(
     device: torch.device,
     dtype: torch.dtype,
     n_samples: int = 200,
+    seed: int | None = None,
 ) -> dict[str, float | list[float]]:
     """Evaluate reconstruction quality and sparsity on held-out samples.
 
     Args:
-        model: Trained KAN-CLT or linear CLT.
+        model: Trained Spline-CLT or linear CLT.
         dataset: Activation dataset (full, not split).
         device: Compute device.
         dtype: Data dtype.
@@ -48,6 +50,8 @@ def evaluate_model(
         active_per_pos, activation_density, n_params.
     """
     model.eval()
+    if seed is not None:
+        seed_everything(seed)
     n_samples = min(n_samples, len(dataset))
     indices = torch.randperm(len(dataset))[:n_samples]
 
@@ -111,7 +115,7 @@ def fmt(v: float, decimals: int = 4) -> str:
 def print_comparison(
     kan_metrics: dict,
     lin_metrics: dict,
-    kan_label: str = "KAN-CLT",
+    kan_label: str = "Spline-CLT",
     lin_label: str = "Linear CLT",
 ) -> None:
     """Print a formatted side-by-side comparison table."""
@@ -156,10 +160,10 @@ def print_comparison(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare KAN-CLT vs linear CLT baseline")
+    parser = argparse.ArgumentParser(description="Compare Spline-CLT vs linear CLT baseline")
     parser.add_argument(
         "--kan-checkpoint", type=str, default=None,
-        help="Path to KAN-CLT checkpoint directory",
+        help="Path to Spline-CLT checkpoint directory",
     )
     parser.add_argument(
         "--linear-checkpoint", type=str, default=None,
@@ -184,7 +188,7 @@ def main() -> None:
 
     models: dict[str, KANCrossLayerTranscoder] = {}
 
-    for label, ckpt_path in [("KAN-CLT", args.kan_checkpoint), ("Linear CLT", args.linear_checkpoint)]:
+    for label, ckpt_path in [("Spline-CLT", args.kan_checkpoint), ("Linear CLT", args.linear_checkpoint)]:
         if ckpt_path is None:
             print(f"\n[{label}] No checkpoint provided — skipping.")
             continue
@@ -192,7 +196,7 @@ def main() -> None:
             print(f"\n[{label}] Checkpoint not found: {ckpt_path} — skipping.")
             continue
         print(f"\nLoading {label} from {ckpt_path}...")
-        model = load_kan_clt(ckpt_path, device=device, dtype=dtype)
+        model = load_spline_clt(ckpt_path, device=device, dtype=dtype)
         model.eval()
         n_p = sum(p.numel() for p in model.parameters())
         print(f"  encoder_type={model.encoder_type}, {n_p:,} parameters")
@@ -210,8 +214,8 @@ def main() -> None:
         print(f"  MSE={m['mse_total']:.6f}  cos_sim={m['cosine_similarity']:.4f}  "
               f"active/pos={m['active_per_pos']:.2f}  params={m['n_params']:,}")
 
-    if "KAN-CLT" in metrics and "Linear CLT" in metrics:
-        print_comparison(metrics["KAN-CLT"], metrics["Linear CLT"])
+    if "Spline-CLT" in metrics and "Linear CLT" in metrics:
+        print_comparison(metrics["Spline-CLT"], metrics["Linear CLT"])
     else:
         for label, m in metrics.items():
             print(f"\n{label}:")

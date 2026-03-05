@@ -1,15 +1,16 @@
-# KAN Circuit Tracer
+# Spline Circuit Tracer
 
 ## Project Goal
-Build a KAN-based Cross-Layer Transcoder (KAN-CLT) that replaces the linear encoder in Anthropic's circuit tracing pipeline with a KAN encoder, enabling nonlinear feature detection while preserving circuit tracing capability. This is a PhD research project exploring whether nonlinear feature boundaries improve mechanistic interpretability.
+Build a Spline-CLT that replaces the linear encoder in Anthropic's circuit tracing pipeline with a spline/KAN encoder, enabling nonlinear feature detection while preserving circuit tracing capability. This is a PhD research project centered on whether nonlinear feature boundaries improve mechanistic interpretability and downstream circuit faithfulness.
 
 ## Core Research Hypothesis
 Anthropic's CLT assumes linear feature boundaries (linear encoder → JumpReLU). This misses features defined by nonlinear activation patterns. A KAN encoder can capture these, and game-theoretic attribution (Shapley values) handles the resulting nonlinear feature interactions without falling back to linearization.
 
 ## End-to-End Deliverables
-This repository now supports two linked outputs from the same linear or KAN-CLT checkpoint:
-1. **Circuit-tracer graph + MACAG**: build a graph, then run evidence-allocation games and dashboard/report generation.
-2. **Exact Shapley attribution**: compute nonlinear feature attributions directly from the checkpointed CLT on the same prompt.
+This repository now supports three linked outputs from the same linear or Spline-CLT checkpoint:
+1. **Config-driven paper evaluation**: a conference runner that expands dataset collection, training, evaluation, MACAG, aggregation, and report generation from one JSON suite.
+2. **Circuit-tracer graph + MACAG**: build a graph, then run evidence-allocation games and dashboard/report generation.
+3. **Exact Shapley attribution**: compute nonlinear feature attributions directly from the checkpointed CLT on the same prompt.
 
 ## Architecture
 
@@ -19,7 +20,7 @@ a^l = JumpReLU(W_enc^l · x^l)           # linear encoder
 y_hat^l = Σ W_dec^(l'→l) · a^(l')       # linear decoder, cross-layer
 ```
 
-### KAN-CLT (our approach)
+### Spline-CLT (our approach)
 ```
 a^l = JumpReLU(KAN_enc^l(x^l))          # KAN encoder (nonlinear)
 y_hat^l = Σ W_dec^(l'→l) · a^(l')       # linear decoder stays the same
@@ -45,10 +46,17 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 ├── CLAUDE.md                            # this file
 ├── TASKS.md                             # phased implementation checklist
 ├── GH200_SETUP.md                       # GH200 node setup guide
-├── kan_clt/
+├── spline_clt/
 │   ├── kan_encoder.py                   # KAN encoder wrapping efficient-kan
-│   ├── kan_transcoder.py                # Full KAN-CLT module (encoder_type="kan"|"linear")
+│   ├── kan_transcoder.py                # Full Spline-CLT module (encoder_type="kan"|"linear")
 │   ├── linear_encoder.py                # Linear encoder baseline (same interface as KANEncoder)
+│   ├── paper_eval.py                    # CLI entrypoint for paper-eval
+│   ├── seed.py                          # Shared deterministic seeding helpers
+│   ├── paper/
+│   │   ├── config.py                    # JSON + OmegaConf suite loading and validation
+│   │   ├── evaluate.py                  # Prompt/graph evaluation helpers
+│   │   ├── reporting.py                 # Suite aggregation + report/table generation
+│   │   └── runner.py                    # End-to-end paper suite runner
 │   ├── utils.py                         # Parameter counting, comparison utilities
 │   └── training/
 │       ├── train.py                     # Training loop with Adam + cosine decay
@@ -63,13 +71,21 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 │   └── monosemanticity.py               # Gini coefficient, max-activating examples
 ├── experiments/
 │   ├── configs/
-│   │   ├── gpt2_small.yaml              # KAN-CLT training config
+│   │   ├── gpt2_small.yaml              # Spline-CLT training config
 │   │   └── gpt2_small_linear_baseline.yaml  # Matched linear CLT baseline
-│   ├── train_kan_clt.py                 # Main training entry point
+│   ├── paper_configs/
+│   │   ├── base/                        # Shared paper defaults
+│   │   ├── models/                      # Spline + linear paper variants
+│   │   ├── benchmarks/                  # Curated benchmark manifests
+│   │   ├── macag/                       # MACAG defaults
+│   │   └── suites/                      # Runnable paper presets
+│   ├── train_spline_clt.py                 # Main training entry point
 │   ├── run_pipeline.py                  # ← Full evaluation pipeline (run this)
-│   ├── compare_models.py                # KAN-CLT vs linear CLT evaluation table
+│   ├── compare_models.py                # Spline-CLT vs linear CLT evaluation table
 │   ├── analyze_splines.py               # Spline shape extraction and visualization
 │   └── run_circuit.py                   # Single-prompt circuit tracing
+├── docs/
+│   └── paper-evaluation.md              # How to run paper-eval and read outputs
 ├── macag/
 │   ├── cli/                            # run_macag, annotate_graph, suggest_supernodes
 │   ├── factories/                      # ReplacementModel-backed MACAG scorer builders
@@ -80,11 +96,52 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 │   └── README.md                       # MACAG usage notes
 ├── circuit_tracer/                      # core circuit-tracer library
 └── tests/
-    ├── test_kan_encoder.py              # 14 tests
-    ├── test_kan_transcoder.py           # 20 tests (includes linear encoder save/load)
-    ├── test_attribution.py              # 6 tests
-    └── test_shapley.py                  # 13 tests
+    ├── test_kan_encoder.py
+    ├── test_kan_transcoder.py
+    ├── test_attribution.py
+    ├── test_graph.py
+    ├── test_shapley.py
+    ├── test_paper_config.py             # Paper config validation
+    ├── test_paper_reporting.py          # Suite aggregation/reporting
+    ├── test_paper_runner.py             # Paper runner dry-run + smoke
+    ├── test_replacement_model_alignment.py  # BOS / intervention alignment regressions
+    └── test_macag_annotate_graph.py     # MACAG annotation schema compatibility
 ```
+
+## Conference Runner
+
+The canonical NeurIPS interface is now `paper-eval`. It is intentionally narrow:
+- `--suite`
+- `--dry-run`
+- `--validate-only`
+
+All conference runs are defined by JSON config under `experiments/paper_configs/` and merged with OmegaConf defaults. Do not manually override seeds, hyperparameters, or stages from the CLI during the final campaign.
+
+### Runnable Paper Suites
+- `experiments/paper_configs/suites/neurips_core_gpt2.json`
+- `experiments/paper_configs/suites/neurips_high_gpt2.json`
+- `experiments/paper_configs/suites/neurips_high_gpt2_pythia160m.json`
+- `experiments/paper_configs/suites/macag_case_studies.json`
+- `experiments/paper_configs/suites/smoke_trial_gpt2.json`
+
+### Paper Runner Outputs
+Each suite writes:
+- `resolved_config.json`
+- `manifest.json`
+- `per_example_metrics.jsonl`
+- `aggregate_metrics.json`
+- `tables.csv`
+- `report.md`
+- `figures/`
+
+### Current Evaluation Coverage
+The paper runner now reports:
+- reconstruction: `mse_total`, `cosine_similarity`, `relative_error`, `active_per_pos`, `activation_density`
+- replacement fidelity: `top1_match_rate`, `kl_divergence`
+- circuit faithfulness: `keep_only_gap_ratio`, `gap_drop_ratio`, `shapley_causal_jaccard`
+- graph quality / error reliance: `graph_replacement_score`, `graph_completeness_score`, `retained_feature_node_count`, `retained_error_node_count`, `retained_error_node_fraction`
+- monosemanticity: mean/median Gini and threshold fractions
+- MACAG Game 1 / Game 2 aggregate metrics and stability
 
 MACAG is a first-party top-level package in this repository. Use `macag/...`
 from the repo root. The current CLI entrypoint is `python -m macag.cli.run_macag`,
@@ -93,7 +150,7 @@ and real circuit interventions should be wired through
 
 `macag.factories.replacement_model` can build a scorer from either:
 - a hub `transcoder_set`, or
-- a local checkpoint path, including both standard CLT and KAN-CLT checkpoints.
+- a local checkpoint path, including both standard CLT and Spline-CLT checkpoints.
 
 ## MACAG Integration
 
@@ -126,14 +183,21 @@ graph back for the existing `circuit_tracer` frontend.
   integration entrypoint.
 - It supports hub-backed loading via `transcoder_set`.
 - It also supports local checkpoints via `local_clt_path`.
-- `local_clt_path` auto-detects KAN-CLT vs standard CLT:
+- `local_clt_path` auto-detects Spline-CLT vs standard CLT:
   - if the checkpoint directory contains `metadata.safetensors`, it loads through
-    `kan_clt.kan_transcoder.load_kan_clt`
+    `spline_clt.kan_transcoder.load_spline_clt`
   - otherwise it loads through
     `circuit_tracer.transcoder.cross_layer_transcoder.load_clt`
 - Candidate interventions are restricted to feature nodes present in the graph JSON
   (default `feature_type == "cross layer transcoder"`), so MACAG and the scorer stay
   aligned to the traced circuit.
+
+### Recent Integration Fixes
+- `kan_clt` was fully renamed to `spline_clt` in tracked code and entrypoints.
+- Graph export now uses the correct `selected_features` index convention expected by `circuit_tracer.Graph`.
+- ReplacementModel intervention buffers now use the same BOS-prepended tokenization path as graph/prompt evaluation, fixing prompt-length mismatches in MACAG.
+- MACAG annotation now tolerates both legacy Game 1 evidence lists and dict-form evidence payloads.
+- Paper aggregation now exposes explicit retained error-node metrics instead of hiding them behind circuit graphs only.
 
 ### Operational Notes
 - `macag/cache` and `macag/output` are runtime artifacts, not source code.
@@ -158,11 +222,15 @@ graph back for the existing `circuit_tracer` frontend.
    - L_kan_reg = 0.01 × spline_weight.abs().mean()  (KAN only — DO NOT use KANLinear.regularization_loss(), it produces NaN when spline_weight=0 via 0*log(0))
    - Total = L_MSE + L_sparsity + L_kan_reg
 
-6. **Parameter ratio**: KAN-CLT has ~10x more encoder parameters than linear CLT at matched d_transcoder (due to B-spline basis expansion). Decoder is identical.
+6. **Parameter ratio**: Spline-CLT has ~10x more encoder parameters than linear CLT at matched d_transcoder (due to B-spline basis expansion). Decoder is identical.
 
 7. **Data loading**: Dataset is ~40GB total. Use `ActivationDataset.load(path, max_samples=3000)` which mmap-slices then clones into RAM (~14GB). Avoid loading the full dataset — causes OOM or SIGBUS on WSL2.
 
-8. **encoder_type**: `KANCrossLayerTranscoder(encoder_type="kan"|"linear")`. Both use the same interface. `to_safetensors`/`load_kan_clt` handle both correctly.
+8. **encoder_type**: `KANCrossLayerTranscoder(encoder_type="kan"|"linear")`. Both use the same interface. `to_safetensors`/`load_spline_clt` handle both correctly.
+
+9. **Determinism**: seed all train/val splits, dataset shuffling, evaluation subsets, spline sampling, monosemanticity sampling, Shapley sampling, and bootstrap reporting. The paper runner is intended to be exactly reproducible from the suite JSON.
+
+10. **Graph metrics**: retained error nodes are expected and are now reported explicitly. A zero `gap_drop_ratio` does not mean error nodes are absent; it means removing the selected top-k feature nodes did not move the target-foil gap on that prompt.
 
 ## Code Style
 - PyTorch throughout
@@ -174,23 +242,52 @@ graph back for the existing `circuit_tracer` frontend.
 ## Common Commands
 
 ```bash
+# --- Paper runner ---
+# Validate a conference suite
+conda run -n ct python -m spline_clt.paper_eval \
+    --suite experiments/paper_configs/suites/neurips_core_gpt2.json \
+    --validate-only
+
+# Expand the job matrix without running
+conda run -n ct python -m spline_clt.paper_eval \
+    --suite experiments/paper_configs/suites/neurips_core_gpt2.json \
+    --dry-run
+
+# End-to-end smoke validation of the full paper pipeline
+conda run -n ct python -m spline_clt.paper_eval \
+    --suite experiments/paper_configs/suites/smoke_trial_gpt2.json
+
+# Core NeurIPS GPT-2 suite
+conda run -n ct python -m spline_clt.paper_eval \
+    --suite experiments/paper_configs/suites/neurips_core_gpt2.json
+
 # --- Testing ---
-# Run all KAN-CLT tests (53 tests)
+# Focused regression suite for paper runner + integrations
+conda run -n ct pytest \
+    tests/test_graph.py \
+    tests/test_attribution.py \
+    tests/test_paper_config.py \
+    tests/test_paper_reporting.py \
+    tests/test_paper_runner.py \
+    tests/test_replacement_model_alignment.py \
+    tests/test_macag_annotate_graph.py -q
+
+# Run core Spline-CLT tests
 conda run -n ct pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py \
     tests/test_attribution.py tests/test_shapley.py -v
 
 # --- Full evaluation pipeline (run this once training is complete) ---
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint    checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint    checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --output-dir results/eval_run1 \
     --shapley \
     --no-plot           # omit for matplotlib PNG plots
 
-# KAN-CLT only, skip slow stages:
+# Spline-CLT only, skip slow stages:
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --data-dir data/activations \
     --skip-circuits --skip-monosemanticity
 
@@ -199,22 +296,22 @@ conda run -n ct pytest tests/ -v
 
 # --- Data collection ---
 # Collect GPT-2 small activations (~40GB, takes ~30 min on GPU)
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --collect-data --model gpt2 --device cuda
 
 # --- Training ---
-# Train KAN-CLT
-conda run -n ct python experiments/train_kan_clt.py \
+# Train Spline-CLT
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small.yaml
 
 # Train linear CLT baseline
-conda run -n ct python experiments/train_kan_clt.py \
+conda run -n ct python experiments/train_spline_clt.py \
     --config experiments/configs/gpt2_small_linear_baseline.yaml
 
 # --- Evaluation ---
-# Compare KAN-CLT vs linear CLT (needs both checkpoints)
+# Compare Spline-CLT vs linear CLT (needs both checkpoints)
 conda run -n ct python experiments/compare_models.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --n-samples 200
@@ -222,7 +319,7 @@ conda run -n ct python experiments/compare_models.py \
 # --- Circuit tracing ---
 # End-to-end circuit trace for a prompt
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --model gpt2 \
     --max-features 64 \
@@ -230,20 +327,22 @@ conda run -n ct python experiments/run_circuit.py \
 
 # Same with Shapley attribution (slower)
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --shapley --shapley-samples 128
 
 # --- Spline analysis (KAN encoder only) ---
 conda run -n ct python experiments/analyze_splines.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --n-features 20 \
     --output-dir results/splines
 ```
 
 ## Current Status
-- **53/53 tests passing**
-- Phases 1-4 complete: KAN encoder, KAN transcoder, training pipeline, linear baseline, causal attribution, Shapley attribution
-- Phase 4.3 verified: `attribution/graph.py` API matches `circuit_tracer.graph.Graph` exactly
-- Training running on GH200 (separate machine) — checkpoints not yet available locally
-- Next: Phase 5 evaluation once checkpoints are ready (compare_models.py, analyze_splines.py, run_circuit.py are all ready to run)
+- `spline_clt` package rename is complete in tracked code.
+- Config-driven paper runner is implemented and documented.
+- NeurIPS suite configs exist for core/high GPT-2 runs, high-budget Pythia runs, MACAG case studies, and a CPU smoke trial.
+- The smoke trial now runs end to end: dataset collection, training, prompt evaluation, graph export, MACAG, aggregation, and report generation.
+- Recent regressions fixed: graph selected-feature indexing, BOS alignment for ReplacementModel interventions, MACAG annotation schema compatibility, and explicit error-node reporting.
+- Focused paper/integration regression suite is currently passing locally.
+- The next scientific step is to run `neurips_core_gpt2.json` on GH200-class hardware and use the resulting aggregate tables to decide whether the spline claim clears the conference bar.

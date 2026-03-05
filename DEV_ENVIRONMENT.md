@@ -138,7 +138,7 @@ pip install datasets pyyaml
 # Verify GPU
 python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, Device: {torch.cuda.get_device_name(0)}')"
 
-# Verify KAN-CLT
+# Verify Spline-CLT
 pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py tests/test_attribution.py -v
 ```
 

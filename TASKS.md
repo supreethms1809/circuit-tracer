@@ -1,4 +1,4 @@
-# KAN-CLT Implementation Tasks
+# Spline-CLT Implementation Tasks
 
 Work through these phases sequentially. Each phase has a clear go/no-go checkpoint before proceeding.
 
@@ -28,7 +28,7 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 ## Phase 1: KAN Encoder Module
 **Goal**: Build a standalone KAN encoder that has the same interface as the linear encoder in circuit-tracer's transcoder.
 
-- [ ] **1.1** Implement `kan_clt/kan_encoder.py`:
+- [ ] **1.1** Implement `spline_clt/kan_encoder.py`:
   - Class `KANEncoder` that wraps efficient-kan's `KANLinear`
   - Input: residual stream activations `x` of shape `(batch, d_model)` where d_model=768 for GPT-2
   - Output: feature pre-activations of shape `(batch, n_features)`
@@ -50,10 +50,10 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 
 ---
 
-## Phase 2: KAN Cross-Layer Transcoder
-**Goal**: Build the full KAN-CLT module that can replace MLPs in a transformer.
+## Phase 2: Spline Cross-Layer Transcoder
+**Goal**: Build the full Spline-CLT module that can replace MLPs in a transformer.
 
-- [ ] **2.1** Implement `kan_clt/kan_transcoder.py`:
+- [ ] **2.1** Implement `spline_clt/kan_transcoder.py`:
   - Class `KANCrossLayerTranscoder`
   - For each layer l: one `KANEncoder` (reads residual stream at layer l)
   - For each layer l: linear decoder matrices `W_dec^(l→l'), W_dec^(l→l+1), ...` (writes to all subsequent layers)
@@ -62,17 +62,17 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
   - `decode(a_l, target_layer)` → contribution to MLP output at target_layer
   - `reconstruct_mlp(layer_l)` → sum of all decoder contributions from this and previous layers
 
-- [ ] **2.2** Implement `kan_clt/training/loss.py`:
-  - `reconstruction_loss(y_hat, y_true)` — MSE between KAN-CLT output and true MLP output, summed across layers
+- [ ] **2.2** Implement `spline_clt/training/loss.py`:
+  - `reconstruction_loss(y_hat, y_true)` — MSE between Spline-CLT output and true MLP output, summed across layers
   - `sparsity_loss(activations, decoder_norms, lambda, c)` — same formula as Anthropic: λ Σ tanh(c · ||W_dec_i|| · a_i)
   - `total_loss(model, batch)` — combines both
 
-- [ ] **2.3** Implement `kan_clt/training/data.py`:
+- [ ] **2.3** Implement `spline_clt/training/data.py`:
   - `ActivationDataset`: run GPT-2 on OpenWebText subset, cache residual stream activations and MLP outputs at all layers
   - Store as memory-mapped files for efficient training
   - Target: ~10M tokens worth of activations
 
-- [ ] **2.4** Implement `kan_clt/training/train.py`:
+- [ ] **2.4** Implement `spline_clt/training/train.py`:
   - Standard PyTorch training loop
   - Adam optimizer (NOT LBFGS — doesn't scale to this size)
   - Learning rate schedule: warmup + cosine decay
@@ -85,15 +85,15 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
   - Test that cross-layer decoding works (feature at layer 3 can write to layer 5)
   - Test loss computation
 
-**Checkpoint**: KAN-CLT can be instantiated, forward pass produces correct shapes, loss is computed. If yes, proceed to training.
+**Checkpoint**: Spline-CLT can be instantiated, forward pass produces correct shapes, loss is computed. If yes, proceed to training.
 
 ---
 
-## Phase 3: Train and Validate KAN-CLT
-**Goal**: Train KAN-CLT on GPT-2 small, verify it reconstructs MLPs adequately.
+## Phase 3: Train and Validate Spline-CLT
+**Goal**: Train Spline-CLT on GPT-2 small, verify it reconstructs MLPs adequately.
 
 - [x] **3.1** Collect activation dataset from GPT-2 small on OpenWebText (~8.5K sequences, ~40GB)
-- [x] **3.2** Train KAN-CLT (running on GH200, config: `experiments/configs/gpt2_small.yaml`)
+- [x] **3.2** Train Spline-CLT (running on GH200, config: `experiments/configs/gpt2_small.yaml`)
   - d_transcoder=4096, grid_size=5, spline_order=3, λ=0.05, lr=1e-4, 50K steps
 - [x] **3.3** Linear CLT baseline: `experiments/configs/gpt2_small_linear_baseline.yaml`
   - Same d_transcoder=4096, identical training setup, encoder_type=linear
@@ -102,7 +102,7 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
   - Per-layer MSE, cosine similarity, relative error, active features/pos
 - [ ] **3.5** Evaluate feature sparsity (included in compare_models.py output)
 
-**Checkpoint**: KAN-CLT replacement model achieves comparable or better top-1 accuracy to matched linear CLT. If significantly worse (>10% gap), debug before proceeding — try adjusting grid_size, sparsity, learning rate. If reconstruction fundamentally fails, this is a negative result worth documenting.
+**Checkpoint**: Spline-CLT replacement model achieves comparable or better top-1 accuracy to matched linear CLT. If significantly worse (>10% gap), debug before proceeding — try adjusting grid_size, sparsity, learning rate. If reconstruction fundamentally fails, this is a negative result worth documenting.
 
 ---
 
@@ -131,7 +131,7 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 ---
 
 ## Phase 5: Evaluation and Comparison
-**Goal**: Rigorously compare KAN-CLT against standard CLT.
+**Goal**: Rigorously compare Spline-CLT against standard CLT.
 
 - [ ] **5.1** Feature monosemanticity comparison (`eval/monosemanticity.py` ready):
   - `collect_max_activating_examples(model, dataset, top_n_features=200)`
@@ -158,14 +158,14 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 
 - [ ] **5.6** Mechanistic faithfulness:
   - Perturb features in attribution direction, measure downstream effects match predictions
-  - Compare KAN-CLT causal attribution vs linear CLT Jacobian attribution
+  - Compare Spline-CLT causal attribution vs linear CLT Jacobian attribution
 
 - [ ] **5.7** Ablation studies:
   - Vary grid_size: 3, 5, 7, 10 — is there a sweet spot?
   - Vary sparsity λ: does monosemanticity scale with sparsity for KAN features?
   - MLP encoder at matched parameter count (to isolate nonlinearity vs parameter count)
 
-**Checkpoint**: You have quantitative results comparing KAN-CLT vs CLT across multiple metrics and tasks. Write up results regardless of whether KAN-CLT wins — negative results are publishable too.
+**Checkpoint**: You have quantitative results comparing Spline-CLT vs CLT across multiple metrics and tasks. Write up results regardless of whether Spline-CLT wins — negative results are publishable too.
 
 ---
 
@@ -179,7 +179,7 @@ Work through these phases sequentially. Each phase has a clear go/no-go checkpoi
 
 - [ ] **6.2** Write paper:
   - Intro: linearity assumption in current circuit tracing is a bottleneck
-  - Method: KAN-CLT architecture + causal/Shapley attribution
+  - Method: Spline-CLT architecture + causal/Shapley attribution
   - Results: comparison tables, circuit visualizations, spline analysis
   - Discussion: when does nonlinearity matter? connection to thesis
 
@@ -200,7 +200,7 @@ When starting a Claude Code session, say something like:
 > "Read CLAUDE.md. We're on Phase 1. Implement the KAN encoder module using efficient-kan. Start with kan_encoder.py and tests."
 
 **Session 3 (training):**
-> "Read CLAUDE.md. We're on Phase 2. Build the full KAN-CLT transcoder and training pipeline."
+> "Read CLAUDE.md. We're on Phase 2. Build the full Spline-CLT transcoder and training pipeline."
 
 **Session N (evaluation, current):**
 > "Read CLAUDE.md and TASKS.md. Training is complete on the GH200. Checkpoints are in checkpoints/. Run Phase 5 evaluation: compare_models.py, run_circuit.py on IOI/addition/factual recall tasks, analyze_splines.py."

@@ -1,10 +1,10 @@
 # Visualization
 
-This document explains how to visualize KAN-CLT circuit tracing results using the upstream circuit-tracer tools and KAN-specific spline analysis.
+This document explains how to visualize Spline-CLT circuit tracing results using the upstream circuit-tracer tools and KAN-specific spline analysis.
 
 ## Overview
 
-KAN-CLT produces attribution results (causal effects, Shapley values) that are converted into the standard `circuit_tracer.graph.Graph` format via the adapter in `attribution/graph.py`. This means all upstream visualization tools — the interactive web frontend, graph pruning, scoring — work with KAN-CLT out of the box.
+Spline-CLT produces attribution results (causal effects, Shapley values) that are converted into the standard `circuit_tracer.graph.Graph` format via the adapter in `attribution/graph.py`. This means all upstream visualization tools — the interactive web frontend, graph pruning, scoring — work with Spline-CLT out of the box.
 
 There are three visualization approaches:
 
@@ -22,7 +22,7 @@ The circuit-tracer includes a full D3.js web UI with force-directed graph render
 ### Step-by-Step (Python)
 
 ```python
-from kan_clt.kan_transcoder import load_kan_clt
+from spline_clt.kan_transcoder import load_spline_clt
 from attribution.causal import build_attribution_graph
 from attribution.graph import create_graph_from_attribution
 from circuit_tracer.utils.create_graph_files import create_graph_files
@@ -30,8 +30,8 @@ from circuit_tracer.frontend.local_server import serve
 import transformer_lens
 import torch
 
-# 1. Load trained KAN-CLT
-model = load_kan_clt("checkpoints/gpt2_small/kan_clt_gpt2_best")
+# 1. Load trained Spline-CLT
+model = load_spline_clt("checkpoints/gpt2_small/spline_clt_gpt2_best")
 
 # 2. Load language model and collect activations for a prompt
 lm = transformer_lens.HookedTransformer.from_pretrained("gpt2")
@@ -123,14 +123,14 @@ For quick circuit inspection without writing Python:
 ```bash
 # 1. Generate attribution and save as .pt file
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --max-features 64 \
     --output results/circuits/eiffel.pt
 
 # 2. (Optional) Also run Shapley attribution
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --shapley --shapley-samples 128 \
     --output results/circuits/eiffel_shapley.pt
@@ -159,7 +159,7 @@ The evaluation pipeline (`run_pipeline.py`) generates circuit traces for 7 bench
 
 ```bash
 conda run -n ct python experiments/run_pipeline.py \
-    --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \
     --data-dir data/activations \
     --output-dir results/eval_run1 \
@@ -237,11 +237,11 @@ This renders an SVG with:
 
 ## Spline Visualization (KAN Only)
 
-Unique to KAN-CLT — visualizes the learned nonlinear transfer functions in the B-spline encoder.
+Unique to Spline-CLT — visualizes the learned nonlinear transfer functions in the B-spline encoder.
 
 ```bash
 conda run -n ct python experiments/analyze_splines.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --n-features 20 \
     --output-dir results/splines
 ```
@@ -276,10 +276,10 @@ Spline plots are the primary tool for answering the research question: "Did the 
 
 ## How the Graph Adapter Works
 
-The bridge between KAN-CLT and the circuit-tracer visualization is `attribution/graph.py`:
+The bridge between Spline-CLT and the circuit-tracer visualization is `attribution/graph.py`:
 
 ```
-KAN-CLT Attribution          →  create_graph_from_attribution()  →  circuit_tracer.graph.Graph
+Spline-CLT Attribution          →  create_graph_from_attribution()  →  circuit_tracer.graph.Graph
 ─────────────────────────────────────────────────────────────────────────────────────────────
 active_features (n_active, 3)   →  Feature nodes (layer, pos, feat_id)
 activation_values (n_active,)   →  Node activation magnitudes
@@ -293,7 +293,7 @@ The nonlinear KAN encoder is transparent to the visualization layer. Encoder dir
 
 | File | Role |
 |------|------|
-| `attribution/graph.py` | Converts KAN-CLT attribution → circuit_tracer Graph |
+| `attribution/graph.py` | Converts Spline-CLT attribution → circuit_tracer Graph |
 | `circuit_tracer/graph.py` | Graph class with `to_pt()` / `from_pt()` |
 | `circuit_tracer/utils/create_graph_files.py` | Graph → JSON for web UI |
 | `circuit_tracer/frontend/local_server.py` | Local HTTP server for web UI |

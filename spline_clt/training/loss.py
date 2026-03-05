@@ -1,4 +1,4 @@
-"""Loss functions for KAN-CLT training.
+"""Loss functions for Spline-CLT training.
 
 Implements the same training objective as Anthropic's CLT:
     L_total = L_MSE + L_sparsity
@@ -10,7 +10,7 @@ Where:
 
 import torch
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 
 
 def reconstruction_loss(y_hat: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
@@ -67,7 +67,7 @@ def compute_decoder_norms(model: KANCrossLayerTranscoder) -> list[torch.Tensor]:
     For cross-layer decoders, uses the maximum norm across target layers.
 
     Args:
-        model: The KAN-CLT model.
+        model: The Spline-CLT model.
 
     Returns:
         List of tensors, one per layer, each of shape (d_transcoder,).
@@ -92,7 +92,7 @@ def total_loss(
     """Compute total training loss.
 
     Args:
-        model: The KAN-CLT model.
+        model: The Spline-CLT model.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
         y_true: True MLP outputs, shape (n_layers, n_pos, d_model).
         lambda_sparsity: Sparsity loss coefficient.

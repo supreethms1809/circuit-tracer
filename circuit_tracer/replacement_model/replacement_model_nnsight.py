@@ -688,7 +688,7 @@ class NNSightReplacementModel(LanguageModel):
         elif original_activations is not None:
             n_pos = original_activations.size(1)
         else:
-            n_pos = len(self.tokenizer(inputs).input_ids)
+            n_pos = int(self.ensure_tokenized(inputs).numel())
 
         layer_deltas = torch.zeros(
             [self.cfg.n_layers, n_pos, self.cfg.d_model],

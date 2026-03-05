@@ -22,6 +22,20 @@ Currently, intervening on models with respect to the transcoder features you dis
 ## Installation
 To install this library, clone it and run the command  `pip install .` in its directory.
 
+## Paper Evaluation
+
+The conference-facing experiment runner is `paper-eval`. It executes config-driven evaluation suites defined under `experiments/paper_configs/suites/` and writes suite-level reports, tables, and raw per-example metrics.
+
+Examples:
+
+```bash
+paper-eval --suite experiments/paper_configs/suites/neurips_core_gpt2.json --validate-only
+paper-eval --suite experiments/paper_configs/suites/neurips_core_gpt2.json --dry-run
+paper-eval --suite experiments/paper_configs/suites/neurips_core_gpt2.json
+```
+
+For full instructions on suite selection, output layout, and how to interpret `aggregate_metrics.json`, see [`docs/paper-evaluation.md`](docs/paper-evaluation.md).
+
 ## Demos
 We include some demos showing how to use our library in the `demos` folder. The main demo is [`demos/circuit_tracing_tutorial.ipynb`](https://github.com/safety-research/circuit-tracer/blob/main/demos/circuit_tracing_tutorial.ipynb), which replicates two of the findings from [this paper](https://transformer-circuits.pub/2025/attribution-graphs/biology.html) using Gemma 2 (2B). All demos except for the Llama demo can be run on Colab.
 

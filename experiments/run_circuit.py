@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""End-to-end circuit tracing pipeline using KAN-CLT.
+"""End-to-end circuit tracing pipeline using Spline-CLT.
 
 Runs:
-  1. Load a trained KAN-CLT checkpoint
+  1. Load a trained Spline-CLT checkpoint
   2. Collect residual stream activations for a given prompt via TransformerLens
   3. Run causal ablation attribution to build the feature graph
   4. (Optional) Run Shapley attribution for selected features
@@ -10,7 +10,7 @@ Runs:
 
 Usage:
     python experiments/run_circuit.py \
-        --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+        --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
         --prompt "The Eiffel Tower is located in" \
         --model gpt2 \
         --max-features 64 \
@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder, load_kan_clt
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder, load_spline_clt
 from attribution.causal import build_attribution_graph
 
 
@@ -144,9 +144,9 @@ def print_circuit_summary(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="KAN-CLT end-to-end circuit tracing")
+    parser = argparse.ArgumentParser(description="Spline-CLT end-to-end circuit tracing")
     parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to KAN-CLT checkpoint directory")
+                        help="Path to Spline-CLT checkpoint directory")
     parser.add_argument(
         "--prompt", type=str,
         default="The Eiffel Tower is located in",
@@ -172,9 +172,9 @@ def main() -> None:
     )
     dtype = torch.bfloat16 if args.dtype == "bfloat16" else torch.float32
 
-    # --- Load KAN-CLT ---
-    print(f"Loading KAN-CLT from {args.checkpoint}...")
-    clt = load_kan_clt(args.checkpoint, device=device, dtype=dtype)
+    # --- Load Spline-CLT ---
+    print(f"Loading Spline-CLT from {args.checkpoint}...")
+    clt = load_spline_clt(args.checkpoint, device=device, dtype=dtype)
     clt.eval()
     print(f"  encoder_type={clt.encoder_type}, n_layers={clt.n_layers}, "
           f"d_transcoder={clt.d_transcoder}")

@@ -1,8 +1,8 @@
-"""Activation dataset collection for KAN-CLT training.
+"""Activation dataset collection for Spline-CLT training.
 
 Runs a transformer model on text data and caches residual stream activations
 and MLP outputs at all layers. These cached activations are used to train
-the KAN-CLT to reconstruct MLP outputs.
+the Spline-CLT to reconstruct MLP outputs.
 """
 
 import os
@@ -27,10 +27,11 @@ class DataConfig:
     feature_input_hook: str = "hook_resid_mid"
     feature_output_hook: str = "hook_mlp_out"
     device: str = "cuda"
+    seed: int = 0
 
 
 class ActivationDataset(Dataset):
-    """Dataset of cached transformer activations for KAN-CLT training.
+    """Dataset of cached transformer activations for Spline-CLT training.
 
     Each item is a dict with:
         - mlp_inputs: (n_layers, seq_len, d_model) — residual stream before MLP
@@ -134,6 +135,7 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
     if config.dataset_config:
         load_kwargs["name"] = config.dataset_config
     dataset = load_dataset(**load_kwargs)
+    dataset = dataset.shuffle(seed=config.seed)
     tokenizer = model.tokenizer
     assert tokenizer is not None
 

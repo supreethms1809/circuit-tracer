@@ -1,4 +1,4 @@
-"""Feature monosemanticity evaluation for KAN-CLT (Phase 5.1).
+"""Feature monosemanticity evaluation for Spline-CLT (Phase 5.1).
 
 For each of the top N features (by activation frequency), collects the
 max-activating examples from the dataset and computes basic monosemanticity
@@ -22,8 +22,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from tqdm import tqdm
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
-from kan_clt.training.data import ActivationDataset
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.seed import seed_everything
+from spline_clt.training.data import ActivationDataset
 
 
 @dataclass
@@ -82,11 +83,12 @@ def collect_max_activating_examples(
     n_samples: int = 500,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
+    seed: int | None = None,
 ) -> list[FeatureReport]:
     """Collect max-activating examples for the most active features.
 
     Args:
-        model: Trained KAN-CLT or linear CLT.
+        model: Trained Spline-CLT or linear CLT.
         dataset: Activation dataset.
         top_n_features: Number of top features (by activation frequency) to analyze.
         top_k_examples: Number of max-activating examples to keep per feature.
@@ -99,6 +101,8 @@ def collect_max_activating_examples(
     """
     if device is None:
         device = next(model.parameters()).device
+    if seed is not None:
+        seed_everything(seed)
 
     n_samples = min(n_samples, len(dataset))
     n_layers = model.n_layers

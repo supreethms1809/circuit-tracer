@@ -1,4 +1,4 @@
-"""Training loop for KAN-CLT.
+"""Training loop for Spline-CLT.
 
 Standard PyTorch training with Adam optimizer, warmup + cosine decay,
 logging, and checkpointing.
@@ -13,9 +13,10 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
-from kan_clt.training.data import ActivationDataset
-from kan_clt.training.loss import total_loss
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.seed import make_generator, seed_everything
+from spline_clt.training.data import ActivationDataset
+from spline_clt.training.loss import total_loss
 
 
 @dataclass
@@ -44,7 +45,7 @@ class TrainConfig:
     eval_every: int = 5000
     save_every: int = 5000
     checkpoint_dir: str = "checkpoints"
-    run_name: str = "kan_clt"
+    run_name: str = "spline_clt"
 
     # Grid update
     update_grid_every: int = 10_000
@@ -61,6 +62,7 @@ class TrainConfig:
     data_dir: str = "data/activations"
     device: str = "cuda"
     dtype: str = "float32"
+    seed: int = 0
 
     # Validation
     val_fraction: float = 0.05
@@ -83,7 +85,7 @@ def train(
     config: TrainConfig,
     dataset: ActivationDataset | None = None,
 ) -> KANCrossLayerTranscoder:
-    """Train a KAN-CLT model.
+    """Train a Spline-CLT model.
 
     Args:
         config: Training configuration.
@@ -96,16 +98,17 @@ def train(
         config.device if torch.cuda.is_available() else "cpu"
     )
     dtype = config.get_dtype()
+    seed_everything(config.seed)
 
     # Load data
     if dataset is None:
         dataset = ActivationDataset.load(config.data_dir)
 
     # Train/val split
-    n_val = max(1, int(len(dataset) * config.val_fraction))
-    n_train = len(dataset) - n_val
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [n_train, n_val]
+    train_dataset, val_dataset = split_dataset(
+        dataset=dataset,
+        val_fraction=config.val_fraction,
+        seed=config.seed,
     )
 
     train_loader = DataLoader(
@@ -114,6 +117,7 @@ def train(
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        generator=make_generator(config.seed),
     )
 
     # Create model
@@ -188,7 +192,7 @@ def train(
                         f"reloading best checkpoint and halving peak LR "
                         f"({config.learning_rate:.2e} → {config.learning_rate/2:.2e})"
                     )
-                    from kan_clt.kan_transcoder import load_kan_clt as _load_for_recovery
+                    from spline_clt.kan_transcoder import load_spline_clt as _load_for_recovery
                     recovered = _load_for_recovery(best_path, device=device, dtype=dtype)
                     model.load_state_dict(recovered.state_dict())
                     del recovered
@@ -297,6 +301,21 @@ def train(
     return model
 
 
+def split_dataset(
+    dataset: ActivationDataset,
+    val_fraction: float,
+    seed: int,
+) -> tuple[torch.utils.data.Dataset, torch.utils.data.Dataset]:
+    """Create a deterministic train/validation split."""
+    n_val = max(1, int(len(dataset) * val_fraction))
+    n_train = len(dataset) - n_val
+    return torch.utils.data.random_split(
+        dataset,
+        [n_train, n_val],
+        generator=make_generator(seed),
+    )
+
+
 @torch.no_grad()
 def evaluate(
     model: KANCrossLayerTranscoder,
@@ -310,7 +329,7 @@ def evaluate(
     Returns:
         Average reconstruction loss on validation data.
     """
-    from kan_clt.training.loss import reconstruction_loss
+    from spline_clt.training.loss import reconstruction_loss
 
     model.eval()
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)

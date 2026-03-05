@@ -1,6 +1,6 @@
 # Attribution Methods
 
-This document explains how KAN-CLT computes feature-to-feature and feature-to-output attribution for circuit tracing.
+This document explains how Spline-CLT computes feature-to-feature and feature-to-output attribution for circuit tracing.
 
 ## Why New Attribution Methods?
 
@@ -11,7 +11,7 @@ effect(feature_s → feature_t) = a_s × (W_dec_s · W_enc_t)
 
 This works because the linear encoder gives each feature a fixed direction in activation space. With a KAN encoder, feature directions are **input-dependent** (the Jacobian changes at every input point). The linear shortcut breaks down, so we need attribution methods that don't assume encoder linearity.
 
-KAN-CLT provides two methods:
+Spline-CLT provides two methods:
 1. **Causal ablation**: exact causal effects via single-feature knockout
 2. **Shapley values**: game-theoretic credit assignment via permutation sampling
 
@@ -156,7 +156,7 @@ O(n_active × n_samples) decoder evaluations for reconstruction Shapley. Feature
 
 ### Connecting to circuit-tracer
 
-The circuit-tracer library provides graph pruning, visualization, and evaluation tools. KAN-CLT attribution results are converted to the `circuit_tracer.graph.Graph` format via:
+The circuit-tracer library provides graph pruning, visualization, and evaluation tools. Spline-CLT attribution results are converted to the `circuit_tracer.graph.Graph` format via:
 
 ```python
 from attribution.graph import create_graph_from_attribution
@@ -214,13 +214,13 @@ The `experiments/run_circuit.py` script ties everything together:
 ```bash
 # Causal ablation (fast)
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --max-features 64
 
 # With Shapley attribution (slow)
 conda run -n ct python experiments/run_circuit.py \
-    --checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \
+    --checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \
     --prompt "The Eiffel Tower is located in" \
     --shapley --shapley-samples 128
 ```

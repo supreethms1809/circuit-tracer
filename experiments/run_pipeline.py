@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full end-to-end KAN-CLT evaluation pipeline.
+"""Full end-to-end Spline-CLT evaluation pipeline.
 
 Runs all evaluation phases in sequence and produces a self-contained results
 directory with a Markdown summary report.
@@ -13,19 +13,19 @@ Stages (each skippable via --skip-*):
 Usage:
     # Full run with both checkpoints
     python experiments/run_pipeline.py \\
-        --kan-checkpoint  checkpoints/gpt2_small/kan_clt_gpt2_best \\
+        --kan-checkpoint  checkpoints/gpt2_small/spline_clt_gpt2_best \\
         --linear-checkpoint checkpoints/gpt2_small_linear/linear_clt_gpt2_best \\
         --data-dir data/activations \\
         --output-dir results/eval_run1
 
-    # KAN-CLT only (no baseline comparison)
+    # Spline-CLT only (no baseline comparison)
     python experiments/run_pipeline.py \\
-        --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \\
+        --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \\
         --data-dir data/activations
 
     # Skip expensive stages
     python experiments/run_pipeline.py \\
-        --kan-checkpoint checkpoints/gpt2_small/kan_clt_gpt2_best \\
+        --kan-checkpoint checkpoints/gpt2_small/spline_clt_gpt2_best \\
         --skip-shapley --skip-splines
 """
 
@@ -117,8 +117,8 @@ def run_reconstruction(
     dtype: torch.dtype,
 ) -> dict:
     """Run compare_models evaluation. Returns dict of metrics keyed by model label."""
-    from kan_clt.kan_transcoder import load_kan_clt
-    from kan_clt.training.data import ActivationDataset
+    from spline_clt.kan_transcoder import load_spline_clt
+    from spline_clt.training.data import ActivationDataset
     from experiments.compare_models import evaluate_model, print_comparison
 
     _section("Stage 1: Reconstruction & Sparsity")
@@ -130,7 +130,7 @@ def run_reconstruction(
 
     models_to_eval = []
     if _checkpoint_exists(kan_ckpt):
-        models_to_eval.append(("KAN-CLT", kan_ckpt))
+        models_to_eval.append(("Spline-CLT", kan_ckpt))
     if _checkpoint_exists(lin_ckpt):
         models_to_eval.append(("Linear CLT", lin_ckpt))
 
@@ -141,7 +141,7 @@ def run_reconstruction(
     all_metrics = {}
     for label, ckpt in models_to_eval:
         print(f"\nLoading {label} from {ckpt}...")
-        model = load_kan_clt(ckpt, device=device, dtype=dtype)
+        model = load_spline_clt(ckpt, device=device, dtype=dtype)
         model.eval()
         n_p = sum(p.numel() for p in model.parameters())
         print(f"  encoder_type={model.encoder_type}, {n_p:,} parameters")
@@ -152,8 +152,8 @@ def run_reconstruction(
         print(f"  MSE={m['mse_total']:.6f}  cos_sim={m['cosine_similarity']:.4f}  "
               f"active/pos={m['active_per_pos']:.2f}")
 
-    if "KAN-CLT" in all_metrics and "Linear CLT" in all_metrics:
-        print_comparison(all_metrics["KAN-CLT"], all_metrics["Linear CLT"])
+    if "Spline-CLT" in all_metrics and "Linear CLT" in all_metrics:
+        print_comparison(all_metrics["Spline-CLT"], all_metrics["Linear CLT"])
 
     # Save as JSON (mse_per_layer is a list, rest are scalars)
     out_path = os.path.join(output_dir, "reconstruction_metrics.json")
@@ -179,7 +179,7 @@ def run_circuits(
     dtype: torch.dtype,
 ) -> dict:
     """Run circuit tracing on benchmark prompts for each checkpoint."""
-    from kan_clt.kan_transcoder import load_kan_clt
+    from spline_clt.kan_transcoder import load_spline_clt
     from experiments.run_circuit import collect_activations_for_prompt, print_circuit_summary
     from attribution.causal import build_attribution_graph
 
@@ -203,7 +203,7 @@ def run_circuits(
 
     for ckpt_label, ckpt_path in checkpoints.items():
         print(f"\nLoading {ckpt_label} checkpoint from {ckpt_path}...")
-        clt = load_kan_clt(ckpt_path, device=device, dtype=dtype)
+        clt = load_spline_clt(ckpt_path, device=device, dtype=dtype)
         clt.eval()
 
         for prompt_cfg in CIRCUIT_PROMPTS:
@@ -285,8 +285,8 @@ def run_splines(
     no_plot: bool,
 ) -> None:
     """Extract and save spline transfer functions for the top KAN features."""
-    from kan_clt.kan_transcoder import load_kan_clt
-    from kan_clt.training.data import ActivationDataset
+    from spline_clt.kan_transcoder import load_spline_clt
+    from spline_clt.training.data import ActivationDataset
     from experiments.analyze_splines import (
         collect_feature_stats,
         extract_spline_curve,
@@ -301,7 +301,7 @@ def run_splines(
         print("  No KAN checkpoint found — skipping spline analysis.")
         return
 
-    model = load_kan_clt(kan_ckpt, device=device, dtype=torch.float32)
+    model = load_spline_clt(kan_ckpt, device=device, dtype=torch.float32)
     model.eval()
 
     if model.encoder_type != "kan":
@@ -377,8 +377,8 @@ def run_monosemanticity(
     dtype: torch.dtype,
 ) -> dict:
     """Compute Gini coefficients and collect max-activating examples."""
-    from kan_clt.kan_transcoder import load_kan_clt
-    from kan_clt.training.data import ActivationDataset
+    from spline_clt.kan_transcoder import load_spline_clt
+    from spline_clt.training.data import ActivationDataset
     from eval.monosemanticity import collect_max_activating_examples, save_reports, print_summary
 
     _section("Stage 4: Monosemanticity")
@@ -403,7 +403,7 @@ def run_monosemanticity(
     comparison = {}
     for ckpt_label, ckpt_path in checkpoints.items():
         print(f"\nLoading {ckpt_label} from {ckpt_path}...")
-        model = load_kan_clt(ckpt_path, device=device, dtype=dtype)
+        model = load_spline_clt(ckpt_path, device=device, dtype=dtype)
         model.eval()
 
         reports = collect_max_activating_examples(
@@ -455,14 +455,14 @@ def run_weight_norms(
     collapsed — all features are being driven by one layer's activations.
     Common fix: lower lambda_sparsity or learning rate.
     """
-    from kan_clt.kan_transcoder import load_kan_clt
+    from spline_clt.kan_transcoder import load_spline_clt
 
     _section("Diagnostic: Encoder Weight Norms per Layer")
     t0 = time.time()
 
     checkpoints = {}
     if _checkpoint_exists(kan_ckpt):
-        checkpoints["KAN-CLT"] = kan_ckpt
+        checkpoints["Spline-CLT"] = kan_ckpt
     if _checkpoint_exists(lin_ckpt):
         checkpoints["Linear CLT"] = lin_ckpt
 
@@ -473,7 +473,7 @@ def run_weight_norms(
     norms_report = {}
     for label, ckpt in checkpoints.items():
         print(f"\nLoading {label} from {ckpt}...")
-        model = load_kan_clt(ckpt, device=device, dtype=dtype)
+        model = load_spline_clt(ckpt, device=device, dtype=dtype)
         model.eval()
 
         print(f"\n  {label} — encoder L2 norm per layer")
@@ -529,8 +529,8 @@ def run_checkpoint_scan(
     undertrained or lambda_sparsity is too high.
     """
     import glob as _glob
-    from kan_clt.kan_transcoder import load_kan_clt
-    from kan_clt.training.data import ActivationDataset
+    from spline_clt.kan_transcoder import load_spline_clt
+    from spline_clt.training.data import ActivationDataset
     from experiments.compare_models import evaluate_model
 
     _section(f"Diagnostic: Loss Progression — {run_name}")
@@ -563,7 +563,7 @@ def run_checkpoint_scan(
     for ckpt_path in step_dirs:
         name = os.path.basename(ckpt_path)
         try:
-            model = load_kan_clt(ckpt_path, device=device, dtype=dtype)
+            model = load_spline_clt(ckpt_path, device=device, dtype=dtype)
             model.eval()
             m = evaluate_model(model, dataset, device, dtype, n_samples=n_samples)
             del model
@@ -611,14 +611,14 @@ def write_report(
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     lines = [
-        "# KAN-CLT Evaluation Report",
+        "# Spline-CLT Evaluation Report",
         f"\nGenerated: {now}",
         f"Device: {args.device}  |  dtype: {args.dtype}",
         "",
     ]
 
     if args.kan_checkpoint:
-        lines.append(f"**KAN-CLT**: `{args.kan_checkpoint}`")
+        lines.append(f"**Spline-CLT**: `{args.kan_checkpoint}`")
     if args.linear_checkpoint:
         lines.append(f"**Linear CLT**: `{args.linear_checkpoint}`")
     lines.append("")
@@ -688,13 +688,13 @@ def write_report(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="KAN-CLT full evaluation pipeline",
+        description="Spline-CLT full evaluation pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     # Checkpoints
     parser.add_argument("--kan-checkpoint", type=str, default=None,
-                        help="KAN-CLT checkpoint directory")
+                        help="Spline-CLT checkpoint directory")
     parser.add_argument("--linear-checkpoint", type=str, default=None,
                         help="Linear CLT checkpoint directory")
 
@@ -747,7 +747,7 @@ def main() -> None:
     os.makedirs(args.output_dir, exist_ok=True)
     t_total = time.time()
 
-    print(f"\nKAN-CLT Evaluation Pipeline")
+    print(f"\nSpline-CLT Evaluation Pipeline")
     print(f"  Output dir : {args.output_dir}")
     print(f"  Device     : {device}  |  dtype: {dtype}")
     if args.kan_checkpoint:

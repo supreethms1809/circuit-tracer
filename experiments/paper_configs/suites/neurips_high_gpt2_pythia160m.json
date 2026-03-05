@@ -1,0 +1,30 @@
+{
+  "defaults": [
+    "../base/common.json",
+    "../macag/default.json",
+    "../models/gpt2_spline_default.json",
+    "../models/gpt2_linear_param_match.json",
+    "../models/gpt2_linear_feature_match.json",
+    "../models/gpt2_spline_grid7.json",
+    "../models/pythia160m_spline_default.json",
+    "../models/pythia160m_linear_param_match.json",
+    "../models/pythia160m_linear_feature_match.json",
+    "../benchmarks/neurips_high.json"
+  ],
+  "suite_name": "neurips_high_gpt2_pythia160m",
+  "description": "Stretch suite adding Pythia-160M alongside the GPT-2 comparison set for cross-backbone validation.",
+  "seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "reporting": {
+    "primary_variant": "spline_default_gpt2",
+    "baseline_variant": "linear_param_match_gpt2",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "arith_25_37"
+  }
+}

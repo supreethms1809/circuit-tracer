@@ -75,7 +75,7 @@ Notes:
 - `target_token_by_label` entries can be token strings or explicit ids (`"id:12345"`).
 - The replacement-model factory automatically restricts candidates to feature nodes found in the graph JSON (`feature_type == "cross layer transcoder"` by default).
 - `local_clt_path` can point to either a standard `circuit_tracer` CLT checkpoint or a
-  `kan_clt` checkpoint directory (auto-detected via `metadata.safetensors`).
+  `spline_clt` checkpoint directory (auto-detected via `metadata.safetensors`).
 
 ## Auto-Suggest Supernodes
 

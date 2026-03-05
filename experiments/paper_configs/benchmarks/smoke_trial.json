@@ -1,0 +1,23 @@
+{
+  "benchmark_manifest_version": "smoke-trial-v1",
+  "benchmark_entries": [
+    {
+      "prompt_id": "smoke_factual_france",
+      "family": "factual",
+      "prompt": "The capital of France is",
+      "target_token": " Paris",
+      "foil_token": " Lyon",
+      "split": "smoke",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "smoke_arith_25_37",
+      "family": "arithmetic",
+      "prompt": "25 + 37 =",
+      "target_token": " 62",
+      "foil_token": " 63",
+      "split": "smoke",
+      "include_macag": true
+    }
+  ]
+}

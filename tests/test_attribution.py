@@ -2,19 +2,21 @@
 
 import sys
 import os
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 import torch
 
-from kan_clt.kan_transcoder import KANCrossLayerTranscoder
+from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 from attribution.causal import ablation_attribution, build_attribution_graph
+from attribution.graph import create_graph_from_attribution
 
 
 @pytest.fixture
 def small_model():
-    """Small KAN-CLT for attribution testing."""
+    """Small Spline-CLT for attribution testing."""
     return KANCrossLayerTranscoder(
         n_layers=2,
         d_transcoder=16,
@@ -91,3 +93,34 @@ class TestBuildAttributionGraph:
         # Feature-to-feature block should be in top-left
         feat_block = adj[:n_active, :n_active]
         assert feat_block.shape == (n_active, n_active)
+
+
+def test_create_graph_from_attribution_uses_index_selected_features(monkeypatch):
+    captured = {}
+
+    class FakeGraph:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.kwargs = kwargs
+
+    monkeypatch.setattr("attribution.graph.Graph", FakeGraph)
+
+    active_features = torch.tensor([[0, 1, 2], [3, 4, 5]], dtype=torch.long)
+    graph = create_graph_from_attribution(
+        attribution_result={
+            "active_features": active_features,
+            "activation_values": torch.tensor([0.1, 0.2]),
+            "adjacency_matrix": torch.eye(2),
+        },
+        input_string="prompt",
+        input_tokens=torch.tensor([1, 2]),
+        logit_tokens=torch.tensor([3]),
+        logit_probabilities=torch.tensor([1.0]),
+        cfg=SimpleNamespace(),
+        scan="scan-id",
+    )
+
+    assert isinstance(graph, FakeGraph)
+    assert torch.equal(captured["selected_features"], torch.tensor([0, 1], dtype=torch.long))
+    first_selected = int(captured["selected_features"][0].item())
+    assert captured["active_features"][first_selected].tolist() == [0, 1, 2]

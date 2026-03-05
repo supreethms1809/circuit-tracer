@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import torch
 
-from kan_clt.kan_encoder import KANEncoder
+from spline_clt.kan_encoder import KANEncoder
 
 
 @pytest.fixture

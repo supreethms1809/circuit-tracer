@@ -1,0 +1,172 @@
+{
+  "defaults": [
+    "../benchmarks/smoke_trial.json"
+  ],
+  "suite_name": "smoke_trial_gpt2",
+  "description": "CPU-friendly end-to-end smoke suite for validating the full paper-eval pipeline.",
+  "output_root": "results/paper_smoke",
+  "seeds": [
+    11
+  ],
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": true,
+    "macag": true,
+    "report": true
+  },
+  "dataset": {
+    "model_name": "gpt2",
+    "dataset_name": "Salesforce/wikitext",
+    "dataset_config": "wikitext-103-raw-v1",
+    "n_tokens": 256,
+    "seq_len": 32,
+    "batch_size": 2,
+    "cache_dir": "shared/activations",
+    "max_train_samples": 6,
+    "eval_samples": 2,
+    "dtype": "float32",
+    "device": "cpu",
+    "seed": 11
+  },
+  "evaluation": {
+    "graph": {
+      "max_features": 8,
+      "max_n_logits": 4,
+      "desired_logit_prob": 0.7,
+      "node_threshold": 0.8,
+      "edge_threshold": 0.98
+    },
+    "circuit": {
+      "top_k_features": 4,
+      "alpha": 0.5,
+      "run_shapley": true,
+      "shapley_samples": 4
+    },
+    "monosemanticity": {
+      "enabled": true,
+      "n_features": 4,
+      "top_k_examples": 2,
+      "n_samples": 2
+    },
+    "splines": {
+      "enabled": true,
+      "n_features": 2,
+      "top_dims": 2,
+      "n_samples": 2,
+      "no_plot": true
+    }
+  },
+  "model_variants": {
+    "spline_smoke_gpt2": {
+      "label": "Spline-CLT (smoke)",
+      "model_name": "gpt2",
+      "scan_id": "spline-smoke-gpt2",
+      "training": {
+        "n_layers": 12,
+        "d_model": 768,
+        "d_transcoder": 8,
+        "encoder_type": "kan",
+        "grid_size": 3,
+        "spline_order": 3,
+        "learning_rate": 0.0001,
+        "warmup_steps": 1,
+        "total_steps": 2,
+        "batch_size": 2,
+        "lambda_sparsity": 0.001,
+        "c_sparsity": 1.0,
+        "grad_clip": 1.0,
+        "log_every": 1,
+        "eval_every": 1,
+        "save_every": 1,
+        "update_grid_every": 0,
+        "update_grid_from": 0,
+        "reset_optimizer_every": 0,
+        "val_fraction": 0.25,
+        "dtype": "float32",
+        "device": "cpu",
+        "run_name": "spline_smoke_gpt2"
+      }
+    },
+    "linear_smoke_gpt2": {
+      "label": "Linear CLT (smoke)",
+      "model_name": "gpt2",
+      "scan_id": "linear-smoke-gpt2",
+      "training": {
+        "n_layers": 12,
+        "d_model": 768,
+        "d_transcoder": 8,
+        "encoder_type": "linear",
+        "grid_size": 3,
+        "spline_order": 3,
+        "learning_rate": 0.0001,
+        "warmup_steps": 1,
+        "total_steps": 2,
+        "batch_size": 2,
+        "lambda_sparsity": 0.001,
+        "c_sparsity": 1.0,
+        "grad_clip": 1.0,
+        "log_every": 1,
+        "eval_every": 1,
+        "save_every": 1,
+        "update_grid_every": 0,
+        "update_grid_from": 0,
+        "reset_optimizer_every": 1,
+        "val_fraction": 0.25,
+        "dtype": "float32",
+        "device": "cpu",
+        "run_name": "linear_smoke_gpt2"
+      }
+    }
+  },
+  "macag": {
+    "enabled": true,
+    "annotate_graphs": true,
+    "oracle": {
+      "backend": "transformerlens",
+      "score_kind": "logit_gap",
+      "freeze_attention": true,
+      "cache_enabled": true
+    },
+    "candidate_policy": {
+      "strategy": "graph_features",
+      "feature_types": [
+        "cross layer transcoder"
+      ],
+      "top_k": 5,
+      "min_group_size": 2,
+      "max_group_size": 4,
+      "min_salience": 0.0
+    },
+    "game1_runs": [
+      {
+        "name": "smoke_game1",
+        "alpha": 0.5,
+        "lam": 0.01,
+        "faithfulness_eps": 0.2,
+        "prefilter_top_k": 5,
+        "connected": false,
+        "min_gain": 0.0
+      }
+    ],
+    "game2_runs": [
+      {
+        "name": "smoke_game2",
+        "alpha": 0.5,
+        "lam": 0.01,
+        "beta": 0.1,
+        "abr_iters": 2,
+        "prefilter_top_k": 5,
+        "connected": false,
+        "min_gain": 0.0
+      }
+    ]
+  },
+  "reporting": {
+    "primary_variant": "spline_smoke_gpt2",
+    "baseline_variant": "linear_smoke_gpt2",
+    "bootstrap_samples": 50,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "smoke_factual_france"
+  }
+}
