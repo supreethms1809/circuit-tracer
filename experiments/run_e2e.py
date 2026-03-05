@@ -130,15 +130,25 @@ def _build_train_config(args, encoder_type: str):
         ckpt_dir = args.linear_checkpoint_dir
         run_name = "linear_clt_gpt2"
 
+    d_transcoder = (
+        args.d_transcoder if encoder_type == "kan"
+        else getattr(args, "linear_d_transcoder", args.d_transcoder)
+    )
+    # KAN resets Adam at every grid update (3×, at steps total//4, total//2, 3×total//4).
+    # Give linear the same schedule so neither model has an optimizer advantage.
+    reset_optimizer_every = (
+        0 if encoder_type == "kan"            # KAN handles resets internally
+        else max(0, args.total_steps // 4)    # match KAN's grid-update interval
+    )
     cfg = TrainConfig(
         encoder_type=encoder_type,
         n_layers=12,
         d_model=768,
-        d_transcoder=args.d_transcoder,
+        d_transcoder=d_transcoder,
         grid_size=args.grid_size,
         spline_order=3,
         learning_rate=args.learning_rate,
-        warmup_steps=min(1000, args.total_steps // 10),
+        warmup_steps=min(5000, args.total_steps // 10),
         total_steps=args.total_steps,
         batch_size=args.batch_size,
         lambda_sparsity=args.lambda_sparsity,
@@ -154,7 +164,8 @@ def _build_train_config(args, encoder_type: str):
         # causes large gradient spikes; letting the model stabilise in the final
         # quarter significantly reduces the risk of the inf spiral.
         update_grid_every=max(0, args.total_steps // 4) if encoder_type == "kan" else 0,
-        update_grid_from=min(2000, args.total_steps // 20),
+        update_grid_from=min(5000, args.total_steps // 20),
+        reset_optimizer_every=reset_optimizer_every,
         data_dir=args.data_dir,
         device=args.device,
         dtype=args.dtype,
@@ -426,19 +437,27 @@ def main() -> None:
     # ---- Training ----
     parser.add_argument("--kan-checkpoint-dir",    default="checkpoints/gpt2_small")
     parser.add_argument("--linear-checkpoint-dir", default="checkpoints/gpt2_small_linear")
-    parser.add_argument("--d-transcoder",    type=int,   default=4096)
+    parser.add_argument("--d-transcoder",        type=int,   default=4096,
+                        help="KAN-CLT feature count")
+    parser.add_argument("--linear-d-transcoder", type=int,   default=9216,
+                        help="Linear CLT feature count. Default 9216 is parameter-matched to "
+                             "KAN d_transcoder=4096 (637M vs 623M, +2.3%%). "
+                             "Set equal to --d-transcoder for a feature-matched ablation.")
     parser.add_argument("--grid-size",       type=int,   default=5)
-    parser.add_argument("--total-steps",     type=int,   default=200_000,
-                        help="Training steps (increased from 50K; more steps needed for good reconstruction)")
-    parser.add_argument("--batch-size",      type=int,   default=16,
-                        help="Sequences per batch (increased from 8 for better GPU utilization on GH200)")
+    parser.add_argument("--total-steps",     type=int,   default=400_000,
+                        help="Training steps. 400K needed for convergence at λ=0.002 "
+                             "(v1 200K + λ=0.05 gave cos_sim=0.22; fix was λ↓ + more steps)")
+    parser.add_argument("--batch-size",      type=int,   default=32,
+                        help="Sequences per batch. 32 fills GH200 well; 32×128=4096 positions/batch")
     parser.add_argument("--learning-rate",   type=float, default=1e-4)
-    parser.add_argument("--max-train-samples", type=int, default=8000,
-                        help="Max sequences loaded into RAM for training "
-                             "(increased from implicit 3000; GH200 handles ~38 GB easily)")
-    parser.add_argument("--lambda-sparsity", type=float, default=0.01,
-                        help="Sparsity penalty weight. Default lowered to 0.01 "
-                             "(0.05 over-sparsifies KAN, killing reconstruction).")
+    parser.add_argument("--max-train-samples", type=int, default=10000,
+                        help="Max sequences loaded into RAM for training. "
+                             "10K ≈ 24 GB per tensor (inputs+outputs=48 GB); GH200 unified memory handles this")
+    parser.add_argument("--lambda-sparsity", type=float, default=0.002,
+                        help="Sparsity penalty weight. v1 used 0.05 which caused sparsity loss to "
+                             "dominate (6.4×) reconstruction loss (1.3), collapsing KAN to 11.8 "
+                             "active features with cos_sim=0.22. λ=0.002 keeps sparsity at ~15%% "
+                             "of the initial reconstruction baseline so the model can converge first.")
 
     # ---- Evaluation ----
     parser.add_argument("--output-dir",         default="results/e2e")

@@ -49,6 +49,13 @@ class TrainConfig:
     # Grid update
     update_grid_every: int = 10_000
     update_grid_from: int = 2000  # don't update grid in early training
+    update_grid_max_samples: int = 1024  # subsample to avoid OOM (efficient-kan lstsq uses O(batch*d_model*d_transcoder))
+
+    # Optimizer restart (linear encoder only)
+    # KAN resets Adam at every grid update; set this to the same interval for
+    # linear so both models get the same number of fresh optimizer starts.
+    # Value of 0 disables restarts (default for KAN, which handles it internally).
+    reset_optimizer_every: int = 0
 
     # Data
     data_dir: str = "data/activations"
@@ -217,6 +224,7 @@ def train(
             })
 
         # Grid update (adapt B-spline knots to data distribution) — KAN only
+        # Subsample to avoid OOM: efficient-kan's curve2coeff builds (batch, d_model, d_transcoder) intermediates
         if (
             config.encoder_type == "kan"
             and config.update_grid_every > 0
@@ -230,8 +238,13 @@ def train(
             model.to_safetensors(pre_update_path)
 
             with torch.no_grad():
+                max_n = config.update_grid_max_samples
                 for layer_id in range(model.n_layers):
-                    model.encoders[layer_id].update_grid(x_in[layer_id])
+                    x_layer = x_in[layer_id]
+                    if x_layer.shape[0] > max_n:
+                        idx = torch.randperm(x_layer.shape[0], device=x_layer.device)[:max_n]
+                        x_layer = x_layer[idx]
+                    model.encoders[layer_id].update_grid(x_layer)
 
             # Reset Adam state after grid update: the accumulated first/second moments
             # correspond to old spline knot positions and will drive the new parameters
@@ -241,6 +254,17 @@ def train(
                 f"Step {step}: grid updated and optimizer state reset "
                 f"(pre-update checkpoint saved to {pre_update_path})"
             )
+
+        # Optimizer restart for linear encoder — mirrors KAN's grid-update resets
+        # so both models receive the same number of fresh Adam starts during training.
+        if (
+            config.encoder_type != "kan"
+            and config.reset_optimizer_every > 0
+            and step > 0
+            and step % config.reset_optimizer_every == 0
+        ):
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            pbar.write(f"Step {step}: optimizer state reset (reset_optimizer_every={config.reset_optimizer_every})")
 
         # Evaluation
         if step > 0 and step % config.eval_every == 0:

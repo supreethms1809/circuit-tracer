@@ -1,5 +1,17 @@
 # KAN-CLT training config for GPT-2 small
 # 12 layers, 768-dim residual stream
+#
+# v2 calibration (2026-03-04):
+#   lambda_sparsity 0.05 → 0.002 : at λ=0.05, sparsity loss ≈ 6.4 vs recon 1.3 —
+#     penalty dominated the objective, forcing KAN to only 11.8 active features
+#     while sacrificing reconstruction entirely.  λ=0.002 puts sparsity at ~15%
+#     of the initial reconstruction baseline so the model can converge first.
+#   total_steps 50K → 400K : 200K-step run still hadn't converged (cos_sim=0.22).
+#   batch_size 24 → 32 : better gradient estimates; GH200 handles 32×128 easily.
+#   warmup_steps 1K → 5K : prevents JumpReLU threshold collapse in early steps.
+#   update_grid 10K → 100K (= total_steps//4) : 3 grid updates spread across first
+#     75% of training; knots reposition after the splines have seen enough data.
+#   update_grid_from 2K → 5K : matches the longer warmup.
 
 # Model architecture
 n_layers: 12
@@ -10,23 +22,23 @@ spline_order: 3
 
 # Training
 learning_rate: 1.0e-4
-warmup_steps: 1000
-total_steps: 50000
-batch_size: 8
-lambda_sparsity: 0.05
+warmup_steps: 5000
+total_steps: 400000
+batch_size: 32
+lambda_sparsity: 0.002
 c_sparsity: 1.0
 grad_clip: 1.0
 
 # Logging & checkpointing
-log_every: 100
-eval_every: 5000
-save_every: 5000
+log_every: 200
+eval_every: 10000
+save_every: 10000
 checkpoint_dir: checkpoints/gpt2_small
 run_name: kan_clt_gpt2
 
 # Grid update
-update_grid_every: 10000
-update_grid_from: 2000
+update_grid_every: 100000
+update_grid_from: 5000
 
 # Data
 data_dir: data/activations
