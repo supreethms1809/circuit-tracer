@@ -1,0 +1,17 @@
+{
+  "model_name": "google/gemma-2-2b",
+  "transcoder_set": "gemma",
+  "prompt": "The capital of the state containing Denver is",
+  "graph_json": "/absolute/path/to/circuit.json",
+  "backend": "transformerlens",
+  "score_kind": "logit_gap",
+  "target_token_by_label": {
+    "y": " Colorado",
+    "y_foil": " Wyoming"
+  },
+  "foil_by_target": {
+    "y": "y_foil",
+    "y_foil": "y"
+  },
+  "freeze_attention": true
+}

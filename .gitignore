@@ -175,3 +175,10 @@ cython_debug/
 
 *.parquet
 .vscode/
+.DS_Store
+
+# MACAG runtime artifacts
+macag/cache/
+macag/output/
+macag/circuit.json
+macag/Archive.zip

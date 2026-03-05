@@ -6,6 +6,11 @@ Build a KAN-based Cross-Layer Transcoder (KAN-CLT) that replaces the linear enco
 ## Core Research Hypothesis
 Anthropic's CLT assumes linear feature boundaries (linear encoder → JumpReLU). This misses features defined by nonlinear activation patterns. A KAN encoder can capture these, and game-theoretic attribution (Shapley values) handles the resulting nonlinear feature interactions without falling back to linearization.
 
+## End-to-End Deliverables
+This repository now supports two linked outputs from the same linear or KAN-CLT checkpoint:
+1. **Circuit-tracer graph + MACAG**: build a graph, then run evidence-allocation games and dashboard/report generation.
+2. **Exact Shapley attribution**: compute nonlinear feature attributions directly from the checkpointed CLT on the same prompt.
+
 ## Architecture
 
 ### Standard CLT (Anthropic's approach)
@@ -30,6 +35,7 @@ The decoder MUST remain linear — features need clean directions in residual st
 ## Key Dependencies
 - `circuit-tracer` (forked to github.com/supreethms1809/circuit-tracer) — provides ReplacementModel, graph pruning, visualization
 - `efficient-kan` (github.com/Blealtan/efficient-kan) — fast B-spline KAN implementation
+- `macag` — graph-first allocation games and intervention validation over circuit-tracer graphs
 - `transformer-lens` — model hooking for activation collection
 - Target model: GPT-2 small (12 layers, 768-dim residual stream)
 
@@ -64,13 +70,77 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 │   ├── compare_models.py                # KAN-CLT vs linear CLT evaluation table
 │   ├── analyze_splines.py               # Spline shape extraction and visualization
 │   └── run_circuit.py                   # Single-prompt circuit tracing
-├── circuit_tracer/                      # upstream circuit-tracer library (unmodified)
+├── macag/
+│   ├── cli/                            # run_macag, annotate_graph, suggest_supernodes
+│   ├── factories/                      # ReplacementModel-backed MACAG scorer builders
+│   ├── games/                          # Game 1 / Game 2 solvers
+│   ├── graph.py                        # circuit-tracer graph wrapper
+│   ├── scoring.py                      # Scoring oracles + intervention adapters
+│   ├── utils/                          # Metrics + supernode helpers
+│   └── README.md                       # MACAG usage notes
+├── circuit_tracer/                      # core circuit-tracer library
 └── tests/
     ├── test_kan_encoder.py              # 14 tests
     ├── test_kan_transcoder.py           # 20 tests (includes linear encoder save/load)
     ├── test_attribution.py              # 6 tests
     └── test_shapley.py                  # 13 tests
 ```
+
+MACAG is a first-party top-level package in this repository. Use `macag/...`
+from the repo root. The current CLI entrypoint is `python -m macag.cli.run_macag`,
+and real circuit interventions should be wired through
+`macag.factories.replacement_model:create_replacement_model_oracle`.
+
+`macag.factories.replacement_model` can build a scorer from either:
+- a hub `transcoder_set`, or
+- a local checkpoint path, including both standard CLT and KAN-CLT checkpoints.
+
+## MACAG Integration
+
+MACAG is the graph-first downstream analysis layer. It does not replace
+`circuit_tracer` graph generation; it consumes a circuit graph JSON, runs
+evidence-allocation games over the feature nodes, and can write an annotated
+graph back for the existing `circuit_tracer` frontend.
+
+### MACAG Code Map
+- `macag/cli/run_macag.py`: main CLI for Game 1 (`game1`) and Game 2 (`game2`)
+- `macag/cli/annotate_graph.py`: merges MACAG outputs back into a graph JSON for UI inspection
+- `macag/cli/suggest_supernodes.py`: auto-generates candidate supernodes from graph metrics
+- `macag/factories/replacement_model.py`: bridge from MACAG scoring into `circuit_tracer.ReplacementModel`
+- `macag/graph.py`: circuit graph wrapper used by the game solvers
+- `macag/scoring.py`: scoring oracles and intervention backend adapters
+- `macag/games/`: optimization logic for Game 1 / Game 2
+- `macag/utils/`: metrics and supernode helper utilities
+
+### Current Integration Path
+1. Generate or load a graph JSON from `circuit_tracer`.
+2. Run `python -m macag.cli.run_macag ...` on that graph.
+3. For real interventions, pass
+   `--oracle-factory macag.factories.replacement_model:create_replacement_model_oracle`
+   plus an oracle kwargs JSON file.
+4. Use `python -m macag.cli.annotate_graph ...` to write an annotated graph JSON.
+5. Open the annotated graph in the existing `circuit_tracer` server/frontend.
+
+### ReplacementModel Wiring
+- `macag.factories.replacement_model.create_replacement_model_oracle` is the canonical
+  integration entrypoint.
+- It supports hub-backed loading via `transcoder_set`.
+- It also supports local checkpoints via `local_clt_path`.
+- `local_clt_path` auto-detects KAN-CLT vs standard CLT:
+  - if the checkpoint directory contains `metadata.safetensors`, it loads through
+    `kan_clt.kan_transcoder.load_kan_clt`
+  - otherwise it loads through
+    `circuit_tracer.transcoder.cross_layer_transcoder.load_clt`
+- Candidate interventions are restricted to feature nodes present in the graph JSON
+  (default `feature_type == "cross layer transcoder"`), so MACAG and the scorer stay
+  aligned to the traced circuit.
+
+### Operational Notes
+- `macag/cache` and `macag/output` are runtime artifacts, not source code.
+- `macag/docs` and `macag/examples` are reference material; the active Python package is
+  the top-level `macag/` package shown above.
+- If you are committing or pushing changes, avoid accidentally staging large cached model
+  artifacts from `macag/cache`.
 
 ## Important Technical Notes
 
