@@ -17,9 +17,41 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Validate and resolve the suite config without executing it.",
     )
+    parser.add_argument(
+        "--worker-id",
+        type=int,
+        default=0,
+        help="Zero-based worker index for PBS/SLURM array jobs.",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Total number of parallel workers.",
+    )
+    parser.add_argument(
+        "--stages",
+        nargs="+",
+        choices=["collect", "train", "evaluate", "macag", "report"],
+        default=None,
+        help="Restrict execution to these stages (intersects with suite-level stage flags).",
+    )
     args = parser.parse_args(argv)
 
-    runner = PaperSuiteRunner(args.suite)
+    if args.worker_id >= args.num_workers:
+        print(
+            f"Error: --worker-id {args.worker_id} is out of range for --num-workers {args.num_workers}",
+            flush=True,
+        )
+        return 1
+
+    # validate/dry-run paths: no sharding needed
+    runner = PaperSuiteRunner(
+        args.suite,
+        worker_id=0 if (args.validate_only or args.dry_run) else args.worker_id,
+        num_workers=1 if (args.validate_only or args.dry_run) else args.num_workers,
+        stages_override=args.stages,
+    )
     if args.validate_only:
         print(json.dumps(runner.validate(), indent=2, sort_keys=True))
         return 0

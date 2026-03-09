@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -110,7 +111,22 @@ def _hardware_summary() -> dict[str, Any]:
 class PaperSuiteRunner:
     """Runs a paper evaluation suite from one resolved JSON config."""
 
-    def __init__(self, suite_path: str | Path):
+    # Maps CLI stage short-names to StageConfig field names.
+    _STAGE_NAME_MAP: dict[str, str] = {
+        "collect": "collect_dataset",
+        "train": "train",
+        "evaluate": "evaluate",
+        "macag": "macag",
+        "report": "report",
+    }
+
+    def __init__(
+        self,
+        suite_path: str | Path,
+        worker_id: int = 0,
+        num_workers: int = 1,
+        stages_override: list[str] | None = None,
+    ):
         self.suite_path = Path(suite_path).resolve()
         self.config, self.resolved_config = load_suite_config(self.suite_path)
         self.repo_root = self._find_repo_root(self.suite_path.parent)
@@ -120,6 +136,11 @@ class PaperSuiteRunner:
         self.figures_root = self.suite_root / "figures"
         self.commit_hash = _git_commit(self.repo_root)
         self.hardware = _hardware_summary()
+        self.worker_id = worker_id
+        self.num_workers = num_workers
+        self._stages_override: frozenset[str] | None = (
+            frozenset(stages_override) if stages_override else None
+        )
 
     @staticmethod
     def _find_repo_root(start: Path) -> Path:
@@ -197,37 +218,106 @@ class PaperSuiteRunner:
             "jobs": self.build_jobs(),
         }
 
+    def _stage_enabled(self, stage_name: str) -> bool:
+        """Return True if *stage_name* is enabled both in suite config and the CLI override set.
+
+        *stage_name* must be a StageConfig field name (e.g. "collect_dataset", "train", …).
+        """
+        suite_flag: bool = getattr(self.config.stages, stage_name, True)
+        if not suite_flag:
+            return False
+        if self._stages_override is None:
+            return True
+        # Map stage_name back to the CLI short-names used in _stages_override.
+        cli_name = next(
+            (k for k, v in self._STAGE_NAME_MAP.items() if v == stage_name),
+            stage_name,
+        )
+        return cli_name in self._stages_override
+
+    def _my_variant_seed_pairs(self) -> list[tuple[str, Any, int]]:
+        """Return the variant×seed pairs assigned to this worker via round-robin sharding."""
+        all_pairs: list[tuple[str, Any, int]] = [
+            (variant_name, variant, seed)
+            for variant_name, variant in sorted(self.config.model_variants.items())
+            for seed in self.config.seeds
+        ]
+        return all_pairs[self.worker_id :: self.num_workers]
+
+    def _wait_for_suite_manifest(self, timeout_s: int = 120) -> None:
+        """Wait for worker-0 to write the suite manifest (max *timeout_s* seconds)."""
+        manifest_path = self.suite_root / "manifest.json"
+        deadline = time.monotonic() + timeout_s
+        while not manifest_path.exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Suite manifest not found at {manifest_path} after {timeout_s}s. "
+                    "Did worker-0 fail to start?"
+                )
+            time.sleep(2)
+
+    def _wait_for_dataset(self, model_name: str, timeout_s: int = 7200) -> None:
+        """Wait for the dataset for *model_name* to be ready (max *timeout_s* seconds)."""
+        dataset_dir = self._dataset_dir(model_name)
+        deadline = time.monotonic() + timeout_s
+        while not self._dataset_stage_complete(model_name):
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Dataset for {model_name!r} not ready in {dataset_dir} after {timeout_s}s."
+                )
+            time.sleep(30)
+
     def run(self) -> dict[str, Any]:
         self._prepare_suite_root()
-        self._write_suite_manifest()
 
-        if self.config.stages.collect_dataset:
-            for model_name in sorted(
-                {self._variant_model_name(variant) for variant in self.config.model_variants.values()}
-            ):
-                self._collect_dataset(model_name)
+        # Only worker 0 writes the manifest; others wait for it.
+        if self.worker_id == 0:
+            self._write_suite_manifest()
+        else:
+            self._wait_for_suite_manifest()
 
-        for variant_name, variant in self.config.model_variants.items():
-            for seed in self.config.seeds:
+        unique_model_names = sorted(
+            {self._variant_model_name(variant) for variant in self.config.model_variants.values()}
+        )
+
+        if self._stage_enabled("collect_dataset"):
+            if self.worker_id == 0:
+                for model_name in unique_model_names:
+                    self._collect_dataset(model_name)
+            else:
+                # Defensive: dataset should already be ready (Phase 1 ran first),
+                # but poll briefly in case of NFS staleness.
+                for model_name in unique_model_names:
+                    self._wait_for_dataset(model_name)
+
+        for variant_name, variant, seed in self._my_variant_seed_pairs():
+            if self._stage_enabled("train"):
                 checkpoint_path = self._train_variant_seed(variant_name, variant, seed)
-                if self.config.stages.evaluate:
-                    self._evaluate_variant_seed(
-                        variant_name=variant_name,
-                        variant=variant,
-                        seed=seed,
-                        checkpoint_path=checkpoint_path,
-                    )
-                if self.config.stages.macag and self.config.macag.enabled:
-                    self._run_macag_for_variant_seed(
-                        variant_name=variant_name,
-                        variant=variant,
-                        seed=seed,
-                        checkpoint_path=checkpoint_path,
-                    )
+            else:
+                checkpoint_path = self._resolve_checkpoint_path(variant_name, variant, seed)
+            if self._stage_enabled("evaluate"):
+                self._evaluate_variant_seed(
+                    variant_name=variant_name,
+                    variant=variant,
+                    seed=seed,
+                    checkpoint_path=checkpoint_path,
+                )
+            if self._stage_enabled("macag") and self.config.macag.enabled:
+                self._run_macag_for_variant_seed(
+                    variant_name=variant_name,
+                    variant=variant,
+                    seed=seed,
+                    checkpoint_path=checkpoint_path,
+                )
 
-        aggregate = self._generate_reporting() if self.config.stages.report else {}
+        aggregate: dict[str, Any] = {}
+        if self.worker_id == 0 and self._stage_enabled("report"):
+            aggregate = self._generate_reporting()
+
         return {
             "suite_root": str(self.suite_root),
+            "worker_id": self.worker_id,
+            "num_workers": self.num_workers,
             "aggregate_metrics_path": str(self.suite_root / "aggregate_metrics.json"),
             "aggregate": aggregate,
         }
