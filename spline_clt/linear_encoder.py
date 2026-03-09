@@ -41,7 +41,7 @@ class LinearEncoder(nn.Module):
         Returns:
             Feature pre-activations of shape (..., n_features).
         """
-        return F.linear(x, self.W_enc)
+        return F.linear(x.to(self.W_enc.dtype), self.W_enc).to(x.dtype)
 
     def get_encoder_vectors(
         self, x: torch.Tensor, active_mask: torch.Tensor
