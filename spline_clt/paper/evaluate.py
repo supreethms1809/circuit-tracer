@@ -208,15 +208,18 @@ def build_prompt_graph(
     edge_threshold: float,
 ) -> dict[str, Any]:
     """Build and persist a circuit-tracer graph for one prompt."""
-    attribution = build_attribution_graph(
-        model=model,
-        x_in=prompt_cache.mlp_inputs,
-        max_features=max_features,
-    )
+    # Select logit tokens first so we can compute feature→logit edges
     logit_tokens, logit_probabilities = select_logit_tokens(
         logits=prompt_cache.logits,
         max_n_logits=max_n_logits,
         desired_logit_prob=desired_logit_prob,
+    )
+    attribution = build_attribution_graph(
+        model=model,
+        x_in=prompt_cache.mlp_inputs,
+        max_features=max_features,
+        W_U=lm.W_U,
+        logit_token_ids=logit_tokens,
     )
     graph = create_graph_from_attribution(
         attribution_result=attribution,

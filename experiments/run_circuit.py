@@ -37,7 +37,7 @@ def collect_activations_for_prompt(
     device: torch.device,
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
-) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
+):
     """Run the language model and collect MLP inputs/outputs via TransformerLens.
 
     Args:
@@ -84,10 +84,10 @@ def collect_activations_for_prompt(
         [cache[name].squeeze(0) for name in hook_out_names]
     ).to(device)
 
-    del lm, cache
+    del cache
     torch.cuda.empty_cache() if device.type == "cuda" else None
 
-    return mlp_inputs, mlp_outputs, tokens
+    return mlp_inputs, mlp_outputs, tokens, lm
 
 
 def print_circuit_summary(
@@ -180,7 +180,7 @@ def main() -> None:
           f"d_transcoder={clt.d_transcoder}")
 
     # --- Collect activations ---
-    mlp_inputs, mlp_outputs, tokens = collect_activations_for_prompt(
+    mlp_inputs, mlp_outputs, tokens, lm = collect_activations_for_prompt(
         model_name=args.model,
         prompt=args.prompt,
         n_layers=clt.n_layers,
@@ -197,8 +197,13 @@ def main() -> None:
 
     # --- Causal attribution ---
     print(f"\nRunning causal attribution (max_features={args.max_features})...")
+    # Select top logit tokens for feature→logit edges
+    logits = lm(args.prompt).squeeze(0)
+    probs = torch.softmax(logits[-1].float(), dim=-1)
+    top_logit_ids = probs.topk(8).indices
     attribution = build_attribution_graph(
-        clt, mlp_inputs, max_features=args.max_features
+        clt, mlp_inputs, max_features=args.max_features,
+        W_U=lm.W_U, logit_token_ids=top_logit_ids,
     )
     print_circuit_summary(attribution, tokens, clt)
 

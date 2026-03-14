@@ -154,6 +154,21 @@ class KANCrossLayerTranscoder(nn.Module):
         for w_dec in self.W_dec:
             nn.init.kaiming_uniform_(w_dec.view(-1, self.d_model))
 
+    def to(self, *args, **kwargs) -> "KANCrossLayerTranscoder":
+        """Move model to device/dtype, keeping KAN encoders in float32.
+
+        KANLinear stores a grid buffer used in B-spline interpolation.
+        Moving it to bfloat16 causes adjacent knot positions to collapse
+        (bfloat16 resolution ~0.01), making the lstsq in update_grid
+        degenerate and producing NaN spline weights. All other parameters
+        (decoder, biases, thresholds) follow the requested dtype normally.
+        """
+        super().to(*args, **kwargs)
+        if self.encoder_type == "kan":
+            for enc in self.encoders:
+                enc.kan_linear.to(dtype=torch.float32)
+        return self
+
     @property
     def device(self) -> torch.device:
         return self.b_enc.device
@@ -433,6 +448,11 @@ class KANCrossLayerTranscoder(nn.Module):
         Returns:
             Reconstructed MLP outputs of shape (n_layers, n_pos, d_model).
         """
+        w_dtype = self.b_dec.dtype
+        activations = activations.to(w_dtype)
+        if input_acts is not None:
+            input_acts = input_acts.to(w_dtype)
+
         n_layers, n_pos, _ = activations.shape
         y_hat = self.b_dec[:, None, :].expand(n_layers, n_pos, self.d_model).clone()
 

@@ -127,7 +127,12 @@ def normalize_matrix(matrix: torch.Tensor) -> torch.Tensor:
     return normalized / normalized.sum(dim=1, keepdim=True).clamp(min=1e-10)
 
 
-def compute_influence(A: torch.Tensor, logit_weights: torch.Tensor, max_iter: int = 1000):
+def compute_influence(
+    A: torch.Tensor,
+    logit_weights: torch.Tensor,
+    max_iter: int = 1000,
+    tol: float = 1e-6,
+):
     # Normally we calculate total influence B using A + A^2 + ... or (I - A)^-1 - I,
     # and do logit_weights @ B
     # But it's faster / more efficient to compute logit_weights @ A + logit_weights @ A^2
@@ -136,11 +141,9 @@ def compute_influence(A: torch.Tensor, logit_weights: torch.Tensor, max_iter: in
     current_influence = logit_weights @ A
     influence = current_influence
     iterations = 0
-    while current_influence.any():
+    while current_influence.abs().max().item() > tol:
         if iterations >= max_iter:
-            raise RuntimeError(
-                f"Influence computation failed to converge after {iterations} iterations"
-            )
+            break
         current_influence = current_influence @ A
         influence += current_influence
         iterations += 1

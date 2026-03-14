@@ -47,6 +47,10 @@ def ablation_attribution(
     # Step 1: Forward pass to get baseline activations (no grad needed)
     with torch.no_grad():
         baseline_activations = model.encode(x_in)  # (n_layers, n_pos, d_transcoder)
+        # Zero out BOS position (pos 0) — consistent with the replacement model's
+        # activation cache hook, which also zeros BOS so that circuit graphs and
+        # MACAG interventions are aligned to actual token positions.
+        baseline_activations[:, 0, :] = 0.0
         baseline_sparse = baseline_activations.to_sparse()
 
         # Get active features
@@ -151,11 +155,58 @@ def _batch_encoder_directions(
     return directions
 
 
+def compute_logit_effects(
+    attribution: dict[str, torch.Tensor],
+    W_U: torch.Tensor,
+    logit_token_ids: torch.Tensor,
+    n_error: int,
+    n_tokens: int,
+) -> torch.Tensor:
+    """Compute feature→logit edges for the adjacency matrix.
+
+    For each active feature, projects its last-position reconstruction effect
+    through the unembedding matrix to estimate the logit change.
+
+    Args:
+        attribution: Output from ablation_attribution().
+        W_U: Unembedding matrix, shape (d_model, n_vocab).
+        logit_token_ids: Vocab indices for the selected logit tokens, shape (n_logits,).
+        n_error: Number of error nodes in the adjacency matrix.
+        n_tokens: Number of token (embedding) nodes.
+
+    Returns:
+        Logit effect matrix, shape (n_logits, n_active + n_error + n_tokens).
+        Rows correspond to logit nodes, columns to all other nodes.
+    """
+    n_active = len(attribution["active_features"])
+    n_logits = len(logit_token_ids)
+    total_sources = n_active + n_error + n_tokens
+
+    logit_effects = torch.zeros(
+        n_logits, total_sources, device=W_U.device, dtype=W_U.dtype
+    )
+
+    # Feature→logit: project each feature's last-position output effect through W_U
+    # output_effects[i] has shape (n_layers, n_pos, d_model)
+    output_effects = attribution["output_effects"]
+    # Sum across layers at the last position to get total residual stream effect
+    last_pos_effects = output_effects[:, :, -1, :].sum(dim=1)  # (n_active, d_model)
+    # Project onto unembedding vectors for selected logit tokens
+    W_logits = W_U[:, logit_token_ids].float()  # (d_model, n_logits)
+    logit_effects[:, :n_active] = (last_pos_effects.float() @ W_logits).T
+
+    # Error→logit and token→logit: leave as zero.
+    # The pruning algorithm handles these through the influence propagation.
+
+    return logit_effects
+
+
 def build_attribution_graph(
     model: KANCrossLayerTranscoder,
     x_in: torch.Tensor,
-    logit_effects: torch.Tensor | None = None,
     max_features: int = 256,
+    W_U: torch.Tensor | None = None,
+    logit_token_ids: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Build a full attribution graph compatible with circuit-tracer's Graph format.
 
@@ -164,8 +215,10 @@ def build_attribution_graph(
     Args:
         model: Trained Spline-CLT model.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
-        logit_effects: Optional pre-computed logit attribution, shape (n_logits, n_nodes).
         max_features: Max features to include.
+        W_U: Unembedding matrix, shape (d_model, n_vocab). Required for logit nodes.
+        logit_token_ids: Vocab indices for selected logit tokens, shape (n_logits,).
+            Required for logit nodes.
 
     Returns:
         Dict with active_features, adjacency_matrix, and metadata needed for Graph.
@@ -173,10 +226,19 @@ def build_attribution_graph(
     attribution = ablation_attribution(model, x_in, max_features=max_features)
 
     n_active = len(attribution["active_features"])
-    n_layers, n_pos, d_model = x_in.shape
+    n_layers, n_pos, _ = x_in.shape
     n_error = n_layers * n_pos
     n_tokens = n_pos
-    n_logits = logit_effects.shape[0] if logit_effects is not None else 0
+
+    has_logits = W_U is not None and logit_token_ids is not None
+    if has_logits:
+        assert W_U is not None and logit_token_ids is not None  # for type checker
+        logit_effects = compute_logit_effects(
+            attribution, W_U, logit_token_ids, n_error, n_tokens
+        )
+        n_logits = len(logit_token_ids)
+    else:
+        n_logits = 0
 
     total_nodes = n_active + n_error + n_tokens + n_logits
 
@@ -186,7 +248,6 @@ def build_attribution_graph(
     adj[:n_active, :n_active] = attribution["feature_effects"].T
 
     # Feature-to-error edges (reconstruction error changes)
-    baseline = attribution["baseline_reconstruction"]
     for i in range(n_active):
         effects = attribution["output_effects"][i]  # (n_layers, n_pos, d_model)
         for l in range(n_layers):
@@ -195,8 +256,8 @@ def build_attribution_graph(
                 adj[error_idx, i] = effects[l, p].norm()
 
     # Logit edges
-    if logit_effects is not None:
-        adj[-n_logits:, :] = logit_effects
+    if has_logits:
+        adj[-n_logits:, :n_active + n_error + n_tokens] = logit_effects
 
     return {
         "active_features": attribution["active_features"],

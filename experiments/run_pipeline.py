@@ -213,7 +213,7 @@ def run_circuits(
             print(f"\n  [{ckpt_label}] {pname}: {prompt!r}")
 
             try:
-                mlp_inputs, mlp_outputs, tokens = collect_activations_for_prompt(
+                mlp_inputs, mlp_outputs, tokens, lm = collect_activations_for_prompt(
                     model_name=lm_name,
                     prompt=prompt,
                     n_layers=clt.n_layers,
@@ -223,7 +223,15 @@ def run_circuits(
                 )
                 mlp_inputs = mlp_inputs.to(dtype=dtype)
 
-                attribution = build_attribution_graph(clt, mlp_inputs, max_features=max_features)
+                # Select top logit tokens for feature→logit edges
+                _logits = lm(prompt).squeeze(0)
+                _probs = torch.softmax(_logits[-1].float(), dim=-1)
+                _top_logit_ids = _probs.topk(8).indices
+                attribution = build_attribution_graph(
+                    clt, mlp_inputs, max_features=max_features,
+                    W_U=lm.W_U, logit_token_ids=_top_logit_ids,
+                )
+                del lm
                 n_active = len(attribution["active_features"])
                 print(f"    {n_active} active features")
                 print_circuit_summary(attribution, tokens, clt, top_k=10)
