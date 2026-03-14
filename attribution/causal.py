@@ -192,7 +192,7 @@ def compute_logit_effects(
     # Sum across layers at the last position to get total residual stream effect
     last_pos_effects = output_effects[:, :, -1, :].sum(dim=1)  # (n_active, d_model)
     # Project onto unembedding vectors for selected logit tokens
-    W_logits = W_U[:, logit_token_ids].float()  # (d_model, n_logits)
+    W_logits = W_U[:, logit_token_ids].detach().float()  # (d_model, n_logits)
     logit_effects[:, :n_active] = (last_pos_effects.float() @ W_logits).T
 
     # Error→logit and token→logit: leave as zero.
