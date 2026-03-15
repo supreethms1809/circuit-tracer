@@ -1,0 +1,55 @@
+# Spline-CLT training config for GPT-2 small — WIDE (high expansion ratio)
+# 12 layers, 768-dim residual stream, d_transcoder=16384 (21.3x expansion)
+#
+# Rationale:
+#   The d_transcoder=4096 (5.3x) model achieves good reconstruction but features
+#   are forced to be polysemantic (mean Gini=0.37, top1_match=0.0).  Published
+#   SAE/CLT work uses 64-256x expansion.  16384 is the largest KAN encoder that
+#   fits in GH200 96GB with Adam optimizer states + activation memory.
+#
+# Parameter budget:
+#   KAN encoder: 10 × 16384 × 768 × 12 layers = 1,509.9M
+#   Decoder:     16384 × 768 × 78 cross-layer  =   981.5M
+#   Total:       ~2,492M params
+#   Training memory: ~30GB (params+optimizer) + ~15-20GB activations = ~50GB
+#
+# Key changes from gpt2_small.yaml:
+#   d_transcoder: 4096 → 16384
+#   batch_size: 32 → 16 (halved for memory)
+#   lambda_sparsity: 0.002 → 0.005 (stronger sparsity at higher width)
+#   total_steps: 400K → 600K (more params need more steps)
+#   warmup_steps: 5K → 10K
+#   update_grid_every: 100K → 150K
+
+# Model architecture
+n_layers: 12
+d_model: 768
+d_transcoder: 16384
+grid_size: 5
+spline_order: 3
+
+# Training
+learning_rate: 5.0e-5
+warmup_steps: 10000
+total_steps: 600000
+batch_size: 16
+lambda_sparsity: 0.005
+c_sparsity: 1.0
+grad_clip: 1.0
+
+# Logging & checkpointing
+log_every: 200
+eval_every: 10000
+save_every: 50000
+checkpoint_dir: checkpoints/gpt2_small_wide
+run_name: spline_clt_gpt2_wide
+
+# Grid update
+update_grid_every: 150000
+update_grid_from: 10000
+
+# Data
+data_dir: data/activations
+device: cuda
+dtype: bfloat16
+val_fraction: 0.05

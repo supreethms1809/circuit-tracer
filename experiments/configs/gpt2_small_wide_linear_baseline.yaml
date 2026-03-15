@@ -1,0 +1,56 @@
+# Linear CLT baseline for GPT-2 small — WIDE (high expansion ratio)
+# 12 layers, 768-dim residual stream, d_transcoder=32768 (42.7x expansion)
+#
+# Rationale:
+#   Linear encoder is 10x cheaper per feature than KAN, so we can afford
+#   d_transcoder=32768 on GH200 where KAN maxes out at 16384.  This gives a
+#   stronger linear baseline — if Spline-CLT at 16384 beats Linear at 32768,
+#   the nonlinear encoder benefit is unambiguous.
+#
+# Parameter budget:
+#   Linear encoder: 32768 × 768 × 12 layers =   302.0M
+#   Decoder:        32768 × 768 × 78         = 1,962.9M
+#   Total:          ~2,266M params
+#   Training memory: ~27GB (params+optimizer) + ~15-20GB activations = ~45GB
+#
+# Alternatively: param-matched linear baseline at d_transcoder=16384 uses
+#   ~1,133M params — less than half of KAN's 2,492M.  The reviewer-facing
+#   argument is stronger with the WIDER linear baseline (more features, still
+#   lower Gini / worse reconstruction than KAN).
+
+# Model architecture
+n_layers: 12
+d_model: 768
+d_transcoder: 32768
+encoder_type: linear
+grid_size: 5         # unused for linear encoder
+spline_order: 3      # unused for linear encoder
+
+# Training (matched schedule to wide KAN for fair comparison)
+learning_rate: 5.0e-5
+warmup_steps: 10000
+total_steps: 600000
+batch_size: 16
+lambda_sparsity: 0.005
+c_sparsity: 1.0
+grad_clip: 1.0
+
+# Logging & checkpointing
+log_every: 200
+eval_every: 10000
+save_every: 50000
+checkpoint_dir: checkpoints/gpt2_small_wide_linear
+run_name: linear_clt_gpt2_wide
+
+# Optimizer restarts — matches KAN's 3 Adam resets at grid update boundaries.
+reset_optimizer_every: 150000
+
+# Grid update (disabled for linear encoder)
+update_grid_every: 0
+update_grid_from: 0
+
+# Data
+data_dir: data/activations
+device: cuda
+dtype: bfloat16
+val_fraction: 0.05

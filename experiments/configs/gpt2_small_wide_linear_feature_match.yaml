@@ -1,0 +1,47 @@
+# Linear CLT baseline for GPT-2 small — WIDE feature-matched
+# Same d_transcoder=16384 as Spline-CLT wide, for apples-to-apples comparison.
+#
+# Parameter budget:
+#   Linear encoder: 16384 × 768 × 12 layers =   151.0M
+#   Decoder:        16384 × 768 × 78         =   981.5M
+#   Total:          ~1,133M params (vs KAN's 2,492M — 2.2x fewer)
+#
+# This config answers: "at the same dictionary size, does the KAN encoder
+# find better features than a linear encoder?"
+
+# Model architecture
+n_layers: 12
+d_model: 768
+d_transcoder: 16384
+encoder_type: linear
+grid_size: 5         # unused for linear encoder
+spline_order: 3      # unused for linear encoder
+
+# Training (identical to wide KAN)
+learning_rate: 5.0e-5
+warmup_steps: 10000
+total_steps: 600000
+batch_size: 16
+lambda_sparsity: 0.005
+c_sparsity: 1.0
+grad_clip: 1.0
+
+# Logging & checkpointing
+log_every: 200
+eval_every: 10000
+save_every: 50000
+checkpoint_dir: checkpoints/gpt2_small_wide_linear_feat
+run_name: linear_clt_gpt2_wide_feat
+
+# Optimizer restarts
+reset_optimizer_every: 150000
+
+# Grid update (disabled for linear encoder)
+update_grid_every: 0
+update_grid_from: 0
+
+# Data
+data_dir: data/activations
+device: cuda
+dtype: bfloat16
+val_fraction: 0.05
