@@ -195,8 +195,18 @@ def compute_logit_effects(
     W_logits = W_U[:, logit_token_ids].detach().float()  # (d_model, n_logits)
     logit_effects[:, :n_active] = (last_pos_effects.float() @ W_logits).T
 
-    # Error→logit and token→logit: leave as zero.
-    # The pruning algorithm handles these through the influence propagation.
+    # Error→logit: project each error node's reconstruction error through W_U
+    # Error nodes represent (layer, position) pairs. The reconstruction error at the
+    # last token position from each layer feeds into the final residual and affects logits.
+    baseline_recon = attribution.get("baseline_reconstruction")  # (n_layers, n_pos, d_model)
+    y_true = attribution.get("y_true")  # (n_layers, n_pos, d_model)
+    if baseline_recon is not None and y_true is not None:
+        n_layers = baseline_recon.shape[0]
+        n_pos = baseline_recon.shape[1]
+        for l in range(n_layers):
+            error_vec = (y_true[l, -1, :] - baseline_recon[l, -1, :]).float()
+            error_idx = n_active + l * n_pos + (n_pos - 1)  # last position
+            logit_effects[:, error_idx] = (error_vec @ W_logits).squeeze()
 
     return logit_effects
 
@@ -207,6 +217,7 @@ def build_attribution_graph(
     max_features: int = 256,
     W_U: torch.Tensor | None = None,
     logit_token_ids: torch.Tensor | None = None,
+    y_true: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Build a full attribution graph compatible with circuit-tracer's Graph format.
 
@@ -219,11 +230,15 @@ def build_attribution_graph(
         W_U: Unembedding matrix, shape (d_model, n_vocab). Required for logit nodes.
         logit_token_ids: Vocab indices for selected logit tokens, shape (n_logits,).
             Required for logit nodes.
+        y_true: True MLP outputs, shape (n_layers, n_pos, d_model). Needed for
+            error→logit edges (reconstruction error contribution to logits).
 
     Returns:
         Dict with active_features, adjacency_matrix, and metadata needed for Graph.
     """
     attribution = ablation_attribution(model, x_in, max_features=max_features)
+    if y_true is not None:
+        attribution["y_true"] = y_true
 
     n_active = len(attribution["active_features"])
     n_layers, n_pos, _ = x_in.shape

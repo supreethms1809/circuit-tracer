@@ -140,14 +140,18 @@ def evaluate_replacement_accuracy(
         # Simple approximation: adjust final residual by reconstruction difference
         residual_adjustment = (recon - mlp_out).sum(dim=0)  # (seq_len, d_model)
 
-        # Get final residual stream from original model
+        # Get pre-LN final residual stream from original model
+        last_layer = spline_clt.n_layers - 1
+        resid_hook = f"blocks.{last_layer}.hook_resid_post"
         _, final_cache = original_model.run_with_cache(
-            tokens, names_filter=["ln_final.hook_normalized"]
+            tokens, names_filter=[resid_hook]
         )
-        final_resid = final_cache["ln_final.hook_normalized"].squeeze(0)
+        final_resid_pre_ln = final_cache[resid_hook].squeeze(0)
 
-        # Adjusted logits
-        replacement_logits = (final_resid + residual_adjustment) @ original_model.W_U + original_model.b_U
+        # Adjusted logits: apply LN to adjusted residual, then unembed
+        adjusted_resid = final_resid_pre_ln + residual_adjustment
+        normed = original_model.ln_final(adjusted_resid)
+        replacement_logits = normed @ original_model.W_U + original_model.b_U
 
         # Top-1 match
         original_top1 = original_logits.argmax(dim=-1)

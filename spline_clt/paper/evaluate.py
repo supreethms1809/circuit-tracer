@@ -28,7 +28,7 @@ class PromptCache:
     mlp_inputs: torch.Tensor
     mlp_outputs: torch.Tensor
     logits: torch.Tensor
-    final_resid: torch.Tensor
+    final_resid_pre_ln: torch.Tensor
 
 
 def load_language_model(model_name: str, device: torch.device):
@@ -60,11 +60,13 @@ def collect_prompt_cache(
     token_strings = lm.to_str_tokens(prompt)
     hook_names_in = [f"blocks.{i}.{feature_input_hook}" for i in range(n_layers)]
     hook_names_out = [f"blocks.{i}.{feature_output_hook}" for i in range(n_layers)]
-    names_filter = hook_names_in + hook_names_out + ["ln_final.hook_normalized"]
+    last_layer = n_layers - 1
+    resid_post_hook = f"blocks.{last_layer}.hook_resid_post"
+    names_filter = hook_names_in + hook_names_out + [resid_post_hook]
     logits, cache = lm.run_with_cache(token_ids_batch, names_filter=names_filter)
     mlp_inputs = torch.stack([cache[name].squeeze(0) for name in hook_names_in])
     mlp_outputs = torch.stack([cache[name].squeeze(0) for name in hook_names_out])
-    final_resid = cache["ln_final.hook_normalized"].squeeze(0)
+    final_resid_pre_ln = cache[resid_post_hook].squeeze(0)
     return PromptCache(
         prompt=prompt,
         token_ids=token_ids,
@@ -72,7 +74,7 @@ def collect_prompt_cache(
         mlp_inputs=mlp_inputs,
         mlp_outputs=mlp_outputs,
         logits=logits.squeeze(0),
-        final_resid=final_resid,
+        final_resid_pre_ln=final_resid_pre_ln,
     )
 
 
@@ -174,7 +176,9 @@ def evaluate_prompt_replacement(
     features = model.encode(prompt_cache.mlp_inputs).to_sparse()
     reconstruction = model.decode(features, input_acts=prompt_cache.mlp_inputs)
     residual_adjustment = (reconstruction - prompt_cache.mlp_outputs).sum(dim=0).float()
-    replacement_logits = (prompt_cache.final_resid.float() + residual_adjustment) @ lm.W_U.float()
+    adjusted_resid = prompt_cache.final_resid_pre_ln.float() + residual_adjustment
+    normed = lm.ln_final(adjusted_resid)
+    replacement_logits = normed @ lm.W_U.float()
     if getattr(lm, "b_U", None) is not None:
         replacement_logits = replacement_logits + lm.b_U.float()
 
@@ -220,6 +224,7 @@ def build_prompt_graph(
         max_features=max_features,
         W_U=lm.W_U,
         logit_token_ids=logit_tokens,
+        y_true=prompt_cache.mlp_outputs,
     )
     graph = create_graph_from_attribution(
         attribution_result=attribution,
@@ -315,7 +320,7 @@ def build_logit_gap_direction(
     target_map = resolve_target_to_logit_idx(
         tokenizer=tokenizer,
         target_token_by_label={"y": target_token, "y_foil": foil_token},
-        strict_single_token=True,
+        strict_single_token=False,
     )
     target_idx = target_map["y"]
     foil_idx = target_map["y_foil"]
@@ -368,7 +373,9 @@ def replacement_logits_from_reconstruction(
 ) -> torch.Tensor:
     """Project reconstructed MLP outputs back to token logits."""
     residual_adjustment = (reconstruction - prompt_cache.mlp_outputs).sum(dim=0).float()
-    replacement_logits = (prompt_cache.final_resid.float() + residual_adjustment) @ lm.W_U.float()
+    adjusted_resid = prompt_cache.final_resid_pre_ln.float() + residual_adjustment
+    normed = lm.ln_final(adjusted_resid)
+    replacement_logits = normed @ lm.W_U.float()
     if getattr(lm, "b_U", None) is not None:
         replacement_logits = replacement_logits + lm.b_U.float()
     return replacement_logits
