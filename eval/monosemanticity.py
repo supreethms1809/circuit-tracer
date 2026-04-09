@@ -141,21 +141,27 @@ def collect_max_activating_examples(
     feature_heaps: dict[tuple[int, int], list[tuple[float, int, int]]] = {
         lf: [] for lf in top_layer_feat
     }
-    # All activations across all samples for Gini computation (list of tensors)
-    feature_all_acts: dict[tuple[int, int], list[float]] = {
+    # Nonzero activations across all samples for Gini computation.
+    # We store only the nonzero values (to save memory) and separately
+    # track the total position count so we can prepend the correct number
+    # of zeros before computing Gini — zeros are critical for distinguishing
+    # sparse (monosemantic) from dense (polysemantic) features.
+    feature_nonzero_acts: dict[tuple[int, int], list[float]] = {
         lf: [] for lf in top_layer_feat
     }
+    gini_n_pos_total = 0
 
     for idx in tqdm(indices, desc="Example collection"):
         sample = dataset[idx]
         x_in = sample["mlp_inputs"].to(device=device, dtype=dtype)
         acts = model.encode(x_in).float().cpu()   # (n_layers, seq, d_transcoder)
+        gini_n_pos_total += acts.shape[1]
 
         for (l, f) in top_layer_feat:
             feat_acts = acts[l, :, f]  # (seq_len,)
-            # Collect all nonzero activations for Gini
+            # Collect nonzero activations (zeros tracked via gini_n_pos_total)
             nonzero = feat_acts[feat_acts > 0]
-            feature_all_acts[(l, f)].extend(nonzero.tolist())
+            feature_nonzero_acts[(l, f)].extend(nonzero.tolist())
 
             # Track top-k examples
             heap = feature_heaps[(l, f)]
@@ -174,7 +180,14 @@ def collect_max_activating_examples(
     reports = []
     for (l, f) in top_layer_feat:
         heap = sorted(feature_heaps[(l, f)], key=lambda x: -x[0])
-        all_vals = torch.tensor(feature_all_acts[(l, f)]) if feature_all_acts[(l, f)] else torch.zeros(1)
+        # Reconstruct full activation vector including zeros for correct Gini.
+        # A monosemantic feature has mostly zeros → high Gini.
+        nonzero_vals = feature_nonzero_acts[(l, f)]
+        n_zeros = gini_n_pos_total - len(nonzero_vals)
+        all_vals = torch.cat([
+            torch.zeros(max(n_zeros, 0)),
+            torch.tensor(nonzero_vals) if nonzero_vals else torch.zeros(0),
+        ]) if gini_n_pos_total > 0 else torch.zeros(1)
 
         examples = [
             FeatureExample(

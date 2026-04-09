@@ -11,7 +11,7 @@
 #   Linear encoder: 32768 × 768 × 12 layers =   302.0M
 #   Decoder:        32768 × 768 × 78         = 1,962.9M
 #   Total:          ~2,266M params
-#   Training memory: ~27GB (params+optimizer) + ~15-20GB activations = ~45GB
+#   Training memory: ~27GB (params+optimizer) + ~30-35GB activations = ~60GB
 #
 # Alternatively: param-matched linear baseline at d_transcoder=16384 uses
 #   ~1,133M params — less than half of KAN's 2,492M.  The reviewer-facing
@@ -30,9 +30,9 @@ spline_order: 3      # unused for linear encoder
 learning_rate: 5.0e-5
 warmup_steps: 10000
 total_steps: 600000
-batch_size: 16
-lambda_sparsity: 0.005
-c_sparsity: 1.0
+batch_size: 32
+lambda_sparsity: 0.02
+c_sparsity: 2.0
 grad_clip: 1.0
 
 # Logging & checkpointing
@@ -42,8 +42,9 @@ save_every: 50000
 checkpoint_dir: checkpoints/gpt2_small_wide_linear
 run_name: linear_clt_gpt2_wide
 
-# Optimizer restarts — matches KAN's 3 Adam resets at grid update boundaries.
-reset_optimizer_every: 150000
+# Optimizer restarts — disabled; linear encoder has no grid updates and
+# resets destroy learned sparsity momentum.
+reset_optimizer_every: 0
 
 # Grid update (disabled for linear encoder)
 update_grid_every: 0

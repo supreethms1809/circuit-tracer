@@ -183,12 +183,20 @@ class KANEncoder(nn.Module):
         """Update the B-spline grid based on observed activations.
 
         Should be called periodically during training to adapt the grid to the
-        data distribution.
+        data distribution.  For wide models the efficient-kan lstsq inside
+        curve2coeff allocates O(batch * in_features * out_features) floats,
+        which can exceed GPU memory.  We move everything to CPU for the update
+        (runs only a few times during training, so speed is not critical) and
+        then move back.
 
         Args:
             x: Input tensor of shape (batch, d_model).
         """
         if x.dim() > 2:
             x = x.reshape(-1, self.d_model)
-        # Encoder parameters are float32, so x just needs to be on the right device
-        self.kan_linear.update_grid(x.float())  # .float() handles bfloat16 input dtype
+
+        original_device = next(self.kan_linear.parameters()).device
+        # Move to CPU to avoid GPU OOM in the lstsq solve
+        self.kan_linear.cpu()
+        self.kan_linear.update_grid(x.float().cpu())
+        self.kan_linear.to(original_device)

@@ -21,9 +21,9 @@ spline_order: 3      # unused for linear encoder
 learning_rate: 5.0e-5
 warmup_steps: 10000
 total_steps: 600000
-batch_size: 16
-lambda_sparsity: 0.005
-c_sparsity: 1.0
+batch_size: 32
+lambda_sparsity: 0.02
+c_sparsity: 2.0
 grad_clip: 1.0
 
 # Logging & checkpointing
@@ -33,8 +33,9 @@ save_every: 50000
 checkpoint_dir: checkpoints/gpt2_small_wide_linear_feat
 run_name: linear_clt_gpt2_wide_feat
 
-# Optimizer restarts
-reset_optimizer_every: 150000
+# Optimizer restarts — disabled; linear encoder has no grid updates and
+# resets destroy learned sparsity momentum.
+reset_optimizer_every: 0
 
 # Grid update (disabled for linear encoder)
 update_grid_every: 0
