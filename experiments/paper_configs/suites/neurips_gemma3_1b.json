@@ -1,0 +1,23 @@
+{
+  "defaults": [
+    "../base/common_gemma3_1b.json",
+    "../macag/default.json",
+    "../models/gemma3_1b_spline.json",
+    "../models/gemma3_1b_linear.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "neurips_gemma3_1b",
+  "description": "Spline-CLT vs Linear CLT on Gemma 3 1B (26 layers, 1152-dim). Comparison with GPT-2 to study wider residual stream and deeper architecture.",
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "reporting": {
+    "primary_variant": "spline_gemma3_1b",
+    "baseline_variant": "linear_gemma3_1b",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

@@ -11,11 +11,11 @@
 #   KAN encoder: 10 × 16384 × 768 × 12 layers = 1,509.9M
 #   Decoder:     16384 × 768 × 78 cross-layer  =   981.5M
 #   Total:       ~2,492M params
-#   Training memory: ~30GB (params+optimizer) + ~15-20GB activations = ~50GB
+#   Training memory: ~30GB (params+optimizer) + ~20-25GB activations = ~55GB
 #
 # Key changes from gpt2_small.yaml:
 #   d_transcoder: 4096 → 16384
-#   batch_size: 32 → 16 (halved for memory)
+#   batch_size: 32 → 32 (fits in GH200 96GB)
 #   lambda_sparsity: 0.002 → 0.005 (stronger sparsity at higher width)
 #   total_steps: 400K → 600K (more params need more steps)
 #   warmup_steps: 5K → 10K
@@ -32,7 +32,7 @@ spline_order: 3
 learning_rate: 5.0e-5
 warmup_steps: 10000
 total_steps: 600000
-batch_size: 16
+batch_size: 32
 lambda_sparsity: 0.005
 c_sparsity: 1.0
 grad_clip: 1.0

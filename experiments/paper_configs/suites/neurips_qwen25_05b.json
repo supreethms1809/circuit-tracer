@@ -1,0 +1,23 @@
+{
+  "defaults": [
+    "../base/common_qwen25_05b.json",
+    "../macag/default.json",
+    "../models/qwen25_05b_spline.json",
+    "../models/qwen25_05b_linear.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "neurips_qwen25_05b",
+  "description": "Spline-CLT vs Linear CLT on Qwen2.5-0.5B (24 layers, 896-dim). Study MSE scaling with higher layer count (24 vs GPT-2's 12) at comparable d_model.",
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "reporting": {
+    "primary_variant": "spline_qwen25_05b",
+    "baseline_variant": "linear_qwen25_05b",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}
