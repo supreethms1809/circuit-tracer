@@ -154,7 +154,7 @@ class TestComputeLogitEffects:
         logit_token_ids = torch.arange(n_logits)
 
         effects = compute_logit_effects(
-            attribution, W_U, logit_token_ids, n_error, n_tokens
+            attribution, x, W_U, logit_token_ids, n_error, n_tokens
         )
         expected_cols = n_active + n_error + n_tokens
         assert effects.shape == (n_logits, expected_cols)
@@ -173,13 +173,13 @@ class TestComputeLogitEffects:
         logit_token_ids = torch.tensor([0, 1, 2])
 
         effects = compute_logit_effects(
-            attribution, W_U, logit_token_ids, n_error, n_tokens
+            attribution, x, W_U, logit_token_ids, n_error, n_tokens
         )
         # Feature columns should have nonzero entries
         assert effects[:, :n_active].abs().sum() > 0
 
-    def test_logit_effects_non_feature_columns_zero(self, small_model):
-        """Test that error/token columns are zero."""
+    def test_logit_effects_error_token_columns_nonzero(self, small_model):
+        """Test that error/token columns are populated (via residual stream proxy)."""
         x = torch.randn(2, 4, 8)
         attribution = ablation_attribution(small_model, x, max_features=16)
         n_active = len(attribution["active_features"])
@@ -190,10 +190,10 @@ class TestComputeLogitEffects:
         logit_token_ids = torch.tensor([0, 1])
 
         effects = compute_logit_effects(
-            attribution, W_U, logit_token_ids, n_error, n_tokens
+            attribution, x, W_U, logit_token_ids, n_error, n_tokens
         )
-        # Error and token columns should be zero
-        assert effects[:, n_active:].abs().sum() == 0
+        # Error and token columns should now be nonzero (residual stream proxy)
+        assert effects[:, n_active:].abs().sum() > 0
 
 
 def test_create_graph_from_attribution_uses_index_selected_features(monkeypatch):
