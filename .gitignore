@@ -189,3 +189,12 @@ results/
 
 # Exported notebook HTML
 demos/*.html
+
+# Experiment data and local workspaces
+data/
+experiments/data/
+experiments/spline_sae_tabular/
+exercise_local/
+
+# Claude Code
+.claude/
