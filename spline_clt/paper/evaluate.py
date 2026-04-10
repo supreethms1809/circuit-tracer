@@ -226,10 +226,14 @@ def build_prompt_graph(
         logit_token_ids=logit_tokens,
         y_true=prompt_cache.mlp_outputs,
     )
+    # Pass content tokens only (exclude BOS at position 0) so that
+    # Graph.n_pos matches the number of error/embedding node positions
+    # in the adjacency matrix.
+    content_tokens = prompt_cache.token_ids[1:].cpu()
     graph = create_graph_from_attribution(
         attribution_result=attribution,
         input_string=prompt_cache.prompt,
-        input_tokens=prompt_cache.token_ids.cpu(),
+        input_tokens=content_tokens,
         logit_tokens=logit_tokens.cpu(),
         logit_probabilities=logit_probabilities.cpu(),
         cfg=lm.cfg,

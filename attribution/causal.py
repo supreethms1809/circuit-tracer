@@ -163,13 +163,14 @@ def compute_logit_effects(
     logit_token_ids: torch.Tensor,
     n_error: int,
     n_tokens: int,
+    skip_bos: bool = False,
 ) -> torch.Tensor:
     """Compute logit attribution rows for the adjacency matrix.
 
-    For each active feature, projects its output reconstruction delta (at the
-    feature's own position, summed across decoder layers) through the demeaned
-    unembedding vectors for the selected logit tokens.  Error and embedding
-    nodes are handled analogously.
+    For each active feature, projects its output reconstruction delta at the
+    *final* token position (where next-token prediction happens) through the
+    demeaned unembedding vectors for the selected logit tokens.  Error and
+    embedding nodes are handled analogously.
 
     Args:
         attribution: Output from ablation_attribution().
@@ -178,6 +179,7 @@ def compute_logit_effects(
         logit_token_ids: Vocab indices for the selected logit tokens, shape (n_logits,).
         n_error: Number of error nodes in the adjacency matrix.
         n_tokens: Number of token (embedding) nodes.
+        skip_bos: If True, error and embedding nodes exclude position 0 (BOS).
 
     Returns:
         Logit effect matrix, shape (n_logits, n_active + n_error + n_tokens).
@@ -206,23 +208,25 @@ def compute_logit_effects(
         n_logits, total_sources, device=x_in.device, dtype=x_in.dtype
     )
 
-    # Feature → logit: project the feature's output effect at its *own* position
-    # (summed across all decoder layers) through the unembedding.
+    # Feature → logit: project the feature's output effect at the *final* position
+    # (where next-token prediction happens) through the unembedding.
+    final_pos = n_pos - 1
     for i in range(n_active):
-        feat_pos = int(active_features[i, 1])
-        effect = output_effects[i, :, feat_pos, :].sum(dim=0).float()  # (d_model,)
+        effect = output_effects[i, :, final_pos, :].sum(dim=0).float()  # (d_model,)
         logit_effects[:, i] = logit_dirs @ effect
 
     # Error node → logit: project the residual stream at each (layer, pos) through
     # the unembedding as a proxy for how much that error matters to the logits.
+    pos_start = 1 if skip_bos else 0
+    n_content_pos = n_pos - pos_start
     for l in range(n_layers):
-        for p in range(n_pos):
-            error_idx = n_active + l * n_pos + p
+        for p in range(pos_start, n_pos):
+            error_idx = n_active + l * n_content_pos + (p - pos_start)
             logit_effects[:, error_idx] = logit_dirs @ x_in[l, p].float()
 
     # Token/embedding → logit
-    for p in range(n_tokens):
-        token_idx = n_active + n_error + p
+    for p in range(pos_start, n_pos):
+        token_idx = n_active + n_error + (p - pos_start)
         logit_effects[:, token_idx] = logit_dirs @ x_in[0, p].float()
 
     return logit_effects
@@ -241,6 +245,13 @@ def build_attribution_graph(
 
     Node ordering: [active_features, error_nodes, token_nodes, logit_nodes]
 
+    Position 0 (BOS) is excluded from error and embedding nodes to match the
+    original circuit_tracer convention where BOS error vectors are zeroed.
+
+    When ``W_U`` and ``logit_token_ids`` are provided, features are ranked by
+    their influence on the target logit (matching the original circuit_tracer)
+    rather than by raw activation magnitude.
+
     Args:
         model: Trained Spline-CLT model.
         x_in: Residual stream inputs, shape (n_layers, n_pos, d_model).
@@ -256,22 +267,59 @@ def build_attribution_graph(
     Returns:
         Dict with active_features, adjacency_matrix, and metadata needed for Graph.
     """
+    # Run ablation with a generous budget — we'll prune by influence below.
+    raw_max = max_features * 4 if W_U is not None and logit_token_ids is not None else max_features
     attribution = _raw_attribution or ablation_attribution(
-        model, x_in, max_features=max_features
+        model, x_in, max_features=raw_max
     )
     if y_true is not None:
         attribution["y_true"] = y_true
 
-    n_active = len(attribution["active_features"])
     n_layers, n_pos, _ = x_in.shape
-    n_error = n_layers * n_pos
-    n_tokens = n_pos
 
+    # --- Influence-based feature selection -----------------------------------
+    # When logit info is available, rank features by their causal effect on
+    # the target logit (summed across selected logit tokens), matching how
+    # the original circuit_tracer ranks by influence propagation from logits.
     has_logits = W_U is not None and logit_token_ids is not None
+    if has_logits and len(attribution["active_features"]) > max_features:
+        assert W_U is not None and logit_token_ids is not None
+        n_pre = len(attribution["active_features"])
+        # Compute per-feature logit influence for ranking
+        W_U_f = W_U.detach().float()
+        if W_U_f.shape[0] == x_in.shape[-1]:
+            cols = W_U_f[:, logit_token_ids].T
+            demean = W_U_f.mean(dim=-1, keepdim=True)
+            logit_dirs = cols - demean.T
+        else:
+            cols = W_U_f[logit_token_ids]
+            demean = W_U_f.mean(dim=0, keepdim=True)
+            logit_dirs = cols - demean
+        final_pos = n_pos - 1
+        influence_scores = torch.zeros(n_pre, device=x_in.device)
+        for i in range(n_pre):
+            effect = attribution["output_effects"][i, :, final_pos, :].sum(dim=0).float()
+            influence_scores[i] = (logit_dirs @ effect).abs().sum()
+        top_k_idx = influence_scores.topk(max_features).indices.sort().values
+        attribution["active_features"] = attribution["active_features"][top_k_idx]
+        attribution["activation_values"] = attribution["activation_values"][top_k_idx]
+        attribution["feature_effects"] = attribution["feature_effects"][top_k_idx][:, top_k_idx]
+        attribution["output_effects"] = attribution["output_effects"][top_k_idx]
+
+    n_active = len(attribution["active_features"])
+
+    # Exclude BOS (position 0) from error and embedding nodes.  The original
+    # circuit_tracer zeros error_vectors[:, 0] and the replacement model zeros
+    # BOS activations, so position 0 carries no meaningful signal.
+    n_content_pos = n_pos - 1  # positions 1..n_pos-1
+    n_error = n_layers * n_content_pos
+    n_tokens = n_content_pos
+
     if has_logits:
-        assert W_U is not None and logit_token_ids is not None  # for type checker
+        assert W_U is not None and logit_token_ids is not None
         logit_effects = compute_logit_effects(
-            attribution, x_in, W_U, logit_token_ids, n_error, n_tokens
+            attribution, x_in, W_U, logit_token_ids, n_error, n_tokens,
+            skip_bos=True,
         )
         n_logits = len(logit_token_ids)
     else:
@@ -291,12 +339,13 @@ def build_attribution_graph(
     adj[:n_active, :n_active] = ff
 
     # Feature-to-error edges (enforce causal ordering: feature layer < error layer)
+    # Error node indices use content positions only (skip BOS at position 0).
     for i in range(n_active):
         feat_layer = int(active_layers[i])
         effects = attribution["output_effects"][i]  # (n_layers, n_pos, d_model)
         for l in range(feat_layer + 1, n_layers):
-            for p in range(n_pos):
-                error_idx = n_active + l * n_pos + p
+            for p in range(1, n_pos):  # skip BOS
+                error_idx = n_active + l * n_content_pos + (p - 1)
                 adj[error_idx, i] = effects[l, p].norm()
 
     # Embedding → feature edges: each embedding at position p feeds every
@@ -304,15 +353,18 @@ def build_attribution_graph(
     # proxy for how strongly the embedding influences that feature.
     active_positions = attribution["active_features"][:, 1]
     for i in range(n_active):
-        token_idx = n_active + n_error + int(active_positions[i])
+        pos = int(active_positions[i])
+        if pos == 0:
+            continue  # skip BOS features
+        token_idx = n_active + n_error + (pos - 1)
         adj[i, token_idx] = attribution["activation_values"][i].abs()
 
     # Embedding → error edges: each embedding at position p feeds the
     # error node at (layer=0, pos=p) so the influence trace can reach the
     # earliest error nodes.
-    for p in range(n_tokens):
-        token_idx = n_active + n_error + p
-        error_idx = n_active + 0 * n_pos + p  # layer-0 error at this position
+    for p in range(1, n_pos):  # skip BOS
+        token_idx = n_active + n_error + (p - 1)
+        error_idx = n_active + 0 * n_content_pos + (p - 1)  # layer-0 error
         adj[error_idx, token_idx] = x_in[0, p].norm()
 
     # Logit edges
