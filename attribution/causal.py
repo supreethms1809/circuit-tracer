@@ -346,62 +346,65 @@ def build_attribution_graph(
 
     adj = torch.zeros(total_nodes, total_nodes, device=x_in.device, dtype=x_in.dtype)
 
-    # Feature-to-feature edges (enforce causal ordering: source layer < target layer)
-    ff = attribution["feature_effects"].T.clone()  # ff[target, source]
-    active_layers = attribution["active_features"][:, 0]  # layer of each feature
-    for t in range(n_active):
-        for s in range(n_active):
-            if active_layers[s] >= active_layers[t]:
-                ff[t, s] = 0.0
-    adj[:n_active, :n_active] = ff
+    # -----------------------------------------------------------------------
+    # Adjacency matrix layout (matching original circuit_tracer):
+    #   A[target, source] — rows are targets, columns are sources.
+    #
+    # Only feature rows and logit rows are populated.  Error and token rows
+    # are ALL ZEROS — those nodes act as sources only (they feed into
+    # features and logits but receive no incoming edges).  This matches the
+    # original circuit_tracer, which only computes backward passes from
+    # feature and logit nodes.
+    # -----------------------------------------------------------------------
 
-    # Feature-to-error edges (enforce causal ordering: feature layer < error layer).
-    # Project the feature's reconstruction delta onto the error direction at each
-    # downstream (layer, pos), giving a signed directional effect rather than a
-    # magnitude.  This matches how the original circuit_tracer contracts gradients
-    # with error vectors.
-    for i in range(n_active):
-        feat_layer = int(active_layers[i])
-        effects = attribution["output_effects"][i]  # (n_layers, n_pos, d_model)
-        for l in range(feat_layer + 1, n_layers):
-            for p in range(n_pos):
-                error_idx = n_active + l * n_pos + p
-                err_vec = error_vectors[l, p]
-                err_norm = err_vec.norm()
-                if err_norm > 0:
-                    # Project feature effect onto the error direction
-                    adj[error_idx, i] = (effects[l, p] * err_vec).sum() / err_norm
-                else:
-                    adj[error_idx, i] = 0.0
-
-    # Embedding → feature edges: project the token embedding onto the feature's
-    # encoder direction, giving the direct linear effect of the embedding on the
-    # feature activation.
+    active_layers = attribution["active_features"][:, 0]
     active_positions = attribution["active_features"][:, 1]
+
+    # Precompute encoder directions for error→feature and token→feature edges
     encoder_directions = _batch_encoder_directions(
         model, x_in,
         attribution["active_features"][:, 0],
         attribution["active_features"][:, 1],
         attribution["active_features"][:, 2],
     )
-    for i in range(n_active):
-        pos = int(active_positions[i])
-        token_idx = n_active + n_error + pos
-        # Direct effect of embedding on feature via encoder direction
-        adj[i, token_idx] = (token_vectors[pos] * encoder_directions[i]).sum()
 
-    # Embedding → error edges: project the embedding onto the error direction
-    # at layer 0 for each position, giving the direct effect of the embedding
-    # on the first-layer reconstruction error.
-    for p in range(n_pos):
-        token_idx = n_active + n_error + p
-        error_idx = n_active + 0 * n_pos + p  # layer-0 error
-        err_vec = error_vectors[0, p]
-        err_norm = err_vec.norm()
-        if err_norm > 0:
-            adj[error_idx, token_idx] = (token_vectors[p] * err_vec).sum() / err_norm
-        else:
-            adj[error_idx, token_idx] = 0.0
+    # --- Feature rows: A[feature_i, *] ---
+    # 1) Feature → feature (source layer < target layer)
+    ff = attribution["feature_effects"].T.clone()  # ff[target, source]
+    for t in range(n_active):
+        for s in range(n_active):
+            if active_layers[s] >= active_layers[t]:
+                ff[t, s] = 0.0
+    adj[:n_active, :n_active] = ff
+
+    # 2) Error → feature: how much does error at (l, p) influence feature i?
+    #    In the original, the backward pass from feature i contracts gradients
+    #    at each earlier layer with error_vectors[l].  Our ablation analogue:
+    #    the error at (l, p) adds error_vec[l, p] to the residual stream,
+    #    which propagates to the encoder input at feature i's layer.
+    #    Direct (same-position) effect: encoder_direction_i · error_vec[l, p].
+    for i in range(n_active):
+        feat_layer = int(active_layers[i])
+        feat_pos = int(active_positions[i])
+        enc_dir = encoder_directions[i]  # (d_model,)
+        for l in range(feat_layer):  # errors at layers strictly before feature
+            for p in range(n_pos):
+                error_col = n_active + l * n_pos + p
+                # Same-position: direct residual-stream contribution
+                if p == feat_pos:
+                    adj[i, error_col] = (enc_dir * error_vectors[l, p]).sum()
+
+    # 3) Token → feature: how much does the embedding at pos p influence
+    #    feature i?  The embedding adds token_vec[p] to the residual stream
+    #    at position p.  Direct effect: encoder_direction_i · token_vec[p]
+    #    (only at the same position, since cross-position requires attention).
+    for i in range(n_active):
+        feat_pos = int(active_positions[i])
+        token_col = n_active + n_error + feat_pos
+        adj[i, token_col] = (encoder_directions[i] * token_vectors[feat_pos]).sum()
+
+    # --- Error rows: ALL ZEROS (errors are source-only nodes) ---
+    # --- Token rows: ALL ZEROS (tokens are source-only nodes) ---
 
     # Logit edges
     if has_logits:
