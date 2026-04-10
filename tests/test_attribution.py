@@ -76,9 +76,9 @@ class TestBuildAttributionGraph:
 
         n_active = len(result["active_features"])
         n_layers, n_pos = 2, 4
-        n_content_pos = n_pos - 1  # BOS excluded
-        n_error = n_layers * n_content_pos
-        n_tokens = n_content_pos
+        # All positions (including BOS) get error/token slots
+        n_error = n_layers * n_pos
+        n_tokens = n_pos
         expected_size = n_active + n_error + n_tokens
 
         assert result["adjacency_matrix"].shape == (expected_size, expected_size)
@@ -111,9 +111,8 @@ class TestBuildAttributionGraph:
 
         n_active = len(result["active_features"])
         n_layers, n_pos = 2, 4
-        n_content_pos = n_pos - 1  # BOS excluded
-        n_error = n_layers * n_content_pos
-        n_tokens = n_content_pos
+        n_error = n_layers * n_pos
+        n_tokens = n_pos
         expected_size = n_active + n_error + n_tokens + n_logits
 
         adj = result["adjacency_matrix"]
@@ -135,9 +134,8 @@ class TestBuildAttributionGraph:
 
         n_active = len(result["active_features"])
         n_layers, n_pos = 2, 4
-        n_content_pos = n_pos - 1  # BOS excluded
-        n_error = n_layers * n_content_pos
-        n_tokens = n_content_pos
+        n_error = n_layers * n_pos
+        n_tokens = n_pos
         expected_size = n_active + n_error + n_tokens
 
         assert result["adjacency_matrix"].shape == (expected_size, expected_size)
@@ -150,16 +148,17 @@ class TestComputeLogitEffects:
         attribution = ablation_attribution(small_model, x, max_features=16)
         n_active = len(attribution["active_features"])
         n_layers, n_pos = 2, 4
-        n_content_pos = n_pos - 1  # BOS excluded
-        n_error = n_layers * n_content_pos
-        n_tokens = n_content_pos
+        n_error = n_layers * n_pos
+        n_tokens = n_pos
         n_logits = 5
         W_U = torch.randn(8, 50)
         logit_token_ids = torch.arange(n_logits)
+        error_vectors = torch.randn(n_layers, n_pos, 8)
+        token_vectors = torch.randn(n_pos, 8)
 
         effects = compute_logit_effects(
-            attribution, x, W_U, logit_token_ids, n_error, n_tokens,
-            skip_bos=True,
+            attribution, error_vectors, token_vectors,
+            W_U, logit_token_ids, n_error, n_tokens,
         )
         expected_cols = n_active + n_error + n_tokens
         assert effects.shape == (n_logits, expected_cols)
@@ -172,36 +171,38 @@ class TestComputeLogitEffects:
         if n_active == 0:
             pytest.skip("No active features")
         n_layers, n_pos = 2, 4
-        n_content_pos = n_pos - 1  # BOS excluded
-        n_error = n_layers * n_content_pos
-        n_tokens = n_content_pos
+        n_error = n_layers * n_pos
+        n_tokens = n_pos
         W_U = torch.randn(8, 50)
         logit_token_ids = torch.tensor([0, 1, 2])
+        error_vectors = torch.randn(n_layers, n_pos, 8)
+        token_vectors = torch.randn(n_pos, 8)
 
         effects = compute_logit_effects(
-            attribution, x, W_U, logit_token_ids, n_error, n_tokens,
-            skip_bos=True,
+            attribution, error_vectors, token_vectors,
+            W_U, logit_token_ids, n_error, n_tokens,
         )
         # Feature columns should have nonzero entries
         assert effects[:, :n_active].abs().sum() > 0
 
     def test_logit_effects_error_token_columns_nonzero(self, small_model):
-        """Test that error/token columns are populated (via residual stream proxy)."""
+        """Test that error/token columns are populated."""
         x = torch.randn(2, 4, 8)
         attribution = ablation_attribution(small_model, x, max_features=16)
         n_active = len(attribution["active_features"])
         n_layers, n_pos = 2, 4
-        n_content_pos = n_pos - 1  # BOS excluded
-        n_error = n_layers * n_content_pos
-        n_tokens = n_content_pos
+        n_error = n_layers * n_pos
+        n_tokens = n_pos
         W_U = torch.randn(8, 50)
         logit_token_ids = torch.tensor([0, 1])
+        error_vectors = torch.randn(n_layers, n_pos, 8)
+        token_vectors = torch.randn(n_pos, 8)
 
         effects = compute_logit_effects(
-            attribution, x, W_U, logit_token_ids, n_error, n_tokens,
-            skip_bos=True,
+            attribution, error_vectors, token_vectors,
+            W_U, logit_token_ids, n_error, n_tokens,
         )
-        # Error and token columns should now be nonzero (residual stream proxy)
+        # Error and token columns should be nonzero
         assert effects[:, n_active:].abs().sum() > 0
 
 

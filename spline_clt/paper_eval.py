@@ -4,8 +4,49 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+from pathlib import Path
 
 from spline_clt.paper.runner import PaperSuiteRunner
+
+
+def _clean_evaluations(runner: PaperSuiteRunner) -> list[str]:
+    """Delete evaluation and MACAG outputs while preserving checkpoints.
+
+    Returns a list of paths that were removed.
+    """
+    removed: list[str] = []
+
+    # Per-variant/seed: remove evaluation/ and macag/ dirs
+    all_pairs = [
+        (vname, seed)
+        for vname in sorted(runner.config.model_variants)
+        for seed in runner.config.seeds
+    ]
+    for variant_name, seed in all_pairs:
+        run_dir = runner._run_dir(variant_name, seed)
+        for subdir in ("evaluation", "macag"):
+            target = run_dir / subdir
+            if target.exists():
+                shutil.rmtree(target)
+                removed.append(str(target))
+
+    # Suite-level aggregate outputs
+    for name in (
+        "aggregate_metrics.json",
+        "per_example_metrics.jsonl",
+        "tables.csv",
+        "report.md",
+    ):
+        p = runner.suite_root / name
+        if p.exists():
+            p.unlink()
+            removed.append(str(p))
+    if runner.figures_root.exists():
+        shutil.rmtree(runner.figures_root)
+        removed.append(str(runner.figures_root))
+
+    return removed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -16,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         "--validate-only",
         action="store_true",
         help="Validate and resolve the suite config without executing it.",
+    )
+    parser.add_argument(
+        "--re-evaluate",
+        action="store_true",
+        help="Delete evaluation/MACAG outputs (preserving checkpoints) before running.",
     )
     parser.add_argument(
         "--worker-id",
@@ -58,6 +104,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print(json.dumps(runner.dry_run(), indent=2, sort_keys=True))
         return 0
+
+    if args.re_evaluate:
+        removed = _clean_evaluations(runner)
+        if removed:
+            print(f"Cleaned {len(removed)} evaluation artifacts:", flush=True)
+            for p in removed:
+                print(f"  - {p}", flush=True)
+        else:
+            print("No evaluation artifacts to clean.", flush=True)
 
     print(json.dumps(runner.run(), indent=2, sort_keys=True))
     return 0

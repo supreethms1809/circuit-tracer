@@ -201,9 +201,13 @@ def main() -> None:
     logits = lm(args.prompt).squeeze(0)
     probs = torch.softmax(logits[-1].float(), dim=-1)
     top_logit_ids = probs.topk(8).indices
+    # Get token embedding vectors for proper embedding→logit edges
+    token_ids = lm.to_tokens(args.prompt).squeeze(0)
+    token_vectors = lm.W_E[token_ids].detach().to(dtype=dtype)
     attribution = build_attribution_graph(
         clt, mlp_inputs, max_features=args.max_features,
         W_U=lm.W_U, logit_token_ids=top_logit_ids,
+        y_true=mlp_outputs, token_vectors=token_vectors,
     )
     print_circuit_summary(attribution, tokens, clt)
 

@@ -218,6 +218,8 @@ def build_prompt_graph(
         max_n_logits=max_n_logits,
         desired_logit_prob=desired_logit_prob,
     )
+    # Get token embedding vectors for proper embedding→logit edges
+    token_vectors = lm.W_E[prompt_cache.token_ids].detach()  # (n_pos, d_model)
     attribution = build_attribution_graph(
         model=model,
         x_in=prompt_cache.mlp_inputs,
@@ -225,15 +227,14 @@ def build_prompt_graph(
         W_U=lm.W_U,
         logit_token_ids=logit_tokens,
         y_true=prompt_cache.mlp_outputs,
+        token_vectors=token_vectors,
     )
-    # Pass content tokens only (exclude BOS at position 0) so that
-    # Graph.n_pos matches the number of error/embedding node positions
-    # in the adjacency matrix.
-    content_tokens = prompt_cache.token_ids[1:].cpu()
+    # Pass ALL token_ids (including BOS) — the original circuit_tracer includes
+    # BOS in error/token node counts: n_layers * n_pos error + n_pos token nodes.
     graph = create_graph_from_attribution(
         attribution_result=attribution,
         input_string=prompt_cache.prompt,
-        input_tokens=content_tokens,
+        input_tokens=prompt_cache.token_ids.cpu(),
         logit_tokens=logit_tokens.cpu(),
         logit_probabilities=logit_probabilities.cpu(),
         cfg=lm.cfg,
