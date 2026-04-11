@@ -178,10 +178,16 @@ def run_circuits(
     device: torch.device,
     dtype: torch.dtype,
 ) -> dict:
-    """Run circuit tracing on benchmark prompts for each checkpoint."""
+    """Run circuit tracing on benchmark prompts for each checkpoint.
+
+    Uses the original circuit_tracer backward-pass attribution pipeline,
+    which captures attention-mediated cross-position effects and proper
+    multi-layer gradient flow.
+    """
     from spline_clt.kan_transcoder import load_spline_clt
-    from experiments.run_circuit import collect_activations_for_prompt, print_circuit_summary
-    from attribution.causal import build_attribution_graph
+    from circuit_tracer.attribution.attribute_transformerlens import attribute
+    from circuit_tracer.replacement_model.replacement_model import ReplacementModel
+    from experiments.run_circuit import print_circuit_summary
 
     _section("Stage 2: Circuit Tracing")
     t0 = time.time()
@@ -206,6 +212,15 @@ def run_circuits(
         clt = load_spline_clt(ckpt_path, device=device, dtype=dtype)
         clt.eval()
 
+        # Create a ReplacementModel once per checkpoint (wraps transformer + CLT)
+        replacement_model = ReplacementModel.from_pretrained_and_transcoders(
+            model_name=lm_name,
+            transcoders=clt,
+            backend="transformerlens",
+            device=device,
+            dtype=dtype,
+        )
+
         for prompt_cfg in CIRCUIT_PROMPTS:
             pname = prompt_cfg["name"]
             prompt = prompt_cfg["prompt"]
@@ -213,41 +228,43 @@ def run_circuits(
             print(f"\n  [{ckpt_label}] {pname}: {prompt!r}")
 
             try:
-                mlp_inputs, mlp_outputs, tokens, lm = collect_activations_for_prompt(
-                    model_name=lm_name,
+                tokens = replacement_model.to_str_tokens(prompt)
+                graph = attribute(
                     prompt=prompt,
-                    n_layers=clt.n_layers,
-                    device=device,
-                    feature_input_hook=clt.feature_input_hook,
-                    feature_output_hook=clt.feature_output_hook,
+                    model=replacement_model,
+                    max_feature_nodes=max_features,
                 )
-                mlp_inputs = mlp_inputs.to(dtype=dtype)
-
-                # Select top logit tokens for feature→logit edges
-                _logits = lm(prompt).squeeze(0)
-                _probs = torch.softmax(_logits[-1].float(), dim=-1)
-                _top_logit_ids = _probs.topk(8).indices
-                attribution = build_attribution_graph(
-                    clt, mlp_inputs, max_features=max_features,
-                    W_U=lm.W_U, logit_token_ids=_top_logit_ids,
-                )
-                del lm
-                n_active = len(attribution["active_features"])
-                print(f"    {n_active} active features")
-                print_circuit_summary(attribution, tokens, clt, top_k=10)
+                selected = graph.selected_features
+                n_active = len(selected)
+                print(f"    {n_active} selected features")
+                print_circuit_summary(graph, tokens, clt, top_k=10)
 
                 result = {
                     "prompt": prompt,
                     "task": prompt_cfg["task"],
                     "n_active_features": n_active,
                     "tokens": tokens,
-                    "active_features": attribution["active_features"].tolist(),
-                    "activation_values": attribution["activation_values"].tolist(),
+                    "active_features": graph.active_features[selected].tolist(),
+                    "activation_values": graph.activation_values[selected].tolist(),
                 }
 
                 if run_shapley:
                     from attribution.shapley import shapley_attribution
                     print(f"    Running Shapley ({shapley_samples} samples)...")
+                    # Collect MLP inputs for Shapley via the replacement model
+                    input_ids = replacement_model.to_tokens(prompt).squeeze(0)
+                    hook_in_names = [
+                        f"blocks.{i}.{clt.feature_input_hook}"
+                        for i in range(clt.n_layers)
+                    ]
+                    with torch.no_grad():
+                        _, cache = replacement_model.run_with_cache(
+                            input_ids, names_filter=hook_in_names
+                        )
+                    mlp_inputs = torch.stack(
+                        [cache[name].squeeze(0) for name in hook_in_names]
+                    ).to(device=device, dtype=dtype)
+
                     shap = shapley_attribution(
                         clt, mlp_inputs,
                         n_samples=shapley_samples,
@@ -268,7 +285,7 @@ def run_circuits(
                 summary[out_key] = {"error": str(e)}
 
         # Free VRAM between checkpoints
-        del clt
+        del clt, replacement_model
         torch.cuda.empty_cache() if device.type == "cuda" else None
 
     # Save summary JSON (convert lists but not tensors)

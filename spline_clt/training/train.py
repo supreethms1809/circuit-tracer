@@ -94,9 +94,14 @@ def train(
     Returns:
         Trained KANCrossLayerTranscoder model.
     """
-    device = torch.device(
-        config.device if torch.cuda.is_available() else "cpu"
-    )
+    if config.device:
+        device = torch.device(config.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     dtype = config.get_dtype()
     seed_everything(config.seed)
 

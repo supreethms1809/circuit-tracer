@@ -26,90 +26,44 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 
+from circuit_tracer.attribution.attribute_transformerlens import attribute
+from circuit_tracer.replacement_model.replacement_model import ReplacementModel
 from spline_clt.kan_transcoder import KANCrossLayerTranscoder, load_spline_clt
-from attribution.causal import build_attribution_graph
-
-
-def collect_activations_for_prompt(
-    model_name: str,
-    prompt: str,
-    n_layers: int,
-    device: torch.device,
-    feature_input_hook: str = "hook_resid_mid",
-    feature_output_hook: str = "hook_mlp_out",
-):
-    """Run the language model and collect MLP inputs/outputs via TransformerLens.
-
-    Args:
-        model_name: HuggingFace model name (e.g., "gpt2").
-        prompt: Text prompt to run.
-        n_layers: Number of layers to collect from.
-        device: Compute device.
-        feature_input_hook: Hook point name for MLP input.
-        feature_output_hook: Hook point name for MLP output.
-
-    Returns:
-        Tuple of:
-            mlp_inputs: (n_layers, seq_len, d_model)
-            mlp_outputs: (n_layers, seq_len, d_model)
-            tokens: List of string tokens
-    """
-    try:
-        import transformer_lens
-        from transformer_lens import HookedTransformer
-    except ImportError:
-        raise ImportError(
-            "transformer_lens is required for circuit tracing. "
-            "Install with: pip install transformer-lens"
-        )
-
-    print(f"Loading {model_name} with TransformerLens...")
-    lm = HookedTransformer.from_pretrained(model_name, device=device)
-    lm.eval()
-
-    tokens = lm.to_str_tokens(prompt)
-    hook_in_names = [f"blocks.{i}.{feature_input_hook}" for i in range(n_layers)]
-    hook_out_names = [f"blocks.{i}.{feature_output_hook}" for i in range(n_layers)]
-
-    print(f"Running forward pass: {len(tokens)} tokens...")
-    with torch.no_grad():
-        _, cache = lm.run_with_cache(
-            prompt, names_filter=hook_in_names + hook_out_names
-        )
-
-    mlp_inputs = torch.stack(
-        [cache[name].squeeze(0) for name in hook_in_names]
-    ).to(device)   # (n_layers, seq_len, d_model)
-    mlp_outputs = torch.stack(
-        [cache[name].squeeze(0) for name in hook_out_names]
-    ).to(device)
-
-    del cache
-    torch.cuda.empty_cache() if device.type == "cuda" else None
-
-    return mlp_inputs, mlp_outputs, tokens, lm
 
 
 def print_circuit_summary(
-    attribution_result: dict,
+    graph,
     tokens: list[str],
     model: KANCrossLayerTranscoder,
     top_k: int = 20,
 ) -> None:
-    """Print a human-readable summary of the top features in the circuit."""
-    active = attribution_result["active_features"]  # (n_active, 3)
-    values = attribution_result["activation_values"]  # (n_active,)
-    effects = attribution_result.get("feature_effects")  # (n_active, n_active) or None
+    """Print a human-readable summary of the top features in the circuit.
 
+    Args:
+        graph: A ``circuit_tracer.graph.Graph`` object.
+        tokens: List of string tokens for the prompt.
+        model: The Spline-CLT (used only for metadata).
+        top_k: Number of top features to display.
+    """
+    # Graph stores all active features; selected_features indexes the subset
+    # included in the adjacency matrix.
+    all_active = graph.active_features  # (total_active, 3)
+    all_values = graph.activation_values  # (total_active,)
+    selected_idx = graph.selected_features  # indices into all_active
+
+    active = all_active[selected_idx]  # (n_selected, 3)
+    values = all_values[selected_idx]  # (n_selected,)
     n_active = len(active)
+
     print(f"\n{'='*60}")
-    print(f"Circuit summary: {n_active} active features")
+    print(f"Circuit summary: {n_active} selected features "
+          f"(of {len(all_active)} total active)")
     print(f"{'='*60}")
 
     # Sort by activation magnitude
     sorted_idx = values.abs().argsort(descending=True)
 
-    print(f"\nTop {min(top_k, n_active)} active features (by activation magnitude):")
+    print(f"\nTop {min(top_k, n_active)} features (by activation magnitude):")
     print(f"  {'Rank':<5} {'Layer':<6} {'Pos':<5} {'FeatIdx':<8} {'Activation':>12} {'Token':>12}")
     print(f"  {'-'*55}")
     for rank in range(min(top_k, n_active)):
@@ -119,27 +73,27 @@ def print_circuit_summary(
         tok = tokens[pos] if pos < len(tokens) else "?"
         print(f"  {rank+1:<5} {layer:<6} {pos:<5} {feat:<8} {act_val:>12.4f} {tok!r:>12}")
 
-    if effects is not None:
-        # Show top feature-to-feature connections by effect magnitude
-        flat_effects = effects.abs().flatten()
-        top_connections = flat_effects.topk(min(10, len(flat_effects))).indices
-        print(f"\nTop {min(10, len(flat_effects))} feature-to-feature edges:")
+    # Show top feature-to-feature edges from the adjacency matrix
+    adj = graph.adjacency_matrix
+    ff_block = adj[:n_active, :n_active]
+    if ff_block.numel() > 0:
+        flat_effects = ff_block.abs().flatten()
+        k = min(10, len(flat_effects))
+        top_connections = flat_effects.topk(k).indices
+        print(f"\nTop {k} feature-to-feature edges:")
         print(f"  {'Source':>8} {'Target':>8} {'Effect':>12}")
         print(f"  {'-'*30}")
         seen = set()
         for flat_idx in top_connections:
-            src = int(flat_idx // n_active)
-            tgt = int(flat_idx % n_active)
+            tgt = int(flat_idx // n_active)  # adj is [target, source]
+            src = int(flat_idx % n_active)
             if src == tgt or (src, tgt) in seen:
                 continue
             seen.add((src, tgt))
             sl, sp, sf = active[src, 0].item(), active[src, 1].item(), active[src, 2].item()
             tl, tp, tf = active[tgt, 0].item(), active[tgt, 1].item(), active[tgt, 2].item()
-            effect = effects[src, tgt].item()
-            print(f"  L{sl}F{sf}@{sp} → L{tl}F{tf}@{tp}  {effect:>12.4f}")
-
-    # Reconstruction quality
-    baseline = attribution_result.get("baseline_reconstruction")
+            effect = ff_block[tgt, src].item()
+            print(f"  L{sl}F{sf}@{sp} -> L{tl}F{tf}@{tp}  {effect:>12.4f}")
     print()
 
 
@@ -179,49 +133,52 @@ def main() -> None:
     print(f"  encoder_type={clt.encoder_type}, n_layers={clt.n_layers}, "
           f"d_transcoder={clt.d_transcoder}")
 
-    # --- Collect activations ---
-    mlp_inputs, mlp_outputs, tokens, lm = collect_activations_for_prompt(
+    # --- Create ReplacementModel (wraps transformer + CLT for full backward-pass attribution) ---
+    print(f"Creating ReplacementModel with {args.model}...")
+    replacement_model = ReplacementModel.from_pretrained_and_transcoders(
         model_name=args.model,
-        prompt=args.prompt,
-        n_layers=clt.n_layers,
+        transcoders=clt,
+        backend="transformerlens",
         device=device,
-        feature_input_hook=clt.feature_input_hook,
-        feature_output_hook=clt.feature_output_hook,
+        dtype=dtype,
     )
-    mlp_inputs = mlp_inputs.to(dtype=dtype)
-    mlp_outputs = mlp_outputs.to(dtype=dtype)
 
     print(f"\nPrompt: {args.prompt!r}")
+    tokens = replacement_model.to_str_tokens(args.prompt)
     print(f"Tokens ({len(tokens)}): {tokens}")
-    print(f"Activation shape: {list(mlp_inputs.shape)}")
 
-    # --- Causal attribution ---
-    print(f"\nRunning causal attribution (max_features={args.max_features})...")
-    # Select top logit tokens for feature→logit edges
-    logits = lm(args.prompt).squeeze(0)
-    probs = torch.softmax(logits[-1].float(), dim=-1)
-    top_logit_ids = probs.topk(8).indices
-    # Get token embedding vectors for proper embedding→logit edges
-    token_ids = lm.to_tokens(args.prompt).squeeze(0)
-    token_vectors = lm.W_E[token_ids].detach().to(dtype=dtype)
-    attribution = build_attribution_graph(
-        clt, mlp_inputs, max_features=args.max_features,
-        W_U=lm.W_U, logit_token_ids=top_logit_ids,
-        y_true=mlp_outputs, token_vectors=token_vectors,
+    # --- Attribution via original circuit_tracer backward pass ---
+    print(f"\nRunning attribution (max_features={args.max_features})...")
+    graph = attribute(
+        prompt=args.prompt,
+        model=replacement_model,
+        max_feature_nodes=args.max_features,
+        verbose=True,
     )
-    print_circuit_summary(attribution, tokens, clt)
+    print_circuit_summary(graph, tokens, clt)
 
     results = {
         "prompt": args.prompt,
         "tokens": tokens,
-        "attribution": attribution,
-        "mlp_inputs": mlp_inputs.cpu(),
-        "mlp_outputs": mlp_outputs.cpu(),
+        "graph": graph,
     }
 
     # --- Shapley attribution (optional) ---
     if args.shapley:
         print(f"\nRunning Shapley attribution ({args.shapley_samples} samples)...")
+        # Collect activations for Shapley (which operates on the CLT directly)
+        input_ids = replacement_model.to_tokens(args.prompt).squeeze(0)
+        hook_in_names = [
+            f"blocks.{i}.{clt.feature_input_hook}" for i in range(clt.n_layers)
+        ]
+        with torch.no_grad():
+            _, cache = replacement_model.run_with_cache(
+                input_ids, names_filter=hook_in_names
+            )
+        mlp_inputs = torch.stack(
+            [cache[name].squeeze(0) for name in hook_in_names]
+        ).to(device=device, dtype=dtype)
+
         from attribution.shapley import shapley_attribution
         shapley = shapley_attribution(
             clt,

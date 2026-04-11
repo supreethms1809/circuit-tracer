@@ -10,9 +10,9 @@ from typing import Any
 import torch
 from torch.nn import functional as F
 
-from attribution.causal import build_attribution_graph
-from attribution.graph import create_graph_from_attribution
+from circuit_tracer.attribution.attribute_transformerlens import attribute
 from circuit_tracer.graph import compute_graph_scores
+from circuit_tracer.replacement_model.replacement_model import ReplacementModel
 from circuit_tracer.utils.create_graph_files import create_graph_files
 from macag.factories.replacement_model import resolve_target_to_logit_idx
 from spline_clt.kan_transcoder import KANCrossLayerTranscoder
@@ -44,6 +44,27 @@ def load_language_model(model_name: str, device: torch.device):
     )
     lm.eval()
     return lm
+
+
+def load_replacement_model(
+    model_name: str,
+    transcoders: KANCrossLayerTranscoder,
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
+) -> Any:
+    """Create a circuit-tracer ReplacementModel backed by a Spline-CLT.
+
+    This wraps the transformer and transcoders together so the original
+    circuit_tracer attribution pipeline (full backward pass through the
+    transformer) can be used for graph construction.
+    """
+    return ReplacementModel.from_pretrained_and_transcoders(
+        model_name=model_name,
+        transcoders=transcoders,
+        backend="transformerlens",
+        device=device,
+        dtype=dtype,
+    )
 
 
 @torch.no_grad()
@@ -199,8 +220,7 @@ def evaluate_prompt_replacement(
 
 
 def build_prompt_graph(
-    model: KANCrossLayerTranscoder,
-    lm: Any,
+    replacement_model: Any,
     prompt_cache: PromptCache,
     graph_dir: Path,
     graph_slug: str,
@@ -210,35 +230,36 @@ def build_prompt_graph(
     desired_logit_prob: float,
     node_threshold: float,
     edge_threshold: float,
+    attribution_batch_size: int = 512,
 ) -> dict[str, Any]:
-    """Build and persist a circuit-tracer graph for one prompt."""
-    # Select logit tokens first so we can compute feature→logit edges
-    logit_tokens, logit_probabilities = select_logit_tokens(
-        logits=prompt_cache.logits,
+    """Build and persist a circuit-tracer graph for one prompt.
+
+    Uses the original circuit_tracer attribution pipeline (full backward pass
+    through the transformer) instead of CLT-only ablation.  This captures
+    attention-mediated cross-position effects and proper multi-layer gradient
+    flow, producing graphs that match the original circuit_tracer output.
+
+    Args:
+        replacement_model: A ``TransformerLensReplacementModel`` wrapping both
+            the transformer and the Spline-CLT / linear CLT transcoders.
+        prompt_cache: Cached activations collected from the *original* model.
+        graph_dir: Directory to write graph files.
+        graph_slug: Filename stem for the graph files.
+        scan_id: Transcoder identifier for visualization.
+        max_features: Maximum number of feature nodes in the graph.
+        max_n_logits: Maximum number of logit nodes.
+        desired_logit_prob: Cumulative probability mass for logit selection.
+        node_threshold: Pruning threshold for nodes.
+        edge_threshold: Pruning threshold for edges.
+        attribution_batch_size: Number of source nodes per backward pass.
+    """
+    graph = attribute(
+        prompt=prompt_cache.prompt,
+        model=replacement_model,
         max_n_logits=max_n_logits,
         desired_logit_prob=desired_logit_prob,
-    )
-    # Get token embedding vectors for proper embedding→logit edges
-    token_vectors = lm.W_E[prompt_cache.token_ids].detach()  # (n_pos, d_model)
-    attribution = build_attribution_graph(
-        model=model,
-        x_in=prompt_cache.mlp_inputs,
-        max_features=max_features,
-        W_U=lm.W_U,
-        logit_token_ids=logit_tokens,
-        y_true=prompt_cache.mlp_outputs,
-        token_vectors=token_vectors,
-    )
-    # Pass ALL token_ids (including BOS) — the original circuit_tracer includes
-    # BOS in error/token node counts: n_layers * n_pos error + n_pos token nodes.
-    graph = create_graph_from_attribution(
-        attribution_result=attribution,
-        input_string=prompt_cache.prompt,
-        input_tokens=prompt_cache.token_ids.cpu(),
-        logit_tokens=logit_tokens.cpu(),
-        logit_probabilities=logit_probabilities.cpu(),
-        cfg=lm.cfg,
-        scan=scan_id,
+        max_feature_nodes=max_features,
+        batch_size=attribution_batch_size,
     )
     graph_replacement_score, graph_completeness_score = compute_graph_scores(graph)
 
@@ -255,8 +276,9 @@ def build_prompt_graph(
         edge_threshold=edge_threshold,
     )
     node_summary = summarize_graph_json(graph_json_path)
+    n_active = graph.active_features.shape[0] if hasattr(graph, "active_features") else 0
     return {
-        "active_feature_count": int(len(attribution["active_features"])),
+        "active_feature_count": n_active,
         "graph_replacement_score": graph_replacement_score,
         "graph_completeness_score": graph_completeness_score,
         "graph_pt_path": str(graph_pt_path),

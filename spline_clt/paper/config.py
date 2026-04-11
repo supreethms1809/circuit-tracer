@@ -73,6 +73,7 @@ class GraphBuildConfig(BaseModel):
     desired_logit_prob: float = 0.9
     node_threshold: float = 0.8
     edge_threshold: float = 0.98
+    attribution_batch_size: int = 512
 
 
 class CircuitEvaluationConfig(BaseModel):

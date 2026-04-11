@@ -1,0 +1,18 @@
+{
+  "benchmark_manifest_version": "neurips-core-v1",
+  "benchmark_entries": [
+    {"prompt_id": "ioi_john_mary", "family": "ioi", "prompt": "John gave Mary the book. She handed it to", "target_token": " Mary", "foil_token": " John", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_alice_bob", "family": "ioi", "prompt": "Alice thanked Bob for the gift. He passed it to", "target_token": " Bob", "foil_token": " Alice", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_france", "family": "factual", "prompt": "The capital of France is", "target_token": " Paris", "foil_token": " Lyon", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_germany", "family": "factual", "prompt": "The capital of Germany is", "target_token": " Berlin", "foil_token": " Munich", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_italy", "family": "factual", "prompt": "The capital of Italy is", "target_token": " Rome", "foil_token": " Milan", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_japan", "family": "factual", "prompt": "The capital of Japan is", "target_token": " Tokyo", "foil_token": " Osaka", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_china", "family": "factual", "prompt": "The capital of China is", "target_token": " Beijing", "foil_token": " Shanghai", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_korea", "family": "factual", "prompt": "The capital of South Korea is", "target_token": " Seoul", "foil_token": " Busan", "split": "main", "include_macag": false},
+    {"prompt_id": "factual_capital_egypt", "family": "factual", "prompt": "The capital of Egypt is", "target_token": " Cairo", "foil_token": " Alexandria", "split": "main", "include_macag": false},
+    {"prompt_id": "factual_eiffel_tower", "family": "factual", "prompt": "The Eiffel Tower is located in", "target_token": " Paris", "foil_token": " London", "split": "main", "include_macag": false},
+    {"prompt_id": "factual_colosseum", "family": "factual", "prompt": "The Colosseum is in", "target_token": " Rome", "foil_token": " Athens", "split": "main", "include_macag": false},
+    {"prompt_id": "factual_brandenburg_gate", "family": "factual", "prompt": "The Brandenburg Gate stands in", "target_token": " Berlin", "foil_token": " Hamburg", "split": "main", "include_macag": false},
+    {"prompt_id": "factual_sagrada_familia", "family": "factual", "prompt": "The Sagrada Familia is in", "target_token": " Barcelona", "foil_token": " Madrid", "split": "main", "include_macag": false}
+  ]
+}

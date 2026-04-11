@@ -109,7 +109,9 @@ class KANEncoder(nn.Module):
 
         # Compute Jacobian rows via backward passes for each active feature.
         # We batch by unique positions to avoid redundant forward passes.
-        x_requires_grad = x.detach().requires_grad_(True)
+        # Cast to float32 to match KANLinear parameters (kept in float32
+        # for numerical stability, see KANCrossLayerTranscoder.__init__).
+        x_requires_grad = x.detach().float().requires_grad_(True)
         output = self.kan_linear(x_requires_grad)  # (n_pos, n_features)
 
         encoder_vecs = torch.zeros(
@@ -130,7 +132,7 @@ class KANEncoder(nn.Module):
                 if x_requires_grad.grad is not None:
                     x_requires_grad.grad.zero_()
                 output[pos, f_idx].backward(retain_graph=True)
-                encoder_vecs[out_idx] = x_requires_grad.grad[pos].clone()
+                encoder_vecs[out_idx] = x_requires_grad.grad[pos].to(x.dtype).clone()
 
         return encoder_vecs
 
@@ -157,7 +159,10 @@ class KANEncoder(nn.Module):
         if len(pos_idx) == 0:
             return torch.zeros(0, self.d_model, device=x.device, dtype=x.dtype)
 
-        # Use vmap + jacrev for batched Jacobian computation
+        # Use vmap + jacrev for batched Jacobian computation.
+        # Cast to float32 to match KANLinear parameters.
+        x_f32 = x.float()
+
         def single_input_forward(x_single: torch.Tensor) -> torch.Tensor:
             return self.kan_linear(x_single.unsqueeze(0)).squeeze(0)
 
@@ -168,10 +173,10 @@ class KANEncoder(nn.Module):
             unique_positions = pos_idx.unique()
             for pos in unique_positions:
                 # Full Jacobian at this position: (n_features, d_model)
-                jac = jacrev_fn(x[pos])
+                jac = jacrev_fn(x_f32[pos])
                 mask = pos_idx == pos
                 features_at_pos = feat_idx[mask]
-                encoder_vecs.append(jac[features_at_pos])
+                encoder_vecs.append(jac[features_at_pos].to(x.dtype))
 
             return torch.cat(encoder_vecs, dim=0)
 

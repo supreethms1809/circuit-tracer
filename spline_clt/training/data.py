@@ -143,7 +143,14 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
     from transformer_lens import HookedTransformer
     from datasets import load_dataset
 
-    device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+    if config.device:
+        device = torch.device(config.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
     # Load model
     model = HookedTransformer.from_pretrained(

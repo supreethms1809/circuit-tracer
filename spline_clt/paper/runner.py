@@ -42,6 +42,7 @@ from spline_clt.paper.evaluate import (
     jaccard_overlap,
     load_language_model,
     load_ranked_feature_nodes,
+    load_replacement_model,
     parse_feature_node_id,
     replacement_logit_gap_from_subset,
 )
@@ -75,10 +76,13 @@ def _dtype_from_name(name: str) -> torch.dtype:
 
 
 def _device_from_name(name: str | None) -> torch.device:
-    preferred = name or ("cuda" if torch.cuda.is_available() else "cpu")
-    if preferred != "cpu" and not torch.cuda.is_available():
-        preferred = "cpu"
-    return torch.device(preferred)
+    if name:
+        return torch.device(name)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
 def _utc_now() -> str:
@@ -105,6 +109,8 @@ def _hardware_summary() -> dict[str, Any]:
             "cuda_device_count": torch.cuda.device_count(),
             "cuda_device_name": torch.cuda.get_device_name(0),
         }
+    if torch.backends.mps.is_available():
+        return {"device": "mps"}
     return {"device": "cpu"}
 
 
@@ -267,8 +273,28 @@ class PaperSuiteRunner:
                 )
             time.sleep(30)
 
+    @staticmethod
+    def _log(msg: str) -> None:
+        print(f"[paper-eval] {msg}", flush=True)
+
+    @staticmethod
+    def _banner(title: str) -> None:
+        bar = "=" * 70
+        print(f"\n{bar}\n[paper-eval] {title}\n{bar}", flush=True)
+
     def run(self) -> dict[str, Any]:
         self._prepare_suite_root()
+
+        variant_seed_pairs = self._my_variant_seed_pairs()
+        n_variants = len(self.config.model_variants)
+        n_seeds = len(self.config.seeds)
+        n_benchmarks = len(self.config.benchmark_entries)
+        self._banner(
+            f"Suite: {self.config.suite_name}  |  "
+            f"{n_variants} variant(s) x {n_seeds} seed(s) = "
+            f"{len(variant_seed_pairs)} run(s)  |  "
+            f"{n_benchmarks} benchmark prompt(s)"
+        )
 
         # Only worker 0 writes the manifest; others wait for it.
         if self.worker_id == 0:
@@ -283,6 +309,7 @@ class PaperSuiteRunner:
         if self._stage_enabled("collect_dataset"):
             if self.worker_id == 0:
                 for model_name in unique_model_names:
+                    self._banner(f"STAGE: Dataset collection  |  model={model_name}")
                     self._collect_dataset(model_name)
             else:
                 # Defensive: dataset should already be ready (Phase 1 ran first),
@@ -290,12 +317,18 @@ class PaperSuiteRunner:
                 for model_name in unique_model_names:
                     self._wait_for_dataset(model_name)
 
-        for variant_name, variant, seed in self._my_variant_seed_pairs():
+        for run_idx, (variant_name, variant, seed) in enumerate(variant_seed_pairs, 1):
+            self._banner(
+                f"RUN {run_idx}/{len(variant_seed_pairs)}:  "
+                f"variant={variant_name}  seed={seed}"
+            )
             if self._stage_enabled("train"):
+                self._log(f"STAGE: Training  |  variant={variant_name}  seed={seed}")
                 checkpoint_path = self._train_variant_seed(variant_name, variant, seed)
             else:
                 checkpoint_path = self._resolve_checkpoint_path(variant_name, variant, seed)
             if self._stage_enabled("evaluate"):
+                self._log(f"STAGE: Evaluation  |  variant={variant_name}  seed={seed}")
                 self._evaluate_variant_seed(
                     variant_name=variant_name,
                     variant=variant,
@@ -303,6 +336,7 @@ class PaperSuiteRunner:
                     checkpoint_path=checkpoint_path,
                 )
             if self._stage_enabled("macag") and self.config.macag.enabled:
+                self._log(f"STAGE: MACAG  |  variant={variant_name}  seed={seed}")
                 self._run_macag_for_variant_seed(
                     variant_name=variant_name,
                     variant=variant,
@@ -312,8 +346,10 @@ class PaperSuiteRunner:
 
         aggregate: dict[str, Any] = {}
         if self.worker_id == 0 and self._stage_enabled("report"):
+            self._banner("STAGE: Report aggregation")
             aggregate = self._generate_reporting()
 
+        self._banner("Suite complete")
         return {
             "suite_root": str(self.suite_root),
             "worker_id": self.worker_id,
@@ -380,6 +416,7 @@ class PaperSuiteRunner:
         dataset_dir = self._dataset_dir(model_name)
         summary_path = dataset_dir / "dataset_manifest.json"
         if self._dataset_stage_complete(model_name):
+            self._log(f"Dataset already collected for {model_name}, skipping")
             if summary_path.exists():
                 return read_json(summary_path)
             summary = {
@@ -391,6 +428,10 @@ class PaperSuiteRunner:
             write_json(summary_path, summary)
             return summary
 
+        self._log(
+            f"Collecting activations: n_tokens={self.config.dataset.n_tokens}, "
+            f"seq_len={self.config.dataset.seq_len}, batch_size={self.config.dataset.batch_size}"
+        )
         dataset_dir.mkdir(parents=True, exist_ok=True)
         data_config = DataConfig(
             model_name=model_name,
@@ -443,10 +484,12 @@ class PaperSuiteRunner:
         summary_path = run_dir / "train_summary.json"
 
         if summary_path.exists():
+            self._log(f"Training already complete for {variant_name} seed={seed}, skipping")
             payload = read_json(summary_path)
             return Path(payload["checkpoint_path"])
 
         if variant.checkpoint_path:
+            self._log(f"Using external checkpoint: {variant.checkpoint_path}")
             payload = {
                 "status": "external_checkpoint",
                 "variant_name": variant_name,
@@ -458,6 +501,13 @@ class PaperSuiteRunner:
             self._write_run_manifest(run_dir, variant_name, variant, seed, payload["checkpoint_path"])
             return Path(payload["checkpoint_path"])
 
+        training = variant.training
+        self._log(
+            f"Training {variant_name} (seed={seed}): "
+            f"encoder={training.encoder_type}, d_transcoder={training.d_transcoder}, "
+            f"steps={training.total_steps}, batch_size={training.batch_size}, "
+            f"dtype={training.dtype}"
+        )
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
         dataset = ActivationDataset.load(
             str(dataset_dir),
@@ -568,11 +618,14 @@ class PaperSuiteRunner:
         evaluation_dir.mkdir(parents=True, exist_ok=True)
         summary_path = evaluation_dir / "evaluation_summary.json"
         if summary_path.exists():
+            self._log(f"Evaluation already complete for {variant_name} seed={seed}, skipping")
             return read_json(summary_path)
 
         device = _device_from_name(variant.training.device or self.config.dataset.device)
         dtype = _dtype_from_name(variant.training.dtype)
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
+
+        self._log(f"Loading checkpoint: {checkpoint_path}")
         dataset = ActivationDataset.load(
             str(dataset_dir),
             max_samples=max(self.config.dataset.max_train_samples, self.config.dataset.eval_samples + 64),
@@ -587,9 +640,12 @@ class PaperSuiteRunner:
             checkpoint_path=checkpoint_path,
         )
 
+        # -- Reconstruction --
+        n_eval = self.config.dataset.eval_samples
+        self._log(f"Evaluating reconstruction on {n_eval} samples...")
         sample_indices = deterministic_sample_indices(
             total=len(dataset),
-            count=self.config.dataset.eval_samples,
+            count=n_eval,
             seed=seed,
         )
         reconstruction_summary, reconstruction_records = evaluate_reconstruction_samples(
@@ -604,16 +660,35 @@ class PaperSuiteRunner:
             for record in reconstruction_records
         ]
         write_jsonl(evaluation_dir / "reconstruction_records.jsonl", reconstruction_records)
+        self._log(
+            f"Reconstruction done: MSE={reconstruction_summary['mse_total']:.4f}, "
+            f"cosine={reconstruction_summary['cosine_similarity']:.4f}"
+        )
 
+        # -- Prompt-level evaluation (graph + circuit faithfulness) --
+        n_prompts = len(self.config.benchmark_entries)
+        self._log(f"Loading language model for {n_prompts} prompt evaluations...")
         lm = load_language_model(self._variant_model_name(variant), device=device)
+        self._log("Loading replacement model for attribution graph construction...")
+        replacement_model = load_replacement_model(
+            model_name=self._variant_model_name(variant),
+            transcoders=model,
+            device=device,
+            dtype=dtype,
+        )
         prompt_records: list[dict[str, Any]] = []
         graphs_dir = evaluation_dir / "graphs"
         graphs_dir.mkdir(parents=True, exist_ok=True)
-        for entry in self.config.benchmark_entries:
+        for prompt_idx, entry in enumerate(self.config.benchmark_entries, 1):
+            self._log(
+                f"Prompt {prompt_idx}/{n_prompts}: "
+                f"[{entry.family}] {entry.prompt_id} -- {entry.prompt!r}"
+            )
             prompt_records.append(
                 self._evaluate_prompt_entry(
                     model=model,
                     lm=lm,
+                    replacement_model=replacement_model,
                     entry=entry,
                     variant_name=variant_name,
                     variant=variant,
@@ -624,6 +699,8 @@ class PaperSuiteRunner:
             )
         write_jsonl(evaluation_dir / "prompt_metrics.jsonl", prompt_records)
 
+        # -- Monosemanticity --
+        self._log("Evaluating monosemanticity...")
         monosemanticity_records, monosemanticity_summary = self._collect_monosemanticity(
             model=model,
             dataset=dataset,
@@ -632,6 +709,9 @@ class PaperSuiteRunner:
         )
         write_jsonl(evaluation_dir / "monosemanticity_records.jsonl", monosemanticity_records)
 
+        # -- Spline analysis --
+        if model.encoder_type == "kan":
+            self._log("Running spline analysis...")
         spline_summary = self._collect_spline_analysis(
             model=model,
             dataset=dataset,
@@ -682,6 +762,7 @@ class PaperSuiteRunner:
         *,
         model: Any,
         lm: Any,
+        replacement_model: Any,
         entry: BenchmarkEntry,
         variant_name: str,
         variant: ModelVariantConfig,
@@ -697,6 +778,7 @@ class PaperSuiteRunner:
         )
         graph_slug = _sanitize_name(f"{variant_name}_{seed}_{entry.prompt_id}")
         try:
+            self._log(f"  Collecting activations...")
             prompt_cache = collect_prompt_cache(
                 lm=lm,
                 prompt=entry.prompt,
@@ -704,10 +786,14 @@ class PaperSuiteRunner:
                 feature_input_hook=model.feature_input_hook,
                 feature_output_hook=model.feature_output_hook,
             )
+            self._log(f"  Computing replacement fidelity...")
             replacement_metrics = evaluate_prompt_replacement(model, prompt_cache, lm)
+            self._log(
+                f"  Building attribution graph (max_features="
+                f"{self.config.evaluation.graph.max_features})..."
+            )
             graph_info = build_prompt_graph(
-                model=model,
-                lm=lm,
+                replacement_model=replacement_model,
                 prompt_cache=prompt_cache,
                 graph_dir=graphs_dir,
                 graph_slug=graph_slug,
@@ -717,7 +803,13 @@ class PaperSuiteRunner:
                 desired_logit_prob=self.config.evaluation.graph.desired_logit_prob,
                 node_threshold=self.config.evaluation.graph.node_threshold,
                 edge_threshold=self.config.evaluation.graph.edge_threshold,
+                attribution_batch_size=self.config.evaluation.graph.attribution_batch_size,
             )
+            self._log(
+                f"  Graph: {graph_info['active_feature_count']} features, "
+                f"replacement={graph_info['graph_replacement_score']:.3f}"
+            )
+            self._log(f"  Computing circuit faithfulness (logit gap)...")
             target_idx, foil_idx, gap_direction = build_logit_gap_direction(
                 tokenizer=lm.tokenizer,
                 unembed=lm.W_U.float(),
@@ -757,6 +849,10 @@ class PaperSuiteRunner:
 
             shapley_jaccard = None
             if self.config.evaluation.circuit.run_shapley:
+                self._log(
+                    f"  Running Shapley attribution "
+                    f"({self.config.evaluation.circuit.shapley_samples} samples)..."
+                )
                 shapley = shapley_logit_attribution(
                     model=model,
                     x_in=prompt_cache.mlp_inputs,
@@ -990,10 +1086,16 @@ class PaperSuiteRunner:
             for record in read_jsonl(prompt_records_path)
             if record.get("status", "ok") == "ok" and record.get("include_macag")
         ]
+        self._log(f"  MACAG: {len(prompt_records)} prompts to process")
         macag_records: list[dict[str, Any]] = []
-        for prompt_record in prompt_records:
+        for pi, prompt_record in enumerate(prompt_records, 1):
             prompt_dir = macag_dir / _sanitize_name(str(prompt_record["prompt_id"]))
             prompt_dir.mkdir(parents=True, exist_ok=True)
+            self._log(
+                f"  MACAG prompt [{pi}/{len(prompt_records)}]: "
+                f"{prompt_record.get('prompt_id', '?')} "
+                f"(family={prompt_record.get('family', '?')})"
+            )
             try:
                 macag_records.extend(
                     self._run_macag_prompt(
@@ -1082,7 +1184,14 @@ class PaperSuiteRunner:
         )
         records: list[dict[str, Any]] = []
 
-        for game1_cfg in self.config.macag.game1_runs:
+        n_game1 = len(self.config.macag.game1_runs)
+        n_game2 = len(self.config.macag.game2_runs)
+        self._log(
+            f"    Running {n_game1} Game-1 + {n_game2} Game-2 configs  "
+            f"({len(candidates)} candidates)"
+        )
+        for gi, game1_cfg in enumerate(self.config.macag.game1_runs, 1):
+            self._log(f"    Game 1 [{gi}/{n_game1}]: {game1_cfg.name}")
             oracle = ScoringOracle(scorer, cache_enabled=self.config.macag.oracle.cache_enabled)
             result = solve_game1(
                 graph=graph,
@@ -1144,7 +1253,8 @@ class PaperSuiteRunner:
                 }
             )
 
-        for game2_cfg in self.config.macag.game2_runs:
+        for gi, game2_cfg in enumerate(self.config.macag.game2_runs, 1):
+            self._log(f"    Game 2 [{gi}/{n_game2}]: {game2_cfg.name}")
             oracle = ScoringOracle(scorer, cache_enabled=self.config.macag.oracle.cache_enabled)
             result = solve_game2(
                 graph=graph,
