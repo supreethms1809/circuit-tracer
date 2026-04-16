@@ -26,6 +26,49 @@ def reconstruction_loss(y_hat: torch.Tensor, y_true: torch.Tensor) -> torch.Tens
     return ((y_hat.float() - y_true.float()) ** 2).mean()
 
 
+def paper_style_reconstruction_sparsity_metrics(
+    y_hat: torch.Tensor,
+    y_true: torch.Tensor,
+    activations: torch.Tensor,
+    eps: float = 1e-8,
+) -> dict[str, float]:
+    """Scalars for comparing runs to CLT reporting (e.g. attribution-graph papers).
+
+    Anthropic quote *normalized mean reconstruction error* and *L0* (features
+    active per input token) without always specifying the exact formula in-line.
+    We log several unambiguous quantities so you can align with their appendix
+    or reproduce their definition once pinned down.
+
+    Args:
+        y_hat: Predicted MLP outputs, (n_layers, n_pos, d_model).
+        y_true: Ground-truth MLP outputs, same shape.
+        activations: Post–JumpReLU features, (n_layers, n_pos, d_transcoder).
+
+    Returns:
+        Flat dict suitable for tqdm / W&B (all plain floats).
+    """
+    yf = y_hat.detach().float()
+    y = y_true.detach().float()
+    n_elem = y.numel()
+    mse_mean = ((yf - y) ** 2).mean()
+    diff = yf - y
+    rel_fro = diff.norm() / (y.norm() + eps)
+    # NMSE: ratio of mean squared error to mean squared target (scale-invariant).
+    mean_y2 = (y**2).mean().clamp_min(eps)
+    nmse_mean = mse_mean / mean_y2
+
+    active = (activations > 0).to(torch.float32)
+    # Total active latents summed over all layers at each position, then mean over tokens.
+    l0_per_token = active.sum(dim=(0, 2)).mean()
+
+    return {
+        "reconstruction/mse_sum": float((mse_mean * n_elem).item()),
+        "reconstruction/rel_fro_error": float(rel_fro.item()),
+        "reconstruction/nmse_mean": float(nmse_mean.item()),
+        "stats/l0_active_features_per_token": float(l0_per_token.item()),
+    }
+
+
 def sparsity_loss(
     activations: torch.Tensor,
     decoder_norms: list[torch.Tensor],
@@ -128,12 +171,17 @@ def total_loss(
 
     l_total = l_recon + l_sparse + l_kan_reg
 
+    paper_metrics = paper_style_reconstruction_sparsity_metrics(y_hat, y_true, activations)
+    # Mean over (layer, pos) of active count in that layer at that position (not paper L0).
+    active_per_layer_pos = (activations > 0).float().sum(dim=-1).mean().item()
+
     metrics = {
         "loss/total": l_total.item(),
         "loss/reconstruction": l_recon.item(),
         "loss/sparsity": l_sparse.item(),
         "loss/kan_regularization": l_kan_reg.item(),
-        "stats/active_features_per_pos": (activations > 0).float().sum(dim=-1).mean().item(),
+        "stats/active_features_per_pos": active_per_layer_pos,
+        **paper_metrics,
     }
 
     return l_total, metrics

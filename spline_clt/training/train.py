@@ -139,7 +139,9 @@ def train(
     )
 
     # Optimizer (NOT LBFGS — doesn't scale)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=0.01, betas=(0.9, 0.95))
+
 
     # Training loop
     os.makedirs(config.checkpoint_dir, exist_ok=True)
@@ -224,11 +226,15 @@ def train(
         # Logging
         if step % config.log_every == 0:
             metrics["lr"] = lr
+            rel_fro = metrics.get("reconstruction/rel_fro_error", float("nan"))
+            l0_tok = metrics.get("stats/l0_active_features_per_token", float("nan"))
             pbar.set_postfix({
                 "loss": f"{metrics['loss/total']:.4f}",
                 "recon": f"{metrics['loss/reconstruction']:.4f}",
                 "sparse": f"{metrics['loss/sparsity']:.4f}",
-                "active": f"{metrics['stats/active_features_per_pos']:.1f}",
+                "rel_fro": f"{rel_fro:.3f}",
+                "l0_tok": f"{l0_tok:.1f}",
+                "act_lp": f"{metrics['stats/active_features_per_pos']:.1f}",
                 "lr": f"{lr:.2e}",
             })
 

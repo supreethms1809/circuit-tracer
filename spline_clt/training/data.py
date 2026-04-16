@@ -163,34 +163,48 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
     n_layers = model.cfg.n_layers
     d_model = model.cfg.d_model
 
-    # Load dataset (use Parquet-based datasets; script-based ones like stas/openwebtext-10k
-    # are no longer supported by Hugging Face)
+    # Load dataset from HuggingFace Hub (supports any Hub repo or Parquet-based dataset).
     load_kwargs = {"path": config.dataset_name, "split": "train"}
     if config.dataset_config:
         load_kwargs["name"] = config.dataset_config
     dataset = load_dataset(**load_kwargs)
+
     dataset = dataset.shuffle(seed=config.seed)
     tokenizer = model.tokenizer
     assert tokenizer is not None
 
-    # Tokenize
+    # Tokenize — chunk each sample into non-overlapping seq_len windows to use
+    # all tokens, not just the first seq_len.  Codelion samples average ~1K tokens;
+    # truncating to 128 would discard ~88% of the data.
+    # Batches are formed on the fly to avoid holding all tokens in RAM at once.
     n_sequences = config.n_tokens // config.seq_len
-    all_tokens = []
+    token_batches = []
+    current_batch = []
+    collected = 0
 
     for item in dataset:
         tokens = tokenizer(
             item["text"],
-            truncation=True,
-            max_length=config.seq_len,
+            truncation=False,
             return_tensors="pt",
         ).input_ids.squeeze(0)
-        if len(tokens) == config.seq_len:
-            all_tokens.append(tokens)
-        if len(all_tokens) >= n_sequences:
+        # Chunk into non-overlapping windows of seq_len
+        for start in range(0, len(tokens) - config.seq_len + 1, config.seq_len):
+            current_batch.append(tokens[start : start + config.seq_len])
+            if len(current_batch) == config.batch_size:
+                token_batches.append(torch.stack(current_batch))
+                current_batch = []
+                collected += config.batch_size
+            if collected >= n_sequences:
+                break
+        if collected >= n_sequences:
             break
 
-    all_tokens = torch.stack(all_tokens[:n_sequences]).to(device)
-    n_sequences = len(all_tokens)  # actual count (may be < config.n_tokens // seq_len)
+    # Flush remaining partial batch
+    if current_batch and collected < n_sequences:
+        token_batches.append(torch.stack(current_batch))
+
+    n_sequences = sum(b.shape[0] for b in token_batches)
 
     # Pre-compute hook names once
     hook_names_in = [
@@ -220,12 +234,9 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
     )
 
     sample_idx = 0
-    for batch_start in tqdm(
-        range(0, n_sequences, config.batch_size),
-        desc="Collecting activations",
-    ):
-        batch_tokens = all_tokens[batch_start : batch_start + config.batch_size]
-        actual_bs = len(batch_tokens)
+    for batch_tokens in tqdm(token_batches, desc="Collecting activations"):
+        batch_tokens = batch_tokens.to(device)
+        actual_bs = batch_tokens.shape[0]
 
         _, cache = model.run_with_cache(
             batch_tokens,

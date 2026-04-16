@@ -506,7 +506,8 @@ class PaperSuiteRunner:
             f"Training {variant_name} (seed={seed}): "
             f"encoder={training.encoder_type}, d_transcoder={training.d_transcoder}, "
             f"steps={training.total_steps}, batch_size={training.batch_size}, "
-            f"dtype={training.dtype}"
+            f"dtype={training.dtype}, "
+            f"dataset_name={self.config.dataset.dataset_name}"
         )
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
         dataset = ActivationDataset.load(
