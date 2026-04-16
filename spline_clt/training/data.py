@@ -29,6 +29,12 @@ class DataConfig:
     feature_output_hook: str = "hook_mlp_out"
     device: str = "cuda"
     seed: int = 0
+    #: If True (default), reload the saved mmap into RAM and return an
+    #: ``ActivationDataset``. For large suites this duplicates the full cache
+    #: (e.g. ~100s of GiB for Qwen2.5-0.5B at 2M tokens). Callers that only need
+    #: files on disk (e.g. paper runs that load a bounded slice later) should set
+    #: this to False.
+    load_after_collect: bool = True
 
 
 class ActivationDataset(Dataset):
@@ -125,7 +131,7 @@ class ActivationDataset(Dataset):
 
 
 @torch.no_grad()
-def collect_activations(config: DataConfig) -> ActivationDataset:
+def collect_activations(config: DataConfig) -> ActivationDataset | None:
     """Run a transformer on text data and collect MLP input/output activations.
 
     Uses TransformerLens HookedTransformer for hook-based activation extraction.
@@ -138,7 +144,8 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
         config: Data collection configuration.
 
     Returns:
-        ActivationDataset with cached activations (backed by the saved files).
+        ActivationDataset with cached activations when ``load_after_collect`` is
+        True; otherwise ``None`` after files are written.
     """
     from transformer_lens import HookedTransformer
     from datasets import load_dataset
@@ -260,6 +267,9 @@ def collect_activations(config: DataConfig) -> ActivationDataset:
     mlp_inputs_mm.flush()
     mlp_outputs_mm.flush()
     del mlp_inputs_mm, mlp_outputs_mm
+
+    if not config.load_after_collect:
+        return None
 
     # Load via the standard path so callers get a consistent ActivationDataset.
     # Uses max_samples=n_sequences to return all collected data.

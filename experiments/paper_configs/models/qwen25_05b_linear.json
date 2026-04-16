@@ -14,7 +14,7 @@
         "learning_rate": 5e-05,
         "warmup_steps": 10000,
         "total_steps": 600000,
-        "batch_size": 32,
+        "batch_size": 8,
         "lambda_sparsity": 0.02,
         "c_sparsity": 2.0,
         "grad_clip": 1.0,

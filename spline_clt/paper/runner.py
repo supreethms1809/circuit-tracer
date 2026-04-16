@@ -403,7 +403,13 @@ class PaperSuiteRunner:
 
     def _dataset_stage_complete(self, model_name: str) -> bool:
         dataset_dir = self._dataset_dir(model_name)
-        return (dataset_dir / "mlp_inputs.pt").exists() and (dataset_dir / "mlp_outputs.pt").exists()
+        has_torch = (dataset_dir / "mlp_inputs.pt").exists() and (
+            dataset_dir / "mlp_outputs.pt"
+        ).exists()
+        has_numpy = (dataset_dir / "mlp_inputs.npy").exists() and (
+            dataset_dir / "mlp_outputs.npy"
+        ).exists()
+        return has_torch or has_numpy
 
     def _train_stage_complete(self, variant_name: str, variant: ModelVariantConfig, seed: int) -> bool:
         if variant.checkpoint_path:
@@ -443,6 +449,7 @@ class PaperSuiteRunner:
             save_dir=str(dataset_dir),
             device=str(_device_from_name(self.config.dataset.device)),
             seed=self.config.dataset.seed,
+            load_after_collect=False,
         )
         collect_activations(data_config)
         summary = {
