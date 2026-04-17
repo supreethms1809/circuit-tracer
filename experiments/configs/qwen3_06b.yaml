@@ -1,0 +1,49 @@
+# Spline-CLT training config for Qwen3-0.6B (Qwen/Qwen3-0.6B)
+# 28 layers, 1024-dim residual stream, d_transcoder=13312 (13x expansion)
+#
+# Parameter-matched to published Qwen3-0.6B single-layer transcoders:
+#   Published TranscoderSet (mwhanna/qwen3-0.6b-transcoders-lowl0):
+#     28 layers × 335.7M per layer = 9.40B total (160x expansion, single-layer)
+#   Equivalent linear CLT (cross-layer, d_transcoder=21151): 9.40B total
+#   This Spline-CLT (cross-layer, d_transcoder=13312):       9.35B total
+#
+# Parameter breakdown:
+#   KAN encoder:  10 × 13312 × 1024 × 28 layers  =  3.82B
+#   Decoder:      13312 × 1024 × 406 cross-layer  =  5.53B
+#   Total:        ~9.35B params
+#   Training memory: ~56GB (params + Adam states in bf16)
+#
+# Hardware: GH200 (96GB HBM3) or equivalent
+
+# Model architecture
+n_layers: 28
+d_model: 1024
+d_transcoder: 13312
+grid_size: 5
+spline_order: 3
+
+# Training
+learning_rate: 5.0e-5
+warmup_steps: 10000
+total_steps: 600000
+batch_size: 8
+lambda_sparsity: 0.005
+c_sparsity: 1.0
+grad_clip: 1.0
+
+# Logging & checkpointing
+log_every: 200
+eval_every: 10000
+save_every: 50000
+checkpoint_dir: checkpoints/qwen3_06b
+run_name: spline_clt_qwen3_06b
+
+# Grid update
+update_grid_every: 150000
+update_grid_from: 10000
+
+# Data
+data_dir: data/activations_qwen3_06b
+device: cuda
+dtype: bfloat16
+val_fraction: 0.05
