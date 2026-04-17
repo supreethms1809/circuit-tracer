@@ -24,6 +24,7 @@ spline_order: 3
 
 # Training
 learning_rate: 5.0e-5
+optimizer: adafactor
 warmup_steps: 10000
 total_steps: 600000
 batch_size: 8

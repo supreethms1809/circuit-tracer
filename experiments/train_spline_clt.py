@@ -80,12 +80,20 @@ def main():
             data_config.n_tokens = args.n_tokens
 
         dataset = collect_activations(data_config)
-        print(f"Collected {len(dataset)} samples, saved to {config.data_dir}")
+        if dataset is None:
+            print(f"Collected activations and saved to {config.data_dir}")
+            if not args.config:
+                raise ValueError(
+                    "Config is required when load_after_collect=False because "
+                    "model dimensions cannot be inferred from an in-memory dataset."
+                )
+        else:
+            print(f"Collected {len(dataset)} samples, saved to {config.data_dir}")
 
-        if not args.config:
-            # Infer model dims from data
-            config.n_layers = dataset.mlp_inputs.shape[1]
-            config.d_model = dataset.mlp_inputs.shape[3]
+            if not args.config:
+                # Infer model dims from data
+                config.n_layers = dataset.mlp_inputs.shape[1]
+                config.d_model = dataset.mlp_inputs.shape[3]
     else:
         dataset = None
 

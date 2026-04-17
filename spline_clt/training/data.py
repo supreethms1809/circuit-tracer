@@ -34,7 +34,7 @@ class DataConfig:
     #: (e.g. ~100s of GiB for Qwen2.5-0.5B at 2M tokens). Callers that only need
     #: files on disk (e.g. paper runs that load a bounded slice later) should set
     #: this to False.
-    load_after_collect: bool = True
+    load_after_collect: bool = False
 
 
 class ActivationDataset(Dataset):

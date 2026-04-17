@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformers import Adafactor
 
 from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 from spline_clt.seed import make_generator, seed_everything
@@ -33,6 +34,10 @@ class TrainConfig:
 
     # Training
     learning_rate: float = 1e-4
+    optimizer: str = "adamw"  # "adamw" or "adafactor"
+    weight_decay: float = 0.01
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.95
     warmup_steps: int = 1000
     total_steps: int = 50_000
     batch_size: int = 4  # sequences per batch
@@ -79,6 +84,35 @@ def get_lr(step: int, config: TrainConfig) -> float:
         1, config.total_steps - config.warmup_steps
     )
     return config.learning_rate * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+
+def create_optimizer(
+    model: KANCrossLayerTranscoder,
+    config: TrainConfig,
+    lr: float,
+) -> torch.optim.Optimizer:
+    """Build optimizer according to config.
+
+    Adafactor is supported for very large models where Adam-family optimizer
+    states exceed device memory.
+    """
+    if config.optimizer == "adamw":
+        return torch.optim.AdamW(
+            model.parameters(),
+            lr=lr,
+            weight_decay=config.weight_decay,
+            betas=(config.adam_beta1, config.adam_beta2),
+        )
+    if config.optimizer == "adafactor":
+        return Adafactor(
+            model.parameters(),
+            lr=lr,
+            scale_parameter=False,
+            relative_step=False,
+            warmup_init=False,
+            weight_decay=config.weight_decay,
+        )
+    raise ValueError(f"Unsupported optimizer: {config.optimizer}")
 
 
 def train(
@@ -139,8 +173,7 @@ def train(
     )
 
     # Optimizer (NOT LBFGS — doesn't scale)
-    #optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=0.01, betas=(0.9, 0.95))
+    optimizer = create_optimizer(model, config, lr=config.learning_rate)
 
 
     # Training loop
@@ -204,7 +237,7 @@ def train(
                     model.load_state_dict(recovered.state_dict())
                     del recovered
                     config.learning_rate /= 2
-                    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+                    optimizer = create_optimizer(model, config, lr=config.learning_rate)
                 else:
                     pbar.write(
                         f"  {_NAN_RECOVERY_THRESHOLD} consecutive NaN steps but no best "
@@ -264,7 +297,7 @@ def train(
             # Reset Adam state after grid update: the accumulated first/second moments
             # correspond to old spline knot positions and will drive the new parameters
             # in the wrong direction, causing the inf spiral seen in practice.
-            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            optimizer = create_optimizer(model, config, lr=lr)
             pbar.write(
                 f"Step {step}: grid updated and optimizer state reset "
                 f"(pre-update checkpoint saved to {pre_update_path})"
@@ -278,7 +311,7 @@ def train(
             and step > 0
             and step % config.reset_optimizer_every == 0
         ):
-            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            optimizer = create_optimizer(model, config, lr=lr)
             pbar.write(f"Step {step}: optimizer state reset (reset_optimizer_every={config.reset_optimizer_every})")
 
         # Evaluation
