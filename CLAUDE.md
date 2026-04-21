@@ -224,7 +224,16 @@ graph back for the existing `circuit_tracer` frontend.
 
 6. **Parameter ratio**: Spline-CLT has ~10x more encoder parameters than linear CLT at matched d_transcoder (due to B-spline basis expansion). Decoder is identical.
 
-7. **Data loading**: Dataset is ~40GB total. Use `ActivationDataset.load(path, max_samples=3000)` which mmap-slices then clones into RAM (~14GB). Avoid loading the full dataset — causes OOM or SIGBUS on WSL2.
+7. **Data loading**: Dataset is ~40GB total. Two modes:
+   - `ActivationDataset.load(path)` (no `max_samples`) returns a **streaming**
+     dataset that keeps the mmap open and copies one sample per `__getitem__`
+     call. RAM cost is O(batch). This is the training path — it sees every
+     collected sequence.
+   - `ActivationDataset.load(path, max_samples=N)` copies an `N`-sequence slice
+     into contiguous RAM (~14 GB for N=3000 on GPT-2 small). Used by paper
+     evaluation / analysis scripts that want a bounded deterministic subset.
+   Avoid loading the full dataset with a large explicit `max_samples` — causes
+   OOM or SIGBUS on WSL2.
 
 8. **encoder_type**: `KANCrossLayerTranscoder(encoder_type="kan"|"linear")`. Both use the same interface. `to_safetensors`/`load_spline_clt` handle both correctly.
 

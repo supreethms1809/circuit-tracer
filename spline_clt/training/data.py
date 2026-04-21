@@ -53,10 +53,13 @@ class ActivationDataset(Dataset):
 
     def __init__(
         self,
-        mlp_inputs: torch.Tensor,
-        mlp_outputs: torch.Tensor,
+        mlp_inputs: torch.Tensor | np.ndarray,
+        mlp_outputs: torch.Tensor | np.ndarray,
     ):
         assert mlp_inputs.shape == mlp_outputs.shape
+        # Streaming mode: arrays are int16 numpy mmaps, reinterpreted as bfloat16
+        # per-sample in __getitem__. Keeps RAM cost O(batch) instead of O(dataset).
+        self._streaming = isinstance(mlp_inputs, np.ndarray)
         self.mlp_inputs = mlp_inputs
         self.mlp_outputs = mlp_outputs
 
@@ -64,6 +67,21 @@ class ActivationDataset(Dataset):
         return self.mlp_inputs.shape[0]
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        if self._streaming:
+            # Copy a single sample out of the mmap into RAM, then reinterpret
+            # int16 bits as bfloat16. np.array(..., copy=True) is essential:
+            # indexing a numpy mmap returns a view, and OS page reclaim on
+            # WSL2 / Hyper-V can SIGBUS those views mid-batch.
+            in_np: np.ndarray = self.mlp_inputs  # type: ignore[assignment]
+            out_np: np.ndarray = self.mlp_outputs  # type: ignore[assignment]
+            return {
+                "mlp_inputs": torch.from_numpy(
+                    np.array(in_np[idx], copy=True)
+                ).view(torch.bfloat16),
+                "mlp_outputs": torch.from_numpy(
+                    np.array(out_np[idx], copy=True)
+                ).view(torch.bfloat16),
+            }
         return {
             "mlp_inputs": self.mlp_inputs[idx],
             "mlp_outputs": self.mlp_outputs[idx],
@@ -86,19 +104,34 @@ class ActivationDataset(Dataset):
         - **torch format** (legacy): ``mlp_inputs.pt`` / ``mlp_outputs.pt``
           loaded with ``mmap=True`` to avoid touching the full file at once.
 
-        In both cases a bounded ``max_samples`` slice is copied into contiguous
-        RAM to avoid OS-reclaim SIGBUS on WSL2 / Hyper-V.
+        Two loading modes:
+        - ``max_samples=None`` (streaming, preferred for training): keep the
+          mmap handles and copy one sample per ``__getitem__`` call. Lets
+          training see every collected sequence at O(batch) RAM. Numpy format
+          only.
+        - ``max_samples=N``: copy an ``N``-sequence slice into contiguous RAM.
+          Used by paper evaluation / analysis scripts that want a bounded
+          deterministic subset.
 
         Args:
             path: Directory containing the activation files.
-            max_samples: Number of sequences to load into RAM.
-                Default: 3000 (~14 GB for GPT-2 small).
+            max_samples: Number of sequences to load into RAM. ``None`` streams
+                the full on-disk dataset from mmap.
         """
-        if max_samples is None:
-            max_samples = 3000
-
         inputs_npy = os.path.join(path, "mlp_inputs.npy")
         outputs_npy = os.path.join(path, "mlp_outputs.npy")
+
+        if max_samples is None:
+            # Streaming path: return mmap-backed dataset covering every sample.
+            if not (os.path.exists(inputs_npy) and os.path.exists(outputs_npy)):
+                raise FileNotFoundError(
+                    f"Streaming mode requires numpy-format activations at {path} "
+                    "(mlp_inputs.npy / mlp_outputs.npy). Legacy .pt format is not "
+                    "supported for streaming; pass max_samples=N to load a slice."
+                )
+            inputs_mm = np.load(inputs_npy, mmap_mode="r")
+            outputs_mm = np.load(outputs_npy, mmap_mode="r")
+            return cls(inputs_mm, outputs_mm)
 
         if os.path.exists(inputs_npy) and os.path.exists(outputs_npy):
             # Numpy format: int16 on disk, reinterpreted as bfloat16.
