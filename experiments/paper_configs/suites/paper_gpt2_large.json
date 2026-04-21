@@ -1,0 +1,25 @@
+{
+  "defaults": [
+    "../base/common_gpt2_large.json",
+    "../macag/default.json",
+    "../models/gpt2_large_linear_feature_match.json",
+    "../models/gpt2_large_linear_param_match.json",
+    "../models/gpt2_large_spline_feature_match.json",
+    "../models/gpt2_large_spline_param_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_large",
+  "description": "GPT-2 large 4-variant paper matrix. Feature-match at d_t=20480 for both encoder types; param-match computed via encoder+decoder param formula.",
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_large",
+    "baseline_variant": "linear_feature_match_gpt2_large",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

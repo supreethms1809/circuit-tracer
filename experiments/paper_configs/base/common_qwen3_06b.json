@@ -8,12 +8,12 @@
     "report": true
   },
   "dataset": {
-    "model_name": "gpt2",
+    "model_name": "Qwen/Qwen3-0.6B",
     "dataset_name": "Salesforce/wikitext",
     "dataset_config": "wikitext-103-raw-v1",
     "n_tokens": 40000000,
     "seq_len": 128,
-    "batch_size": 32,
+    "batch_size": 16,
     "cache_dir": "shared/activations",
     "max_train_samples": 10000,
     "eval_samples": 500,

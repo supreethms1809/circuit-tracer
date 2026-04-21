@@ -1,0 +1,34 @@
+{
+  "model_variants": {
+    "spline_feature_match_gpt2_large": {
+      "label": "Spline-CLT (feature-match, d_t=20480)",
+      "model_name": "gpt2-large",
+      "scan_id": "spline-fm-gpt2-large",
+      "training": {
+        "n_layers": 36,
+        "d_model": 1280,
+        "d_transcoder": 20480,
+        "encoder_type": "kan",
+        "grid_size": 5,
+        "spline_order": 3,
+        "learning_rate": 5e-05,
+        "warmup_steps": 8000,
+        "total_steps": 160000,
+        "batch_size": 4,
+        "lambda_sparsity": 0.005,
+        "c_sparsity": 1.0,
+        "grad_clip": 1.0,
+        "log_every": 25,
+        "eval_every": 4000,
+        "save_every": 40000,
+        "update_grid_every": 80000,
+        "update_grid_from": 8000,
+        "reset_optimizer_every": 0,
+        "val_fraction": 0.05,
+        "dtype": "bfloat16",
+        "device": null,
+        "run_name": "spline_fm_gpt2_large"
+      }
+    }
+  }
+}

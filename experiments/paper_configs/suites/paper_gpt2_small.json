@@ -1,0 +1,25 @@
+{
+  "defaults": [
+    "../base/common.json",
+    "../macag/default.json",
+    "../models/gpt2_small_linear_feature_match.json",
+    "../models/gpt2_small_linear_param_match.json",
+    "../models/gpt2_small_spline_feature_match.json",
+    "../models/gpt2_small_spline_param_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_small",
+  "description": "GPT-2 small 4-variant paper matrix. Feature-match at d_t=12288 for both encoder types; param-match computed via encoder+decoder param formula.",
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_small",
+    "baseline_variant": "linear_feature_match_gpt2_small",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}
