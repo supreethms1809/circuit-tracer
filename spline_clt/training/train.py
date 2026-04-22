@@ -71,6 +71,10 @@ class TrainConfig:
 
     # Validation
     val_fraction: float = 0.05
+    num_workers: int = 0
+    pin_memory: bool = False
+    prefetch_factor: int | None = None
+    persistent_workers: bool = False
 
     def get_dtype(self) -> torch.dtype:
         return {"float32": torch.float32, "bfloat16": torch.bfloat16}[self.dtype]
@@ -150,14 +154,19 @@ def train(
         seed=config.seed,
     )
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config.batch_size,
-        shuffle=True,
-        drop_last=True,
-        pin_memory=True,
-        generator=make_generator(config.seed),
-    )
+    train_loader_kwargs = {
+        "dataset": train_dataset,
+        "batch_size": config.batch_size,
+        "shuffle": True,
+        "drop_last": True,
+        "num_workers": config.num_workers,
+        "pin_memory": config.pin_memory,
+        "persistent_workers": config.persistent_workers and config.num_workers > 0,
+        "generator": make_generator(config.seed),
+    }
+    if config.num_workers > 0 and config.prefetch_factor is not None:
+        train_loader_kwargs["prefetch_factor"] = config.prefetch_factor
+    train_loader = DataLoader(**train_loader_kwargs)
 
     # Create model
     model = KANCrossLayerTranscoder(
@@ -376,7 +385,17 @@ def evaluate(
     from spline_clt.training.loss import reconstruction_loss
 
     model.eval()
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
+    val_loader_kwargs = {
+        "dataset": val_dataset,
+        "batch_size": config.batch_size,
+        "shuffle": False,
+        "num_workers": config.num_workers,
+        "pin_memory": config.pin_memory,
+        "persistent_workers": config.persistent_workers and config.num_workers > 0,
+    }
+    if config.num_workers > 0 and config.prefetch_factor is not None:
+        val_loader_kwargs["prefetch_factor"] = config.prefetch_factor
+    val_loader = DataLoader(**val_loader_kwargs)
 
     total_loss_val = 0.0
     n_batches = 0

@@ -54,6 +54,10 @@ class TrainingSettings(BaseModel):
     update_grid_from: int = 5_000
     reset_optimizer_every: int = 0
     val_fraction: float = 0.05
+    num_workers: int = 0
+    pin_memory: bool = False
+    prefetch_factor: int | None = None
+    persistent_workers: bool = False
     dtype: Literal["float32", "bfloat16"] = "bfloat16"
     device: str | None = None
     run_name: str | None = None

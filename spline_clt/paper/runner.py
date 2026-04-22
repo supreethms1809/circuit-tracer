@@ -513,14 +513,13 @@ class PaperSuiteRunner:
             f"Training {variant_name} (seed={seed}): "
             f"encoder={training.encoder_type}, d_transcoder={training.d_transcoder}, "
             f"steps={training.total_steps}, batch_size={training.batch_size}, "
+            f"num_workers={training.num_workers}, pin_memory={training.pin_memory}, "
             f"dtype={training.dtype}, "
             f"dataset_name={self.config.dataset.dataset_name}"
         )
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
-        dataset = ActivationDataset.load(
-            str(dataset_dir),
-            max_samples=max(self.config.dataset.max_train_samples, self.config.dataset.eval_samples + 64),
-        )
+        self._log("Loading activation dataset in streaming mode (mmap, no RAM copy)...")
+        dataset = ActivationDataset.load(str(dataset_dir))
 
         checkpoint_dir = run_dir / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -552,6 +551,10 @@ class PaperSuiteRunner:
             dtype=training.dtype,
             seed=seed,
             val_fraction=training.val_fraction,
+            num_workers=training.num_workers,
+            pin_memory=training.pin_memory,
+            prefetch_factor=training.prefetch_factor,
+            persistent_workers=training.persistent_workers,
         )
 
         train(train_config, dataset=dataset)
@@ -634,10 +637,8 @@ class PaperSuiteRunner:
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
 
         self._log(f"Loading checkpoint: {checkpoint_path}")
-        dataset = ActivationDataset.load(
-            str(dataset_dir),
-            max_samples=max(self.config.dataset.max_train_samples, self.config.dataset.eval_samples + 64),
-        )
+        self._log("Loading activation dataset in streaming mode (mmap, no RAM copy)...")
+        dataset = ActivationDataset.load(str(dataset_dir))
         model = load_spline_clt(str(checkpoint_path), device=device, dtype=dtype)
         model.eval()
 

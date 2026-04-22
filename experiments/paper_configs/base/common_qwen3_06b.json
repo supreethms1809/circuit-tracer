@@ -4,18 +4,18 @@
     "collect_dataset": true,
     "train": true,
     "evaluate": true,
-    "macag": true,
+    "macag": false,
     "report": true
   },
   "dataset": {
     "model_name": "Qwen/Qwen3-0.6B",
-    "dataset_name": "Salesforce/wikitext",
-    "dataset_config": "wikitext-103-raw-v1",
-    "n_tokens": 40000000,
+    "dataset_name": "ssuresh/codelion_all-5B",
+    "dataset_config": "",
+    "n_tokens": 20000000,
     "seq_len": 128,
     "batch_size": 16,
     "cache_dir": "shared/activations",
-    "max_train_samples": 10000,
+    "max_train_samples": 100000,
     "eval_samples": 500,
     "dtype": "bfloat16",
     "device": null,
@@ -23,27 +23,27 @@
   },
   "evaluation": {
     "graph": {
-      "max_features": 64,
+      "max_features": 256,
       "max_n_logits": 8,
       "desired_logit_prob": 0.9,
       "node_threshold": 0.8,
       "edge_threshold": 0.98
     },
     "circuit": {
-      "top_k_features": 16,
+      "top_k_features": 64,
       "alpha": 0.5,
       "run_shapley": true,
       "shapley_samples": 64
     },
     "monosemanticity": {
       "enabled": true,
-      "n_features": 200,
+      "n_features": 512,
       "top_k_examples": 10,
       "n_samples": 500
     },
     "splines": {
       "enabled": true,
-      "n_features": 20,
+      "n_features": 50,
       "top_dims": 3,
       "n_samples": 500,
       "no_plot": true
