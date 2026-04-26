@@ -1,0 +1,24 @@
+{
+  "defaults": [
+    "../base/common.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_dt768.json",
+    "../models/gpt2_small_spline_dt1536.json",
+    "../models/gpt2_small_spline_dt3072.json",
+    "../models/gpt2_small_spline_dt6144.json",
+    "../models/gpt2_small_spline_feature_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_small_dt_sweep",
+  "description": "Spline-CLT d_transcoder sweep on GPT-2 small to identify the minimum width before performance degrades. Five points at 1x, 2x, 4x, 8x, 16x d_model. Reuses spline_feature_match (d_t=12288) as the 16x reference. Single seed for the sweep; rerun knee point with 3 seeds.",
+  "seeds": [
+    101
+  ],
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_small",
+    "baseline_variant": "spline_dt768_gpt2_small",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

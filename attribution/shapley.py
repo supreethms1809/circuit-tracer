@@ -172,8 +172,18 @@ def _feature_to_feature_shapley(
 ) -> torch.Tensor:
     """Compute (n_active, n_active) Shapley values for feature → feature influence.
 
-    φ_{s→t} = Shapley value of source s for target t's activation level.
+    Currently unimplemented: a correct implementation must re-encode the target
+    feature's layer after each source toggle (because target activations are a
+    function of the residual stream, not of the activation tensor itself).
+    The previous implementation read ``prev_acts[t_layer, t_pos, t_feat]``
+    directly, which never changed under source ablations and silently returned
+    zeros. Use ``ablation_attribution`` (Method 1) for graph construction.
     """
+    raise NotImplementedError(
+        "Feature-to-feature Shapley graph construction is not implemented. "
+        "Use the Jacobian-based ablation path (spline_attribution_method='jacobian_ablation')."
+    )
+
     device = x_in.device
     shapley_mat = torch.zeros(n_active, n_active, device=device, dtype=torch.float32)
 

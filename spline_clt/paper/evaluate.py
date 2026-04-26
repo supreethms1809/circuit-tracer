@@ -231,6 +231,10 @@ def build_prompt_graph(
     node_threshold: float,
     edge_threshold: float,
     attribution_batch_size: int = 512,
+    *,
+    model: KANCrossLayerTranscoder | None = None,
+    lm: Any | None = None,
+    spline_attribution_method: str = "jacobian_ablation",
 ) -> dict[str, Any]:
     """Build and persist a circuit-tracer graph for one prompt.
 
@@ -253,14 +257,35 @@ def build_prompt_graph(
         edge_threshold: Pruning threshold for edges.
         attribution_batch_size: Number of source nodes per backward pass.
     """
-    graph = attribute(
-        prompt=prompt_cache.prompt,
-        model=replacement_model,
-        max_n_logits=max_n_logits,
-        desired_logit_prob=desired_logit_prob,
-        max_feature_nodes=max_features,
-        batch_size=attribution_batch_size,
-    )
+    encoder_type = getattr(model, "encoder_type", None) if model is not None else None
+    if encoder_type == "kan":
+        if lm is None:
+            raise ValueError("Spline graph construction requires lm (HookedTransformer).")
+        from attribution.spline_graph import build_spline_graph
+
+        graph = build_spline_graph(
+            model=model,
+            lm=lm,
+            prompt=prompt_cache.prompt,
+            input_tokens=prompt_cache.token_ids,
+            mlp_inputs=prompt_cache.mlp_inputs,
+            mlp_outputs=prompt_cache.mlp_outputs,
+            final_logits=prompt_cache.logits[-1],
+            max_features=max_features,
+            max_n_logits=max_n_logits,
+            desired_logit_prob=desired_logit_prob,
+            method=spline_attribution_method,
+            scan=scan_id,
+        )
+    else:
+        graph = attribute(
+            prompt=prompt_cache.prompt,
+            model=replacement_model,
+            max_n_logits=max_n_logits,
+            desired_logit_prob=desired_logit_prob,
+            max_feature_nodes=max_features,
+            batch_size=attribution_batch_size,
+        )
     graph_replacement_score, graph_completeness_score = compute_graph_scores(graph)
 
     graph_dir.mkdir(parents=True, exist_ok=True)

@@ -15,8 +15,8 @@
     "seq_len": 128,
     "batch_size": 16,
     "cache_dir": "shared/activations",
-    "max_train_samples": 100000,
-    "eval_samples": 500,
+    "max_train_samples": 156250,
+    "eval_samples": 1000,
     "dtype": "bfloat16",
     "device": null,
     "seed": 17
@@ -33,19 +33,19 @@
       "top_k_features": 64,
       "alpha": 0.5,
       "run_shapley": true,
-      "shapley_samples": 64
+      "shapley_samples": 128
     },
     "monosemanticity": {
       "enabled": true,
       "n_features": 512,
       "top_k_examples": 10,
-      "n_samples": 500
+      "n_samples": 2000
     },
     "splines": {
       "enabled": true,
       "n_features": 50,
       "top_dims": 3,
-      "n_samples": 500,
+      "n_samples": 1000,
       "no_plot": true
     }
   }

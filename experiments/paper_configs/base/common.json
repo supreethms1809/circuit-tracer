@@ -15,37 +15,37 @@
     "seq_len": 128,
     "batch_size": 32,
     "cache_dir": "shared/activations",
-    "max_train_samples": 100000,
-    "eval_samples": 500,
+    "max_train_samples": 156250,
+    "eval_samples": 1000,
     "dtype": "bfloat16",
     "device": null,
     "seed": 17
   },
   "evaluation": {
     "graph": {
-      "max_features": 64,
+      "max_features": 256,
       "max_n_logits": 8,
       "desired_logit_prob": 0.9,
       "node_threshold": 0.8,
       "edge_threshold": 0.98
     },
     "circuit": {
-      "top_k_features": 16,
+      "top_k_features": 32,
       "alpha": 0.5,
       "run_shapley": true,
-      "shapley_samples": 64
+      "shapley_samples": 128
     },
     "monosemanticity": {
       "enabled": true,
-      "n_features": 200,
+      "n_features": 500,
       "top_k_examples": 10,
-      "n_samples": 500
+      "n_samples": 2000
     },
     "splines": {
       "enabled": true,
       "n_features": 20,
       "top_dims": 3,
-      "n_samples": 500,
+      "n_samples": 1000,
       "no_plot": true
     }
   }

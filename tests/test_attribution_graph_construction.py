@@ -273,3 +273,117 @@ class TestFullAttributionGraph:
         model, clt, _ = replacement_model_and_clt
         graph = attribute(prompt="Hello world", model=model, max_n_logits=3)
         assert graph.activation_values.shape[0] == graph.active_features.shape[0]
+
+
+# ---------------------------------------------------------------------------
+# Tests: Spline-CLT branched graph construction (Jacobian-based ablation)
+# ---------------------------------------------------------------------------
+
+
+class TestSplineGraphBranch:
+    """Verify the Spline-only graph construction path (Jacobian-based causal
+    ablation) produces a well-formed circuit_tracer ``Graph``.
+    """
+
+    @pytest.fixture(scope="class")
+    def lm(self):
+        from transformer_lens import HookedTransformer
+        return HookedTransformer.from_pretrained(
+            _GPT2_MODEL_NAME,
+            device="cpu",
+            fold_ln=False,
+            center_writing_weights=False,
+            center_unembed=False,
+        )
+
+    @pytest.fixture(scope="class")
+    def spline_clt(self):
+        return _make_clt(encoder_type="kan")
+
+    def _build(self, lm, spline_clt, prompt: str = "Hello world", max_features: int = 16):
+        from attribution.spline_graph import build_spline_graph
+        from spline_clt.paper.evaluate import collect_prompt_cache
+
+        cache = collect_prompt_cache(
+            lm=lm,
+            prompt=prompt,
+            n_layers=spline_clt.n_layers,
+            feature_input_hook=spline_clt.feature_input_hook,
+            feature_output_hook=spline_clt.feature_output_hook,
+        )
+        return build_spline_graph(
+            model=spline_clt,
+            lm=lm,
+            prompt=prompt,
+            input_tokens=cache.token_ids,
+            mlp_inputs=cache.mlp_inputs,
+            mlp_outputs=cache.mlp_outputs,
+            final_logits=cache.logits[-1],
+            max_features=max_features,
+            max_n_logits=3,
+            desired_logit_prob=0.9,
+            method="jacobian_ablation",
+            scan="test-spline",
+        )
+
+    def test_returns_graph(self, lm, spline_clt):
+        graph = self._build(lm, spline_clt)
+        assert isinstance(graph, Graph)
+
+    def test_node_layout(self, lm, spline_clt):
+        graph = self._build(lm, spline_clt)
+        n_selected = len(graph.selected_features)
+        n_pos = graph.n_pos
+        n_layers = lm.cfg.n_layers
+        n_logits = len(graph.logit_tokens)
+        expected = n_selected + n_layers * n_pos + n_pos + n_logits
+        assert graph.adjacency_matrix.shape == (expected, expected)
+
+    def test_error_token_rows_zero(self, lm, spline_clt):
+        graph = self._build(lm, spline_clt)
+        n_sel = len(graph.selected_features)
+        n_pos = graph.n_pos
+        n_err = lm.cfg.n_layers * n_pos
+        block = graph.adjacency_matrix[n_sel : n_sel + n_err + n_pos]
+        assert block.abs().sum().item() == 0.0
+
+    def test_layer_ordering(self, lm, spline_clt):
+        graph = self._build(lm, spline_clt)
+        n_sel = len(graph.selected_features)
+        if n_sel < 2:
+            pytest.skip("Too few features for ordering check")
+        layers = graph.active_features[graph.selected_features][:, 0]
+        ff = graph.adjacency_matrix[:n_sel, :n_sel]
+        nz = ff.abs() > 1e-8
+        for t in range(n_sel):
+            for s in range(n_sel):
+                if nz[t, s]:
+                    assert layers[s] < layers[t]
+
+    def test_compute_graph_scores(self, lm, spline_clt):
+        graph = self._build(lm, spline_clt)
+        rep, comp = compute_graph_scores(graph)
+        assert 0.0 <= rep <= 1.0
+        assert 0.0 <= comp <= 1.0
+
+    def test_shapley_method_not_implemented(self, lm, spline_clt):
+        from attribution.spline_graph import build_spline_graph
+        from spline_clt.paper.evaluate import collect_prompt_cache
+
+        cache = collect_prompt_cache(
+            lm=lm,
+            prompt="Hello world",
+            n_layers=spline_clt.n_layers,
+            feature_input_hook=spline_clt.feature_input_hook,
+            feature_output_hook=spline_clt.feature_output_hook,
+        )
+        with pytest.raises(NotImplementedError):
+            build_spline_graph(
+                model=spline_clt, lm=lm, prompt="Hello world",
+                input_tokens=cache.token_ids,
+                mlp_inputs=cache.mlp_inputs,
+                mlp_outputs=cache.mlp_outputs,
+                final_logits=cache.logits[-1],
+                max_features=8, max_n_logits=3,
+                desired_logit_prob=0.9, method="shapley", scan="test",
+            )

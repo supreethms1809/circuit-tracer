@@ -813,6 +813,11 @@ class PaperSuiteRunner:
                 node_threshold=self.config.evaluation.graph.node_threshold,
                 edge_threshold=self.config.evaluation.graph.edge_threshold,
                 attribution_batch_size=self.config.evaluation.graph.attribution_batch_size,
+                model=model,
+                lm=lm,
+                spline_attribution_method=(
+                    self.config.evaluation.graph.spline_attribution_method
+                ),
             )
             self._log(
                 f"  Graph: {graph_info['active_feature_count']} features, "
