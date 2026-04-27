@@ -32,9 +32,9 @@ def create_graph_from_attribution(
     Returns:
         circuit_tracer.graph.Graph instance compatible with pruning and visualization.
     """
-    active_features = attribution_result["active_features"]
-    activation_values = attribution_result["activation_values"]
-    adjacency_matrix = attribution_result["adjacency_matrix"]
+    active_features = attribution_result["active_features"].detach()
+    activation_values = attribution_result["activation_values"].detach()
+    adjacency_matrix = attribution_result["adjacency_matrix"].detach()
 
     # circuit_tracer.Graph expects selected_features to be an index tensor into
     # active_features, not a boolean mask. Since active_features already contains
