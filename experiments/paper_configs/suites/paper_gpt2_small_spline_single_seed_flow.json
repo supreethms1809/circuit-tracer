@@ -1,0 +1,20 @@
+{
+  "defaults": [
+    "../base/common_spline_single_seed_flow.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_single_flow.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_small_spline_single_seed_flow",
+  "description": "Single Spline-CLT, single-seed full pipeline flow test on the 20-prompt NeurIPS core benchmark.",
+  "seeds": [
+    101
+  ],
+  "reporting": {
+    "primary_variant": "spline_single_flow_gpt2_small",
+    "baseline_variant": "spline_single_flow_gpt2_small",
+    "bootstrap_samples": 200,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}
