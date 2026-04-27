@@ -77,7 +77,7 @@ class GraphBuildConfig(BaseModel):
     desired_logit_prob: float = 0.9
     node_threshold: float = 0.8
     edge_threshold: float = 0.98
-    attribution_batch_size: int = 512
+    attribution_batch_size: int = 32
     spline_attribution_method: Literal["jacobian_ablation", "shapley"] = "jacobian_ablation"
     shapley_samples_for_graph: int = 32
 

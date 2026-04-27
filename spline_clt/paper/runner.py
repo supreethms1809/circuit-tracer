@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -678,6 +680,45 @@ class PaperSuiteRunner:
         n_prompts = len(self.config.benchmark_entries)
         self._log(f"Loading language model for {n_prompts} prompt evaluations...")
         lm = load_language_model(self._variant_model_name(variant), device=device)
+
+        # Pre-collect all prompt caches while lm is alive on GPU. After this
+        # we free the full HookedTransformer (multi-GB) before loading the
+        # ReplacementModel, since they don't both need to be resident.
+        self._log(f"Caching activations for {n_prompts} prompts...")
+        cached_entries: list[tuple[BenchmarkEntry, Any]] = []
+        for prompt_idx, entry in enumerate(self.config.benchmark_entries, 1):
+            self._log(
+                f"  Cache {prompt_idx}/{n_prompts}: [{entry.family}] {entry.prompt_id}"
+            )
+            cached_entries.append(
+                (
+                    entry,
+                    collect_prompt_cache(
+                        lm=lm,
+                        prompt=entry.prompt,
+                        n_layers=model.n_layers,
+                        feature_input_hook=model.feature_input_hook,
+                        feature_output_hook=model.feature_output_hook,
+                    ),
+                )
+            )
+
+        # Keep only the lm pieces still needed downstream (unembed/embed,
+        # final LayerNorm, tokenizer, cfg). Holding references to these
+        # submodules/tensors keeps them alive after `del lm`.
+        lm_handle = SimpleNamespace(
+            W_U=lm.W_U,
+            W_E=lm.W_E,
+            b_U=getattr(lm, "b_U", None),
+            ln_final=lm.ln_final,
+            tokenizer=lm.tokenizer,
+            cfg=lm.cfg,
+        )
+        del lm
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         self._log("Loading replacement model for attribution graph construction...")
         replacement_model = load_replacement_model(
             model_name=self._variant_model_name(variant),
@@ -688,7 +729,7 @@ class PaperSuiteRunner:
         prompt_records: list[dict[str, Any]] = []
         graphs_dir = evaluation_dir / "graphs"
         graphs_dir.mkdir(parents=True, exist_ok=True)
-        for prompt_idx, entry in enumerate(self.config.benchmark_entries, 1):
+        for prompt_idx, (entry, prompt_cache) in enumerate(cached_entries, 1):
             self._log(
                 f"Prompt {prompt_idx}/{n_prompts}: "
                 f"[{entry.family}] {entry.prompt_id} -- {entry.prompt!r}"
@@ -696,9 +737,10 @@ class PaperSuiteRunner:
             prompt_records.append(
                 self._evaluate_prompt_entry(
                     model=model,
-                    lm=lm,
+                    lm=lm_handle,
                     replacement_model=replacement_model,
                     entry=entry,
+                    prompt_cache=prompt_cache,
                     variant_name=variant_name,
                     variant=variant,
                     seed=seed,
@@ -763,7 +805,6 @@ class PaperSuiteRunner:
             "created_at": _utc_now(),
         }
         write_json(summary_path, evaluation_summary)
-        del lm
         return evaluation_summary
 
     def _evaluate_prompt_entry(
@@ -773,6 +814,7 @@ class PaperSuiteRunner:
         lm: Any,
         replacement_model: Any,
         entry: BenchmarkEntry,
+        prompt_cache: Any,
         variant_name: str,
         variant: ModelVariantConfig,
         seed: int,
@@ -787,14 +829,6 @@ class PaperSuiteRunner:
         )
         graph_slug = _sanitize_name(f"{variant_name}_{seed}_{entry.prompt_id}")
         try:
-            self._log(f"  Collecting activations...")
-            prompt_cache = collect_prompt_cache(
-                lm=lm,
-                prompt=entry.prompt,
-                n_layers=model.n_layers,
-                feature_input_hook=model.feature_input_hook,
-                feature_output_hook=model.feature_output_hook,
-            )
             self._log(f"  Computing replacement fidelity...")
             replacement_metrics = evaluate_prompt_replacement(model, prompt_cache, lm)
             self._log(

@@ -27,7 +27,8 @@
       "max_n_logits": 8,
       "desired_logit_prob": 0.9,
       "node_threshold": 0.8,
-      "edge_threshold": 0.98
+      "edge_threshold": 0.98,
+      "attribution_batch_size": 32
     },
     "circuit": {
       "top_k_features": 32,
