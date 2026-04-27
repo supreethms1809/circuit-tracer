@@ -9,6 +9,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -146,6 +147,22 @@ def train(
     # Load data
     if dataset is None:
         dataset = ActivationDataset.load(config.data_dir)
+
+    # Safety guard for mmap-backed activation streaming datasets:
+    # multiprocessing + prefetch + pin_memory can spike host RAM (/dev/shm) and
+    # get the process OOM-killed before step 0, especially with large activation
+    # samples. Force conservative DataLoader settings in this mode.
+    if isinstance(dataset.mlp_inputs, np.ndarray):
+        if config.num_workers > 0 or config.pin_memory or config.prefetch_factor is not None:
+            print(
+                "[train] mmap streaming dataset detected; forcing "
+                "num_workers=0, pin_memory=False, prefetch_factor=None, "
+                "persistent_workers=False to avoid host OOM."
+            )
+        config.num_workers = 0
+        config.pin_memory = False
+        config.prefetch_factor = None
+        config.persistent_workers = False
 
     # Train/val split
     train_dataset, val_dataset = split_dataset(

@@ -83,9 +83,9 @@ def build_spline_graph(
         token_vectors=token_vectors,
     )
 
-    active_features = raw["active_features"].cpu()  # (n_active, 3) [layer, pos, feat]
-    activation_values = raw["activation_values"].cpu()
-    adjacency = raw["adjacency_matrix"].cpu().float()
+    active_features = raw["active_features"].detach().cpu()  # (n_active, 3) [layer, pos, feat]
+    activation_values = raw["activation_values"].detach().cpu()
+    adjacency = raw["adjacency_matrix"].detach().cpu().float()
     n_active = active_features.shape[0]
 
     # circuit_tracer's Graph expects ``selected_features`` to index into
