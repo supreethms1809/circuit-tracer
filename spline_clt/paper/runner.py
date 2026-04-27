@@ -557,6 +557,11 @@ class PaperSuiteRunner:
             pin_memory=training.pin_memory,
             prefetch_factor=training.prefetch_factor,
             persistent_workers=training.persistent_workers,
+            log_dir=str(run_dir),
+            wandb_project=training.wandb_project or self.config.wandb.project,
+            wandb_entity=training.wandb_entity or self.config.wandb.entity,
+            wandb_mode=training.wandb_mode if training.wandb_project else self.config.wandb.mode,
+            wandb_run_name=f"{self.config.suite_name}/{variant_name}_seed{seed}",
         )
 
         train(train_config, dataset=dataset)

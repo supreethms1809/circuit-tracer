@@ -1,5 +1,10 @@
 {
   "output_root": "results/paper",
+  "wandb": {
+    "project": "spline-clt-neurips",
+    "entity": "uwyo",
+    "mode": "online"
+  },
   "stages": {
     "collect_dataset": true,
     "train": true,

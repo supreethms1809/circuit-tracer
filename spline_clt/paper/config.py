@@ -61,6 +61,9 @@ class TrainingSettings(BaseModel):
     dtype: Literal["float32", "bfloat16"] = "bfloat16"
     device: str | None = None
     run_name: str | None = None
+    wandb_project: str | None = None
+    wandb_entity: str | None = None
+    wandb_mode: Literal["online", "offline", "disabled"] = "online"
 
 
 class ModelVariantConfig(BaseModel):
@@ -177,6 +180,12 @@ class ReportingConfig(BaseModel):
     figure_case_study_prompt_id: str | None = None
 
 
+class WandbConfig(BaseModel):
+    project: str | None = None
+    entity: str | None = None
+    mode: Literal["online", "offline", "disabled"] = "online"
+
+
 class SuiteConfig(BaseModel):
     defaults: list[str] = Field(default_factory=list)
     suite_name: str
@@ -191,6 +200,7 @@ class SuiteConfig(BaseModel):
     benchmark_entries: list[BenchmarkEntry]
     macag: MacagConfig = Field(default_factory=MacagConfig)
     reporting: ReportingConfig
+    wandb: WandbConfig = Field(default_factory=WandbConfig)
 
     @field_validator("seeds")
     @classmethod

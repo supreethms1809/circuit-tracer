@@ -4,6 +4,7 @@ Standard PyTorch training with Adam optimizer, warmup + cosine decay,
 logging, and checkpointing.
 """
 
+import json
 import math
 import os
 import time
@@ -52,6 +53,16 @@ class TrainConfig:
     save_every: int = 5000
     checkpoint_dir: str = "checkpoints"
     run_name: str = "spline_clt"
+    # Where to write training_records.jsonl. Defaults to checkpoint_dir's parent
+    # (typically the seed_xxx run dir) so the trail lives next to the run, not
+    # inside the checkpoints/ subtree.
+    log_dir: str | None = None
+
+    # Optional Weights & Biases (gated by wandb_project being set; offline-safe via wandb_mode).
+    wandb_project: str | None = None
+    wandb_entity: str | None = None
+    wandb_mode: str = "online"  # "online" | "offline" | "disabled"
+    wandb_run_name: str | None = None
 
     # Grid update
     update_grid_every: int = 10_000
@@ -204,6 +215,29 @@ def train(
 
     # Training loop
     os.makedirs(config.checkpoint_dir, exist_ok=True)
+    log_dir = config.log_dir or os.path.dirname(os.path.abspath(config.checkpoint_dir))
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "training_records.jsonl")
+    log_file = open(log_path, "a", buffering=1)
+
+    wandb_run = None
+    if config.wandb_project and config.wandb_mode != "disabled":
+        try:
+            import wandb  # type: ignore
+
+            wandb_run = wandb.init(
+                project=config.wandb_project,
+                entity=config.wandb_entity,
+                name=config.wandb_run_name or config.run_name,
+                mode=config.wandb_mode,  # type: ignore[arg-type]
+                dir=log_dir,
+                config={k: getattr(config, k) for k in config.__dataclass_fields__},
+                reinit=True,
+            )
+        except Exception as exc:  # pragma: no cover - wandb is optional
+            print(f"[train] wandb init failed ({exc!r}); continuing with jsonl only")
+            wandb_run = None
+
     step = 0
     best_val_loss = float("inf")
     train_iter = iter(train_loader)
@@ -296,6 +330,10 @@ def train(
                 "act_lp": f"{metrics['stats/active_features_per_pos']:.1f}",
                 "lr": f"{lr:.2e}",
             })
+            record = {"record_type": "train_step", "step": step, **{k: float(v) for k, v in metrics.items()}}
+            log_file.write(json.dumps(record) + "\n")
+            if wandb_run is not None:
+                wandb_run.log({k: v for k, v in metrics.items()}, step=step)
 
         # Grid update (adapt B-spline knots to data distribution) — KAN only
         # Subsample to avoid OOM: efficient-kan's curve2coeff builds (batch, d_model, d_transcoder) intermediates
@@ -345,12 +383,23 @@ def train(
             val_loss = evaluate(model, val_dataset, config, device, dtype)
             pbar.write(f"Step {step}: val_loss={val_loss:.4f}")
 
-            if val_loss < best_val_loss:
+            is_best = val_loss < best_val_loss
+            if is_best:
                 best_val_loss = val_loss
                 model.to_safetensors(
                     os.path.join(config.checkpoint_dir, f"{config.run_name}_best")
                 )
                 pbar.write(f"  New best model saved (val_loss={val_loss:.4f})")
+
+            log_file.write(json.dumps({
+                "record_type": "val_eval",
+                "step": step,
+                "val_loss": float(val_loss),
+                "best_val_loss": float(best_val_loss),
+                "is_best": bool(is_best),
+            }) + "\n")
+            if wandb_run is not None:
+                wandb_run.log({"val/loss": val_loss, "val/best_loss": best_val_loss}, step=step)
 
         # Checkpoint
         if step > 0 and step % config.save_every == 0:
@@ -367,6 +416,10 @@ def train(
     model.to_safetensors(
         os.path.join(config.checkpoint_dir, f"{config.run_name}_final")
     )
+
+    log_file.close()
+    if wandb_run is not None:
+        wandb_run.finish()
 
     return model
 
