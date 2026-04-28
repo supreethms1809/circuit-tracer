@@ -319,9 +319,11 @@ class PaperSuiteRunner:
                 for model_name in unique_model_names:
                     self._wait_for_dataset(model_name)
 
+        checkpoint_paths: dict[tuple[str, int], Path] = {}
+
         for run_idx, (variant_name, variant, seed) in enumerate(variant_seed_pairs, 1):
             self._banner(
-                f"RUN {run_idx}/{len(variant_seed_pairs)}:  "
+                f"RUN {run_idx}/{len(variant_seed_pairs)} [train]:  "
                 f"variant={variant_name}  seed={seed}"
             )
             if self._stage_enabled("train"):
@@ -329,6 +331,14 @@ class PaperSuiteRunner:
                 checkpoint_path = self._train_variant_seed(variant_name, variant, seed)
             else:
                 checkpoint_path = self._resolve_checkpoint_path(variant_name, variant, seed)
+            checkpoint_paths[(variant_name, seed)] = checkpoint_path
+
+        for run_idx, (variant_name, variant, seed) in enumerate(variant_seed_pairs, 1):
+            self._banner(
+                f"RUN {run_idx}/{len(variant_seed_pairs)} [eval/macag]:  "
+                f"variant={variant_name}  seed={seed}"
+            )
+            checkpoint_path = checkpoint_paths[(variant_name, seed)]
             if self._stage_enabled("evaluate"):
                 self._log(f"STAGE: Evaluation  |  variant={variant_name}  seed={seed}")
                 self._evaluate_variant_seed(
