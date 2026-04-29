@@ -19,7 +19,7 @@
     "n_tokens": 93388800,
     "seq_len": 128,
     "batch_size": 32,
-    "cache_dir": "shared/activations",
+    "cache_dir": "/lscratch/gpt2/activations",
     "max_train_samples": 729600,
     "eval_samples": 2500,
     "dtype": "bfloat16",
