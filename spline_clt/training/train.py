@@ -77,11 +77,18 @@ class TrainConfig:
 
     # Data
     data_dir: str = "data/activations"
+    #: Optional separate directory holding the val split files. When set, the
+    #: trainer loads ``data_dir`` (split="train") and ``val_data_dir``
+    #: (split="val") instead of doing a runtime random_split. Materialises
+    #: the train/val partition at collection time.
+    val_data_dir: str | None = None
     device: str = "cuda"
     dtype: str = "float32"
     seed: int = 0
 
-    # Validation
+    # Validation. ``val_fraction`` is only consulted when no pre-split val
+    # dataset is available (legacy single-dir layout); the new collection
+    # path materialises the split at write time.
     val_fraction: float = 0.05
     num_workers: int = 0
     pin_memory: bool = False
@@ -134,12 +141,23 @@ def create_optimizer(
 def train(
     config: TrainConfig,
     dataset: ActivationDataset | None = None,
+    val_dataset: ActivationDataset | None = None,
 ) -> KANCrossLayerTranscoder:
     """Train a Spline-CLT model.
 
+    Loading priority for the train/val datasets:
+      1. Both ``dataset`` and ``val_dataset`` provided → use as-is, no split.
+      2. Only ``dataset`` provided → runtime ``random_split`` (legacy).
+      3. Neither provided and ``config.val_data_dir`` set → load split files
+         (``mlp_inputs_train.npy``/``mlp_inputs_val.npy``) from the two dirs.
+      4. Otherwise → load legacy single-file layout from ``config.data_dir``
+         and ``random_split`` it.
+
     Args:
         config: Training configuration.
-        dataset: Pre-loaded activation dataset. If None, loads from config.data_dir.
+        dataset: Pre-loaded train (or full) activation dataset.
+        val_dataset: Pre-loaded val activation dataset. If both ``dataset``
+            and ``val_dataset`` are provided, no runtime split is performed.
 
     Returns:
         Trained KANCrossLayerTranscoder model.
@@ -155,15 +173,21 @@ def train(
     dtype = config.get_dtype()
     seed_everything(config.seed)
 
-    # Load data
-    if dataset is None:
-        dataset = ActivationDataset.load(config.data_dir)
+    # Load data — split-aware path takes priority.
+    if dataset is None and val_dataset is None:
+        if config.val_data_dir:
+            dataset = ActivationDataset.load(config.data_dir, split="train")
+            val_dataset = ActivationDataset.load(config.val_data_dir, split="val")
+        else:
+            dataset = ActivationDataset.load(config.data_dir)
 
     # Safety guard for mmap-backed activation streaming datasets:
     # multiprocessing + prefetch + pin_memory can spike host RAM (/dev/shm) and
     # get the process OOM-killed before step 0, especially with large activation
     # samples. Force conservative DataLoader settings in this mode.
-    if isinstance(dataset.mlp_inputs, np.ndarray):
+    probe = dataset if dataset is not None else val_dataset
+    assert probe is not None
+    if isinstance(probe.mlp_inputs, np.ndarray):
         if config.num_workers > 0 or config.pin_memory or config.prefetch_factor is not None:
             print(
                 "[train] mmap streaming dataset detected; forcing "
@@ -175,12 +199,17 @@ def train(
         config.prefetch_factor = None
         config.persistent_workers = False
 
-    # Train/val split
-    train_dataset, val_dataset = split_dataset(
-        dataset=dataset,
-        val_fraction=config.val_fraction,
-        seed=config.seed,
-    )
+    # Train/val split: pre-split when both datasets are available, otherwise
+    # fall back to a deterministic random_split over the single dataset.
+    if val_dataset is not None and dataset is not None:
+        train_dataset = dataset
+    else:
+        assert dataset is not None
+        train_dataset, val_dataset = split_dataset(
+            dataset=dataset,
+            val_fraction=config.val_fraction,
+            seed=config.seed,
+        )
 
     train_loader_kwargs = {
         "dataset": train_dataset,

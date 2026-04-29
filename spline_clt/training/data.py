@@ -24,7 +24,19 @@ class DataConfig:
     n_tokens: int = 10_000_000
     seq_len: int = 128
     batch_size: int = 32
+    #: Directory for the train-split memmaps. On a per-node setup this should
+    #: be a local NVMe path (e.g. ``/lscratch/<model>/activations``) since the
+    #: train cache is the bulk of the data and is regenerable.
     save_dir: str = "data/activations"
+    #: Directory for the val-split memmaps. If unset, falls back to
+    #: ``save_dir`` (legacy single-dir layout). For paper runs this should
+    #: live on shared/persistent storage so val is reproducible across nodes
+    #: and survives ephemeral local disks.
+    val_save_dir: str | None = None
+    #: Fraction of collected sequences routed into the val split. The split
+    #: is materialised at collection time using ``seed`` for a reproducible
+    #: permutation, so every consumer of these files sees the same partition.
+    val_fraction: float = 0.05
     feature_input_hook: str = "hook_resid_mid"
     feature_output_hook: str = "hook_mlp_out"
     device: str = "cuda"
@@ -94,13 +106,23 @@ class ActivationDataset(Dataset):
         torch.save(self.mlp_outputs, os.path.join(path, "mlp_outputs.pt"))
 
     @classmethod
-    def load(cls, path: str, max_samples: int | None = None) -> "ActivationDataset":
+    def load(
+        cls,
+        path: str,
+        max_samples: int | None = None,
+        split: str | None = None,
+    ) -> "ActivationDataset":
         """Load dataset from disk.
 
-        Supports two on-disk formats:
-        - **numpy format** (new, preferred): ``mlp_inputs.npy`` / ``mlp_outputs.npy``
-          stored as int16 (bfloat16 bits reinterpreted).  Data is memory-mapped
-          from disk — no RAM pre-allocation required regardless of dataset size.
+        On-disk formats:
+        - **split numpy format** (preferred, new): collection writes four
+          memmaps named ``mlp_inputs_<split>.npy`` /
+          ``mlp_outputs_<split>.npy`` for ``split in {"train", "val"}``.
+          Pass ``split="train"`` or ``split="val"`` to select one. Train and
+          val may live in different directories; pass each path separately.
+        - **single numpy format** (legacy): ``mlp_inputs.npy`` /
+          ``mlp_outputs.npy`` produced by older collection runs. Used when
+          ``split`` is ``None`` (or when split-suffixed files are absent).
         - **torch format** (legacy): ``mlp_inputs.pt`` / ``mlp_outputs.pt``
           loaded with ``mmap=True`` to avoid touching the full file at once.
 
@@ -117,9 +139,17 @@ class ActivationDataset(Dataset):
             path: Directory containing the activation files.
             max_samples: Number of sequences to load into RAM. ``None`` streams
                 the full on-disk dataset from mmap.
+            split: Optional ``"train"`` / ``"val"`` selector for the split-file
+                layout. ``None`` falls back to the legacy single-file names.
         """
-        inputs_npy = os.path.join(path, "mlp_inputs.npy")
-        outputs_npy = os.path.join(path, "mlp_outputs.npy")
+        if split is not None:
+            if split not in {"train", "val"}:
+                raise ValueError(f"split must be 'train' or 'val', got {split!r}")
+            inputs_npy = os.path.join(path, f"mlp_inputs_{split}.npy")
+            outputs_npy = os.path.join(path, f"mlp_outputs_{split}.npy")
+        else:
+            inputs_npy = os.path.join(path, "mlp_inputs.npy")
+            outputs_npy = os.path.join(path, "mlp_outputs.npy")
 
         if max_samples is None:
             # Streaming path: return mmap-backed dataset covering every sample.
@@ -254,26 +284,74 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         f"blocks.{i}.{config.feature_output_hook}" for i in range(n_layers)
     ]
 
+    # Compute the train/val split at collection time using a deterministic
+    # permutation seeded by config.seed. Materialising the split here means
+    # every consumer sees the same partition without coordinating seeds, and
+    # the val files can live on a different (durable) filesystem from the
+    # train files.
+    val_fraction = float(config.val_fraction)
+    if not 0.0 <= val_fraction < 1.0:
+        raise ValueError(f"val_fraction must be in [0, 1), got {val_fraction}")
+    n_val = max(1, int(n_sequences * val_fraction)) if val_fraction > 0 else 0
+    n_train = n_sequences - n_val
+    rng = np.random.default_rng(config.seed)
+    perm = rng.permutation(n_sequences)
+    is_val = np.zeros(n_sequences, dtype=bool)
+    if n_val > 0:
+        is_val[perm[:n_val]] = True
+    # Per-global-index slot in the destination memmap.
+    train_pos = np.full(n_sequences, -1, dtype=np.int64)
+    val_pos = np.full(n_sequences, -1, dtype=np.int64)
+    ti = vi = 0
+    for g in range(n_sequences):
+        if is_val[g]:
+            val_pos[g] = vi
+            vi += 1
+        else:
+            train_pos[g] = ti
+            ti += 1
+    assert ti == n_train and vi == n_val
+
     # Write activations directly to memory-mapped numpy files (int16 = bfloat16 bits).
     # This eliminates the in-RAM pre-allocation that caused OOM for large models:
     #   GPT-2 small (12 L, 768 d):  2 × ~18 GB = ~36 GB in RAM  — historically fine
     #   Qwen2.5-0.5B (24 L, 896 d): 2 × ~86 GB = ~172 GB in RAM — OOM on 121 GB node
     # With mmap the RAM cost per step is only the current batch cache (~1–2 GB).
-    os.makedirs(config.save_dir, exist_ok=True)
-    inputs_npy = os.path.join(config.save_dir, "mlp_inputs.npy")
-    outputs_npy = os.path.join(config.save_dir, "mlp_outputs.npy")
-    shape = (n_sequences, n_layers, config.seq_len, d_model)
+    train_dir = config.save_dir
+    val_dir = config.val_save_dir or config.save_dir
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(val_dir, exist_ok=True)
+    train_in_path = os.path.join(train_dir, "mlp_inputs_train.npy")
+    train_out_path = os.path.join(train_dir, "mlp_outputs_train.npy")
+    val_in_path = os.path.join(val_dir, "mlp_inputs_val.npy")
+    val_out_path = os.path.join(val_dir, "mlp_outputs_val.npy")
+    train_shape = (n_train, n_layers, config.seq_len, d_model)
+    val_shape = (n_val, n_layers, config.seq_len, d_model)
 
     # np.lib.format.open_memmap writes a .npy header (shape + dtype) then maps the
     # data region — readable later via np.load(path, mmap_mode='r').
-    mlp_inputs_mm = np.lib.format.open_memmap(
-        inputs_npy, dtype=np.int16, mode="w+", shape=shape
+    train_in_mm = np.lib.format.open_memmap(
+        train_in_path, dtype=np.int16, mode="w+", shape=train_shape
     )
-    mlp_outputs_mm = np.lib.format.open_memmap(
-        outputs_npy, dtype=np.int16, mode="w+", shape=shape
+    train_out_mm = np.lib.format.open_memmap(
+        train_out_path, dtype=np.int16, mode="w+", shape=train_shape
+    )
+    val_in_mm = (
+        np.lib.format.open_memmap(
+            val_in_path, dtype=np.int16, mode="w+", shape=val_shape
+        )
+        if n_val > 0
+        else None
+    )
+    val_out_mm = (
+        np.lib.format.open_memmap(
+            val_out_path, dtype=np.int16, mode="w+", shape=val_shape
+        )
+        if n_val > 0
+        else None
     )
 
-    sample_idx = 0
+    global_idx = 0
     for batch_tokens in tqdm(token_batches, desc="Collecting activations"):
         batch_tokens = batch_tokens.to(device)
         actual_bs = batch_tokens.shape[0]
@@ -288,22 +366,32 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         mlp_out = torch.stack([cache[name] for name in hook_names_out], dim=1)
 
         # Convert bfloat16 → int16 (same 16-bit bit pattern) for numpy storage.
-        mlp_inputs_mm[sample_idx : sample_idx + actual_bs] = (
-            mlp_in.cpu().bfloat16().contiguous().view(torch.int16).numpy()
-        )
-        mlp_outputs_mm[sample_idx : sample_idx + actual_bs] = (
-            mlp_out.cpu().bfloat16().contiguous().view(torch.int16).numpy()
-        )
-        sample_idx += actual_bs
+        mlp_in_np = mlp_in.cpu().bfloat16().contiguous().view(torch.int16).numpy()
+        mlp_out_np = mlp_out.cpu().bfloat16().contiguous().view(torch.int16).numpy()
+
+        for i in range(actual_bs):
+            g = global_idx + i
+            if is_val[g]:
+                assert val_in_mm is not None and val_out_mm is not None
+                val_in_mm[val_pos[g]] = mlp_in_np[i]
+                val_out_mm[val_pos[g]] = mlp_out_np[i]
+            else:
+                train_in_mm[train_pos[g]] = mlp_in_np[i]
+                train_out_mm[train_pos[g]] = mlp_out_np[i]
+        global_idx += actual_bs
 
     # Flush mmap writes to disk before returning.
-    mlp_inputs_mm.flush()
-    mlp_outputs_mm.flush()
-    del mlp_inputs_mm, mlp_outputs_mm
+    train_in_mm.flush()
+    train_out_mm.flush()
+    del train_in_mm, train_out_mm
+    if val_in_mm is not None:
+        val_in_mm.flush()
+        val_out_mm.flush()
+        del val_in_mm, val_out_mm
 
     if not config.load_after_collect:
         return None
 
-    # Load via the standard path so callers get a consistent ActivationDataset.
-    # Uses max_samples=n_sequences to return all collected data.
-    return ActivationDataset.load(config.save_dir, max_samples=n_sequences)
+    # Load the train split via the standard path. Callers that need val too
+    # can call ActivationDataset.load(val_dir, split="val") explicitly.
+    return ActivationDataset.load(train_dir, split="train")

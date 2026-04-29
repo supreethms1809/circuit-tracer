@@ -32,13 +32,14 @@ def test_paper_runner_dry_run_expands_expected_jobs() -> None:
         / "experiments"
         / "paper_configs"
         / "suites"
-        / "neurips_core_gpt2.json"
+        / "paper_gpt2_small.json"
     )
     runner = PaperSuiteRunner(suite_path)
     payload = runner.dry_run()
 
-    assert payload["suite"]["suite_name"] == "neurips_core_gpt2"
-    assert len(payload["jobs"]) == 29
+    assert payload["suite"]["suite_name"] == "paper_gpt2_small"
+    # 1 collect_dataset + 4 variants × 3 seeds × (train + evaluate + macag) + 1 report
+    assert len(payload["jobs"]) == 1 + 4 * 3 * 3 + 1
     assert payload["jobs"][0]["stage"] == "collect_dataset"
     assert payload["jobs"][-1]["stage"] == "report"
 
@@ -57,6 +58,8 @@ def test_paper_runner_smoke_writes_full_artifact_tree(tmp_path: Path, monkeypatc
             "seq_len": 16,
             "batch_size": 1,
             "cache_dir": "shared/activations",
+            "val_cache_dir": "shared/activations_val",
+            "val_fraction": 0.25,
             "max_train_samples": 4,
             "eval_samples": 2,
             "dtype": "float32",
@@ -112,10 +115,20 @@ def test_paper_runner_smoke_writes_full_artifact_tree(tmp_path: Path, monkeypatc
 
     def fake_collect_dataset(self: PaperSuiteRunner, model_name: str):
         dataset_dir = self._dataset_dir(model_name)
+        val_dataset_dir = self._val_dataset_dir(model_name)
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        (dataset_dir / "mlp_inputs.pt").write_bytes(b"")
-        (dataset_dir / "mlp_outputs.pt").write_bytes(b"")
-        payload = {"status": "completed", "model_name": model_name, "dataset_dir": str(dataset_dir)}
+        val_dataset_dir.mkdir(parents=True, exist_ok=True)
+        # Match the new split layout so _dataset_stage_complete recognises it.
+        (dataset_dir / "mlp_inputs_train.npy").write_bytes(b"")
+        (dataset_dir / "mlp_outputs_train.npy").write_bytes(b"")
+        (val_dataset_dir / "mlp_inputs_val.npy").write_bytes(b"")
+        (val_dataset_dir / "mlp_outputs_val.npy").write_bytes(b"")
+        payload = {
+            "status": "completed",
+            "model_name": model_name,
+            "dataset_dir": str(dataset_dir),
+            "val_dataset_dir": str(val_dataset_dir),
+        }
         write_json(dataset_dir / "dataset_manifest.json", payload)
         return payload
 

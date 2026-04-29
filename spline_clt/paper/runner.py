@@ -140,6 +140,9 @@ class PaperSuiteRunner:
         self.repo_root = self._find_repo_root(self.suite_path.parent)
         self.suite_root = (self.repo_root / self.config.output_root / self.config.suite_name).resolve()
         self.datasets_root = self.suite_root / self.config.dataset.cache_dir
+        # When val_cache_dir is unset, val lives next to train (legacy layout).
+        val_cache_dir = self.config.dataset.val_cache_dir or self.config.dataset.cache_dir
+        self.val_datasets_root = self.suite_root / val_cache_dir
         self.runs_root = self.suite_root / "runs"
         self.figures_root = self.suite_root / "figures"
         self.commit_hash = _git_commit(self.repo_root)
@@ -398,6 +401,55 @@ class PaperSuiteRunner:
     def _dataset_dir(self, model_name: str) -> Path:
         return self.datasets_root / _sanitize_name(model_name)
 
+    def _val_dataset_dir(self, model_name: str) -> Path:
+        return self.val_datasets_root / _sanitize_name(model_name)
+
+    @staticmethod
+    def _has_split_files(train_dir: Path, val_dir: Path) -> bool:
+        return (
+            (train_dir / "mlp_inputs_train.npy").exists()
+            and (train_dir / "mlp_outputs_train.npy").exists()
+            and (val_dir / "mlp_inputs_val.npy").exists()
+            and (val_dir / "mlp_outputs_val.npy").exists()
+        )
+
+    def _load_train_val_datasets(
+        self,
+        *,
+        train_dir: Path,
+        val_dir: Path,
+    ) -> tuple[ActivationDataset, ActivationDataset | None]:
+        """Load train and val datasets respecting the on-disk layout.
+
+        Prefers the new split layout. Falls back to the legacy single-file
+        layout (train/val will then be split at training time via random_split).
+        """
+        if self._has_split_files(train_dir, val_dir):
+            train_ds = ActivationDataset.load(str(train_dir), split="train")
+            val_ds = ActivationDataset.load(str(val_dir), split="val")
+            return train_ds, val_ds
+        # Legacy layout: return the full dataset as "train" and let the
+        # trainer's random_split carve out a val slice at runtime.
+        return ActivationDataset.load(str(train_dir)), None
+
+    def _load_val_or_legacy(
+        self,
+        *,
+        val_dir: Path,
+        train_dir: Path,
+    ) -> ActivationDataset:
+        """Load the val dataset, falling back to the legacy single-file dataset.
+
+        Used by the eval stage. With split files present, returns the val split
+        only. Without them, returns the whole legacy dataset (downstream
+        eval samples a deterministic subset from it).
+        """
+        if (val_dir / "mlp_inputs_val.npy").exists() and (
+            val_dir / "mlp_outputs_val.npy"
+        ).exists():
+            return ActivationDataset.load(str(val_dir), split="val")
+        return ActivationDataset.load(str(train_dir))
+
     def _run_dir(self, variant_name: str, seed: int) -> Path:
         return self.runs_root / _sanitize_name(variant_name) / f"seed_{seed}"
 
@@ -414,14 +466,23 @@ class PaperSuiteRunner:
         return self._run_dir(variant_name, seed) / "checkpoints" / f"{run_name}_final"
 
     def _dataset_stage_complete(self, model_name: str) -> bool:
-        dataset_dir = self._dataset_dir(model_name)
-        has_torch = (dataset_dir / "mlp_inputs.pt").exists() and (
-            dataset_dir / "mlp_outputs.pt"
+        train_dir = self._dataset_dir(model_name)
+        val_dir = self._val_dataset_dir(model_name)
+        has_split = (
+            (train_dir / "mlp_inputs_train.npy").exists()
+            and (train_dir / "mlp_outputs_train.npy").exists()
+            and (val_dir / "mlp_inputs_val.npy").exists()
+            and (val_dir / "mlp_outputs_val.npy").exists()
+        )
+        # Legacy single-file layouts (kept so suites with pre-existing caches
+        # don't have to re-collect). New collections always use the split layout.
+        has_torch = (train_dir / "mlp_inputs.pt").exists() and (
+            train_dir / "mlp_outputs.pt"
         ).exists()
-        has_numpy = (dataset_dir / "mlp_inputs.npy").exists() and (
-            dataset_dir / "mlp_outputs.npy"
+        has_numpy = (train_dir / "mlp_inputs.npy").exists() and (
+            train_dir / "mlp_outputs.npy"
         ).exists()
-        return has_torch or has_numpy
+        return has_split or has_torch or has_numpy
 
     def _train_stage_complete(self, variant_name: str, variant: ModelVariantConfig, seed: int) -> bool:
         if variant.checkpoint_path:
@@ -446,11 +507,15 @@ class PaperSuiteRunner:
             write_json(summary_path, summary)
             return summary
 
+        val_dir = self._val_dataset_dir(model_name)
         self._log(
             f"Collecting activations: n_tokens={self.config.dataset.n_tokens}, "
-            f"seq_len={self.config.dataset.seq_len}, batch_size={self.config.dataset.batch_size}"
+            f"seq_len={self.config.dataset.seq_len}, batch_size={self.config.dataset.batch_size}, "
+            f"val_fraction={self.config.dataset.val_fraction} -> "
+            f"train_dir={dataset_dir}, val_dir={val_dir}"
         )
         dataset_dir.mkdir(parents=True, exist_ok=True)
+        val_dir.mkdir(parents=True, exist_ok=True)
         data_config = DataConfig(
             model_name=model_name,
             dataset_name=self.config.dataset.dataset_name,
@@ -459,6 +524,8 @@ class PaperSuiteRunner:
             seq_len=self.config.dataset.seq_len,
             batch_size=self.config.dataset.batch_size,
             save_dir=str(dataset_dir),
+            val_save_dir=str(val_dir),
+            val_fraction=self.config.dataset.val_fraction,
             device=str(_device_from_name(self.config.dataset.device)),
             seed=self.config.dataset.seed,
             load_after_collect=False,
@@ -470,6 +537,8 @@ class PaperSuiteRunner:
             "dataset_name": self.config.dataset.dataset_name,
             "dataset_config": self.config.dataset.dataset_config,
             "dataset_dir": str(dataset_dir),
+            "val_dataset_dir": str(val_dir),
+            "val_fraction": self.config.dataset.val_fraction,
             "n_tokens": self.config.dataset.n_tokens,
             "seq_len": self.config.dataset.seq_len,
             "seed": self.config.dataset.seed,
@@ -530,8 +599,15 @@ class PaperSuiteRunner:
             f"dataset_name={self.config.dataset.dataset_name}"
         )
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
-        self._log("Loading activation dataset in streaming mode (mmap, no RAM copy)...")
-        dataset = ActivationDataset.load(str(dataset_dir))
+        val_dataset_dir = self._val_dataset_dir(self._variant_model_name(variant))
+        self._log(
+            "Loading activation datasets in streaming mode (mmap, no RAM copy): "
+            f"train={dataset_dir}, val={val_dataset_dir}"
+        )
+        train_dataset, val_dataset = self._load_train_val_datasets(
+            train_dir=dataset_dir,
+            val_dir=val_dataset_dir,
+        )
 
         checkpoint_dir = run_dir / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -559,6 +635,7 @@ class PaperSuiteRunner:
             update_grid_from=training.update_grid_from,
             reset_optimizer_every=training.reset_optimizer_every,
             data_dir=str(dataset_dir),
+            val_data_dir=str(val_dataset_dir),
             device=str(_device_from_name(training.device or self.config.dataset.device)),
             dtype=training.dtype,
             seed=seed,
@@ -574,7 +651,7 @@ class PaperSuiteRunner:
             wandb_run_name=f"{self.config.suite_name}/{variant_name}_seed{seed}",
         )
 
-        train(train_config, dataset=dataset)
+        train(train_config, dataset=train_dataset, val_dataset=val_dataset)
         checkpoint_path = self._resolve_checkpoint_path(variant_name, variant, seed)
         payload = {
             "status": "completed",
@@ -652,10 +729,16 @@ class PaperSuiteRunner:
         device = _device_from_name(variant.training.device or self.config.dataset.device)
         dtype = _dtype_from_name(variant.training.dtype)
         dataset_dir = self._dataset_dir(self._variant_model_name(variant))
+        val_dataset_dir = self._val_dataset_dir(self._variant_model_name(variant))
 
         self._log(f"Loading checkpoint: {checkpoint_path}")
-        self._log("Loading activation dataset in streaming mode (mmap, no RAM copy)...")
-        dataset = ActivationDataset.load(str(dataset_dir))
+        self._log(
+            "Loading val activations in streaming mode (mmap, no RAM copy)"
+            f" from {val_dataset_dir}"
+        )
+        # Evaluation only ever touches the val split — never the train split.
+        # Falls back to the legacy single-file layout if split files are missing.
+        dataset = self._load_val_or_legacy(val_dir=val_dataset_dir, train_dir=dataset_dir)
         model = load_spline_clt(str(checkpoint_path), device=device, dtype=dtype)
         model.eval()
 

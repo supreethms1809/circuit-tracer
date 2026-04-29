@@ -26,6 +26,14 @@ class DatasetConfig(BaseModel):
     seq_len: int = 128
     batch_size: int = 32
     cache_dir: str = "shared/activations"
+    #: Optional separate directory for the val split. Train and val are
+    #: written to two distinct memmap files at collection time; the train
+    #: cache typically lives on a per-node local NVMe (regenerable) while
+    #: the val cache lives on shared/persistent storage so it can be reused
+    #: across nodes and downstream evaluation. When unset, val files are
+    #: written next to train files in ``cache_dir``.
+    val_cache_dir: str | None = None
+    val_fraction: float = 0.05
     max_train_samples: int = 10_000
     eval_samples: int = 500
     dtype: Literal["float32", "bfloat16"] = "bfloat16"

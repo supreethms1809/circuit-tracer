@@ -16,10 +16,10 @@ SUITES_DIR = REPO_ROOT / "experiments" / "paper_configs" / "suites"
 
 def test_all_paper_suites_load_and_validate() -> None:
     expected_sizes = {
-        "neurips_core_gpt2.json": 60,
-        "neurips_high_gpt2.json": 120,
-        "neurips_high_gpt2_pythia160m.json": 120,
-        "macag_case_studies.json": 12,
+        "paper_gpt2_small.json": 20,
+        "paper_gpt2_large.json": 20,
+        "paper_qwen3_06b.json": 20,
+        "paper_gpt2_small_dt_sweep.json": 20,
     }
 
     for suite_file, expected_size in expected_sizes.items():
