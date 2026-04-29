@@ -1,5 +1,10 @@
 {
   "output_root": "results/paper",
+  "wandb": {
+    "project": "spline-clt-neurips",
+    "entity": "uwyo",
+    "mode": "online"
+  },
   "stages": {
     "collect_dataset": true,
     "train": true,
@@ -11,12 +16,12 @@
     "model_name": "gpt2",
     "dataset_name": "ssuresh/codelion_all-5B",
     "dataset_config": "",
-    "n_tokens": 20000000,
+    "n_tokens": 93388800,
     "seq_len": 128,
     "batch_size": 32,
     "cache_dir": "shared/activations",
-    "max_train_samples": 156250,
-    "eval_samples": 1000,
+    "max_train_samples": 729600,
+    "eval_samples": 2500,
     "dtype": "bfloat16",
     "device": null,
     "seed": 17
@@ -28,6 +33,7 @@
       "desired_logit_prob": 0.9,
       "node_threshold": 0.8,
       "edge_threshold": 0.98,
+      "attribution_batch_size": 32,
       "spline_attribution_method": "jacobian_ablation"
     },
     "circuit": {

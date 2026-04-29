@@ -9,7 +9,7 @@
     "../benchmarks/neurips_core.json"
   ],
   "suite_name": "paper_gpt2_small",
-  "description": "GPT-2 small 4-variant paper matrix at 50M tokens (1 epoch). Feature-match at d_t=12288 for both encoder types; param-match computed via encoder+decoder param formula.",
+  "description": "GPT-2 small 4-variant paper matrix at 93.44M tokens (2 epochs over 730k sequences). Feature-match at d_t=12288 for both encoder types; param-match computed via encoder+decoder param formula.",
   "seeds": [
     101,
     202,
