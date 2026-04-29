@@ -248,10 +248,32 @@ class PaperSuiteRunner:
 
     def _my_variant_seed_pairs(self) -> list[tuple[str, Any, int]]:
         """Return the variant×seed pairs assigned to this worker via round-robin sharding."""
+        def _variant_order(item: tuple[str, Any]) -> tuple[int, int, str]:
+            name = item[0]
+            lname = name.lower()
+            is_spline = "spline" in lname
+            is_linear = "linear" in lname
+            # Family: spline before linear (0 < 1); unknown families last.
+            if is_spline:
+                family = 0
+            elif is_linear:
+                family = 1
+            else:
+                family = 2
+            # Variant tier: feature_match (base) before param_match (variant).
+            if "feature_match" in lname:
+                tier = 0
+            elif "param_match" in lname:
+                tier = 1
+            else:
+                tier = 2
+            # Order per seed: spline-base, linear-base, spline-variant, linear-variant.
+            return (tier, family, name)
+
         all_pairs: list[tuple[str, Any, int]] = [
             (variant_name, variant, seed)
-            for variant_name, variant in sorted(self.config.model_variants.items())
             for seed in self.config.seeds
+            for variant_name, variant in sorted(self.config.model_variants.items(), key=_variant_order)
         ]
         return all_pairs[self.worker_id :: self.num_workers]
 
