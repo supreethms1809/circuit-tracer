@@ -19,7 +19,7 @@
     "n_tokens": 29982720,
     "seq_len": 128,
     "batch_size": 16,
-    "cache_dir": "/lscratch/Qwen/Qwen3-0.6B/activations",
+    "cache_dir": "/lscratch/qwen3-06b/activations",
     "max_train_samples": 234240,
     "eval_samples": 2500,
     "dtype": "bfloat16",
