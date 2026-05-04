@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import os
 import re
 import subprocess
 import time
+
+import numpy as np
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +22,7 @@ from attribution.shapley import shapley_logit_attribution
 from eval.monosemanticity import collect_max_activating_examples
 from experiments.analyze_splines import (
     collect_feature_stats,
+    compute_nonlinearity_score,
     extract_spline_curve,
     save_curves_csv,
     top_input_dims,
@@ -883,12 +887,15 @@ class PaperSuiteRunner:
         # -- Spline analysis --
         if model.encoder_type == "kan":
             self._log("Running spline analysis...")
-        spline_summary = self._collect_spline_analysis(
+        spline_summary, spline_records = self._collect_spline_analysis(
             model=model,
             dataset=dataset,
             evaluation_dir=evaluation_dir,
             device=device,
+            base_record=base_record,
         )
+        if spline_records:
+            write_jsonl(evaluation_dir / "spline_records.jsonl", spline_records)
 
         completed_prompts = [
             record for record in prompt_records if record.get("status", "ok") == "ok"
@@ -1171,11 +1178,12 @@ class PaperSuiteRunner:
         dataset: ActivationDataset,
         evaluation_dir: Path,
         device: torch.device,
-    ) -> dict[str, Any]:
+        base_record: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         if not self.config.evaluation.splines.enabled:
-            return {"status": "disabled"}
+            return {"status": "disabled"}, []
         if model.encoder_type != "kan":
-            return {"status": "skipped", "reason": "encoder_type is not kan"}
+            return {"status": "skipped", "reason": "encoder_type is not kan"}, []
 
         stats = collect_feature_stats(
             model=model,
@@ -1190,6 +1198,8 @@ class PaperSuiteRunner:
         curve_dir.mkdir(parents=True, exist_ok=True)
         flat_top = frequency.reshape(-1).topk(self.config.evaluation.splines.n_features).indices
         curve_files: list[str] = []
+        records: list[dict[str, Any]] = []
+        scores: list[float] = []
         for flat_idx in flat_top.tolist():
             layer_id = int(flat_idx // model.d_transcoder)
             feature_id = int(flat_idx % model.d_transcoder)
@@ -1222,11 +1232,38 @@ class PaperSuiteRunner:
                 curves=curves,
             )
             curve_files.append(str(curve_dir / f"layer{layer_id}_feat{feature_id}.csv"))
-        return {
+
+            top_dim = dims[0]
+            score = compute_nonlinearity_score(t_values, curves[top_dim])
+            if math.isfinite(score):
+                scores.append(score)
+            records.append(
+                {
+                    **base_record,
+                    "record_type": "spline_feature",
+                    "layer_id": layer_id,
+                    "feature_id": feature_id,
+                    "top_input_dim": int(top_dim),
+                    "activation_frequency": float(frequency[layer_id, feature_id].item()),
+                    "nonlinearity_score": score,
+                }
+            )
+
+        finite = [s for s in scores if math.isfinite(s)]
+        summary: dict[str, Any] = {
             "status": "completed",
             "curve_file_count": len(curve_files),
             "curve_files": curve_files,
+            "n_features_scored": len(finite),
+            "mean_nonlinearity_score": float(np.mean(finite)) if finite else float("nan"),
+            "median_nonlinearity_score": float(np.median(finite)) if finite else float("nan"),
+            "fraction_nonlinear_gt_0_05": (
+                float(sum(1 for s in finite if s > 0.05) / len(finite))
+                if finite
+                else float("nan")
+            ),
         }
+        return summary, records
 
     def _run_macag_for_variant_seed(
         self,

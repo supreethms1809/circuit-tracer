@@ -150,6 +150,20 @@ def top_input_dims(
     return base_w.topk(top_k).indices.tolist()
 
 
+def compute_nonlinearity_score(t_vals: np.ndarray, curve: np.ndarray) -> float:
+    """Residual variance after a linear fit, normalized by the curve's variance.
+
+    0 = curve is exactly linear in `t_vals`; >0 means the spline departs from
+    its best linear approximation. Returns NaN if the curve is constant.
+    """
+    var = float(np.var(curve))
+    if var <= 1e-12:
+        return float("nan")
+    coeffs = np.polyfit(t_vals, curve, 1)
+    residual = float(np.mean((curve - np.polyval(coeffs, t_vals)) ** 2))
+    return residual / (var + 1e-8)
+
+
 def save_curves_csv(
     output_dir: str,
     layer_id: int,

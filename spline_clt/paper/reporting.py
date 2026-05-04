@@ -94,6 +94,7 @@ def load_suite_records(suite_root: str | Path) -> list[dict[str, Any]]:
         "runs/*/seed_*/evaluation/reconstruction_records.jsonl",
         "runs/*/seed_*/evaluation/prompt_metrics.jsonl",
         "runs/*/seed_*/evaluation/monosemanticity_records.jsonl",
+        "runs/*/seed_*/evaluation/spline_records.jsonl",
         "runs/*/seed_*/macag/macag_records.jsonl",
     ]
     records: list[dict[str, Any]] = []
@@ -306,6 +307,7 @@ def _aggregate_variant(
         if record.get("record_type") == "prompt_metric" and record.get("status", "ok") == "ok"
     ]
     mono_records = [record for record in variant_records if record.get("record_type") == "monosemanticity_feature"]
+    spline_records = [record for record in variant_records if record.get("record_type") == "spline_feature"]
     macag_game1_records = [
         record
         for record in variant_records
@@ -322,6 +324,7 @@ def _aggregate_variant(
     confidence_level = config.reporting.confidence_level
     bootstrap_seed = hash((config.suite_name, variant_name)) & 0xFFFF
 
+    nonlinearity_scores = _numeric_values(spline_records, "nonlinearity_score")
     ginis = _numeric_values(mono_records, "gini_coefficient")
     mean_gini = _mean(ginis)
     fraction_gini_gt_0_7 = (
@@ -378,6 +381,21 @@ def _aggregate_variant(
             "median_gini": float(np.median(ginis)) if ginis else float("nan"),
             "fraction_gini_gt_0_7": fraction_gini_gt_0_7,
             "fraction_gini_gt_0_8": fraction_gini_gt_0_8,
+        },
+        "splines": {
+            "feature_count": len(nonlinearity_scores),
+            "mean_nonlinearity_score": _mean(nonlinearity_scores),
+            "median_nonlinearity_score": (
+                float(np.median(nonlinearity_scores)) if nonlinearity_scores else float("nan")
+            ),
+            "fraction_nonlinear_gt_0_05": (
+                float(sum(1 for s in nonlinearity_scores if s > 0.05) / len(nonlinearity_scores))
+                if nonlinearity_scores else float("nan")
+            ),
+            "fraction_nonlinear_gt_0_10": (
+                float(sum(1 for s in nonlinearity_scores if s > 0.10) / len(nonlinearity_scores))
+                if nonlinearity_scores else float("nan")
+            ),
         },
         "macag": {
             "game1": {
