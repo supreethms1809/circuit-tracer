@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Callable, Sequence
 
-from macag.graph import CircuitGraph, NodeId
+from macag.graph import CircuitGraph, NodeId, grow_connected_frontier
 from macag.scoring import ScoringOracle, TargetId
 from macag.utils.metrics import (
     FaithfulnessMetrics,
@@ -41,12 +41,17 @@ def prefilter_candidates(
     alpha: float,
     lam: float,
     top_k: int,
+    connected: bool = False,
 ) -> list[NodeId]:
-    """Rank candidates by singleton gain and keep the top-k."""
+    """Rank candidates by singleton gain and keep the top-k.
+
+    The ranking is always computed so the output is deterministic regardless of
+    `top_k` (L3). When `connected` is set, the retained pool is grown as a
+    connected frontier instead of a raw rank truncation so the connected greedy is
+    not handed a disconnected pool (L2).
+    """
     if top_k <= 0:
         return []
-    if top_k >= len(candidates):
-        return list(candidates)
 
     ranking: list[tuple[float, NodeId]] = []
     for node in candidates:
@@ -58,7 +63,12 @@ def prefilter_candidates(
         ranking.append((utility, node))
 
     ranking.sort(key=lambda item: (-item[0], _sort_key(item[1])))
-    return [node for _, node in ranking[:top_k]]
+    ranked_nodes = [node for _, node in ranking]
+    if top_k >= len(ranked_nodes):
+        return ranked_nodes
+    if connected:
+        return grow_connected_frontier(graph, ranked_nodes, top_k)
+    return ranked_nodes[:top_k]
 
 
 @dataclass
@@ -70,6 +80,7 @@ class EvidenceSetResult:
     selected_order: list[NodeId]
     iterations: int
     candidate_count: int
+    total_candidates: int
     params: dict[str, Any]
     oracle_calls: int
     cache_hits: int
@@ -105,6 +116,9 @@ def solve_game1(
 
     candidate_pool = dedupe_preserve_order(candidates if candidates is not None else graph.nodes())
     candidate_pool = [node for node in candidate_pool if graph.has_node(node)]
+    # Full candidate count before any prefilter, so reported sparsity reflects the
+    # true graph rather than the (possibly much smaller) prefiltered pool (I4).
+    total_candidates = len(candidate_pool)
     if progress:
         LOGGER.info(
             "Game1 start: candidates=%d budget=%s alpha=%.3f lambda=%.4f",
@@ -121,7 +135,7 @@ def solve_game1(
             )
         else:
             candidate_pool = prefilter_candidates(
-                graph, oracle, target, candidate_pool, alpha, lam, prefilter_top_k
+                graph, oracle, target, candidate_pool, alpha, lam, prefilter_top_k, connected
             )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
@@ -162,7 +176,7 @@ def solve_game1(
                 continue
             trial = set(selected)
             trial.add(node)
-            if connected and len(trial) > 1 and not graph.is_weakly_connected(trial):
+            if connected and len(trial) > 1 and not graph.connected_through(trial):
                 continue
             trial_utility, _ = evaluate(trial)
             gain = trial_utility - current_utility
@@ -187,9 +201,18 @@ def solve_game1(
 
         if faithfulness_eps is not None:
             _, metrics = evaluate(selected)
-            if (metrics.all_score - metrics.keep_only_score) <= faithfulness_eps:
+            # Stop on the SAME alpha-mixed objective the solver optimizes, in its
+            # normalized (error-floor-aware) form (C2). faithfulness_delta_normalized
+            # is in [0, 1]; reaching >= 1 - eps means the evidence recovers all but
+            # `eps` of the achievable faithfulness. The previous condition tested only
+            # the raw sufficiency gap, which is inconsistent when alpha != 1.
+            if metrics.faithfulness_delta_normalized >= 1.0 - faithfulness_eps:
                 if progress:
-                    LOGGER.info("Game1 reached faithfulness_eps=%.6f", faithfulness_eps)
+                    LOGGER.info(
+                        "Game1 reached faithfulness_eps=%.6f (normalized delta=%.6f)",
+                        faithfulness_eps,
+                        metrics.faithfulness_delta_normalized,
+                    )
                 break
 
     final_utility, final_metrics = evaluate(selected)
@@ -209,6 +232,7 @@ def solve_game1(
         selected_order=selected_order,
         iterations=iterations,
         candidate_count=len(candidate_pool),
+        total_candidates=total_candidates,
         params={
             "alpha": alpha,
             "lambda": lam,
@@ -221,5 +245,5 @@ def solve_game1(
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],
         cache_size=stats["cache_size"],
-        sparsity=sparsity(selected_size=len(selected), total_size=max(1, len(candidate_pool))),
+        sparsity=sparsity(selected_size=len(selected), total_size=max(1, total_candidates)),
     )

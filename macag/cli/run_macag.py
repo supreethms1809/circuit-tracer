@@ -109,6 +109,8 @@ def _build_oracle(args: argparse.Namespace) -> tuple[ScoringOracle, list[NodeId]
         kwargs.update(json.loads(args.oracle_kwargs_json))
     if args.oracle_kwargs_file:
         kwargs.update(_load_json(args.oracle_kwargs_file))
+    if getattr(args, "include_error_nodes", False):
+        kwargs["include_error_nodes"] = True
 
     factory = _load_factory(args.oracle_factory)
     built = factory(**kwargs)
@@ -153,6 +155,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Path to toy additive oracle JSON (quick test harness).",
     )
+    parser.add_argument(
+        "--include-error-nodes",
+        action="store_true",
+        help=(
+            "Opt-in (C1): admit MLP reconstruction-error nodes as ablation candidates so "
+            "'empty' is a true empty baseline. Not supported by the feature-index "
+            "intervention path; raises a clear error if error nodes are present. The "
+            "default report-only normalized metrics de-bias faithfulness without this."
+        ),
+    )
     parser.add_argument("--no-cache", action="store_true", help="Disable oracle memoization.")
     parser.set_defaults(progress=True)
     parser.add_argument(
@@ -185,7 +197,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--faithfulness-eps",
         type=float,
         default=None,
-        help="Optional stop condition: stop when all - keep_only <= eps.",
+        help=(
+            "Optional stop condition on the normalized alpha-mixed objective: stop when "
+            "faithfulness_normalized >= 1 - eps (i.e. the evidence recovers all but eps of "
+            "the achievable faithfulness). eps is in [0, 1]."
+        ),
     )
 
     game2 = subparsers.add_parser("game2", help="Run Game 2: contrastive allocation.")
@@ -222,6 +238,9 @@ def main(argv: list[str] | None = None) -> int:
     backend = getattr(oracle, "backend", None)
     if candidates is not None and backend is not None and hasattr(backend, "restrict_universe"):
         backend.restrict_universe(set(candidates))
+        # Universe changed; drop any universe-dependent cache entries scored against
+        # the pre-restriction universe (I1).
+        oracle.clear_cache()
 
     output: dict[str, Any]
     if args.game == "game1":
@@ -260,7 +279,8 @@ def main(argv: list[str] | None = None) -> int:
                 "cache_hits": result.cache_hits,
                 "cache_size": result.cache_size,
                 "iterations": result.iterations,
-                "candidate_count": result.candidate_count,
+                "total_candidates": result.total_candidates,
+                "prefiltered_candidate_count": result.candidate_count,
                 "sparsity": result.sparsity,
             },
         }
@@ -308,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
                 "cache_size": result.cache_size,
                 "iterations": result.iterations,
                 "converged": result.converged,
+                "total_candidates": result.total_candidates,
                 "sparsity_y": result.sparsity_y,
                 "sparsity_foil": result.sparsity_foil,
             },

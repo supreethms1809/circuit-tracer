@@ -70,17 +70,52 @@ def resolve_target_to_logit_idx(
             )
         if not token_ids:
             raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
-        target_to_logit_idx[label] = token_ids[-1]
+        # Next-token prediction scores the FIRST token of the continuation; when
+        # strict_single_token is disabled and the label is multi-token, the first
+        # sub-token is the relevant logit, not the last (I2).
+        target_to_logit_idx[label] = token_ids[0]
     return target_to_logit_idx
+
+
+_ERROR_NODE_FEATURE_TYPE = "mlp reconstruction error"
 
 
 def load_feature_node_interventions_from_graph_json(
     graph_json: str | Path,
     feature_types: Sequence[str] | None = None,
+    include_error_nodes: bool = False,
 ) -> dict[NodeId, tuple[int, int, int]]:
-    """Extract (layer, pos, feature_idx) interventions for feature nodes in graph JSON."""
+    """Extract (layer, pos, feature_idx) interventions for feature nodes in graph JSON.
+
+    `include_error_nodes` is the opt-in C1 escape hatch for making MLP
+    reconstruction-error nodes ablatable so that the "empty" baseline is a true
+    empty. It is **not** supported by the feature-index intervention path
+    (`ReplacementModel.feature_intervention` ablates transcoder feature indices,
+    and error nodes have no feature index — their `node_id` encodes a sentinel
+    `feature == -1`). Rather than silently mapping an error node to a bogus
+    feature index, we raise so callers fall back to the report-only normalized
+    metrics (`sufficiency_normalized` / `recoverable_range`), which are the
+    supported mitigation.
+    """
     payload = _load_json(graph_json)
     nodes = payload.get("nodes", [])
+
+    if include_error_nodes:
+        has_error_node = any(
+            isinstance(node, Mapping)
+            and str(node.get("feature_type", "")).strip().lower() == _ERROR_NODE_FEATURE_TYPE
+            for node in nodes
+        )
+        if has_error_node:
+            raise NotImplementedError(
+                "include_error_nodes=True requested, but error-vector ablation is not "
+                "supported by ReplacementModel.feature_intervention (it ablates transcoder "
+                "feature indices only; MLP reconstruction-error nodes have no feature index). "
+                "Use the report-only normalized metrics instead: 'sufficiency_normalized', "
+                "'necessity_normalized', 'faithfulness_normalized', 'error_floor', and "
+                "'recoverable_range' de-bias faithfulness against the retained error floor "
+                "without ablating error nodes."
+            )
 
     allowed_types = _normalize_feature_types(feature_types)
     node_to_intervention: dict[NodeId, tuple[int, int, int]] = {}
@@ -237,6 +272,7 @@ def create_replacement_model_scorer(
     constrained_layers: Any = None,
     freeze_attention: bool = True,
     feature_types: Sequence[str] | None = None,
+    include_error_nodes: bool = False,
     strict_single_token: bool = True,
     model_kwargs: Mapping[str, Any] | None = None,
     local_clt_path: str | Path | None = None,
@@ -277,6 +313,7 @@ def create_replacement_model_scorer(
     node_to_intervention = load_feature_node_interventions_from_graph_json(
         graph_json=graph_json,
         feature_types=feature_types,
+        include_error_nodes=include_error_nodes,
     )
 
     if target_to_logit_idx is None:

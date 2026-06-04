@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Sequence
 
-from macag.graph import CircuitGraph, NodeId
+from macag.graph import CircuitGraph, NodeId, grow_connected_frontier
 from macag.scoring import ScoringOracle, TargetId
 from macag.utils.metrics import (
     FaithfulnessMetrics,
@@ -39,11 +39,10 @@ def _prefilter_with_overlap_penalty(
     lam: float,
     beta: float,
     top_k: int,
+    connected: bool = False,
 ) -> list[NodeId]:
     if top_k <= 0:
         return []
-    if top_k >= len(candidates):
-        return list(candidates)
 
     ranking: list[tuple[float, NodeId]] = []
     for node in candidates:
@@ -61,7 +60,12 @@ def _prefilter_with_overlap_penalty(
         )
         ranking.append((utility, node))
     ranking.sort(key=lambda item: (-item[0], _sort_key(item[1])))
-    return [node for _, node in ranking[:top_k]]
+    ranked_nodes = [node for _, node in ranking]
+    if top_k >= len(ranked_nodes):
+        return ranked_nodes
+    if connected:
+        return grow_connected_frontier(graph, ranked_nodes, top_k)
+    return ranked_nodes[:top_k]
 
 
 def _best_response(
@@ -93,6 +97,7 @@ def _best_response(
             lam=lam,
             beta=beta,
             top_k=prefilter_top_k,
+            connected=connected,
         )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
@@ -137,7 +142,7 @@ def _best_response(
                 continue
             trial = set(selected)
             trial.add(node)
-            if connected and len(trial) > 1 and not graph.is_weakly_connected(trial):
+            if connected and len(trial) > 1 and not graph.connected_through(trial):
                 continue
             gain = evaluate(trial) - current_utility
             if gain > best_gain:
@@ -193,6 +198,7 @@ class ContrastiveEvidenceResult:
     oracle_calls: int
     cache_hits: int
     cache_size: int
+    total_candidates: int
     sparsity_y: float
     sparsity_foil: float
 
@@ -230,6 +236,9 @@ def solve_game2(
 
     candidate_pool = dedupe_preserve_order(candidates if candidates is not None else graph.nodes())
     candidate_pool = [node for node in candidate_pool if graph.has_node(node)]
+    # Full candidate count before per-agent prefilters, so reported sparsity reflects
+    # the true graph rather than the prefiltered pool (I4).
+    total_candidates = len(candidate_pool)
     if progress:
         LOGGER.info(
             "Game2 start: candidates=%d abr_iters=%d budget=%s alpha=%.3f lambda=%.4f beta=%.4f",
@@ -241,10 +250,40 @@ def solve_game2(
             beta,
         )
 
+    def evaluate_allocation(
+        e_y: set[NodeId], e_foil: set[NodeId]
+    ) -> tuple[FaithfulnessMetrics, FaithfulnessMetrics, float, float, float]:
+        """Score a joint allocation: per-agent metrics, utilities, combined utility."""
+        shared_nodes = e_y & e_foil
+        m_y = compute_faithfulness_metrics(oracle=oracle, target=y, nodes=e_y, alpha=alpha)
+        m_foil = compute_faithfulness_metrics(oracle=oracle, target=y_foil, nodes=e_foil, alpha=alpha)
+        u_y = game2_utility(
+            faithfulness_delta=m_y.faithfulness_delta,
+            size=len(e_y),
+            overlap_size=len(shared_nodes),
+            lam=lam,
+            beta=beta,
+        )
+        u_foil = game2_utility(
+            faithfulness_delta=m_foil.faithfulness_delta,
+            size=len(e_foil),
+            overlap_size=len(shared_nodes),
+            lam=lam,
+            beta=beta,
+        )
+        return m_y, m_foil, u_y, u_foil, u_y + u_foil
+
     evidence_y: set[NodeId] = set()
     evidence_foil: set[NodeId] = set()
     converged = False
     iterations = 0
+
+    # Best-iterate tracking (C3): ABR is not guaranteed to converge and can land in a
+    # 2-cycle, so retain the highest combined-utility joint allocation seen across all
+    # rounds and return that rather than the final iterate.
+    best_eval = evaluate_allocation(evidence_y, evidence_foil)
+    best_evidence_y, best_evidence_foil = set(evidence_y), set(evidence_foil)
+    best_combined = best_eval[4]
 
     for iteration in range(1, abr_iters + 1):
         if progress:
@@ -255,6 +294,9 @@ def solve_game2(
                 len(evidence_y),
                 len(evidence_foil),
             )
+        # Symmetric (Jacobi) update (C3): both agents best-respond to the SAME frozen
+        # opponent from the previous round, removing the Gauss-Seidel asymmetry where
+        # the foil saw the freshly-updated y but y saw a stale foil.
         next_y = _best_response(
             graph=graph,
             oracle=oracle,
@@ -277,7 +319,7 @@ def solve_game2(
             graph=graph,
             oracle=oracle,
             target=y_foil,
-            fixed_other=next_y,
+            fixed_other=evidence_y,
             candidates=candidate_pool,
             alpha=alpha,
             lam=lam,
@@ -292,12 +334,20 @@ def solve_game2(
         )
 
         iterations = iteration
+
+        cur_eval = evaluate_allocation(next_y, next_foil)
+        if cur_eval[4] > best_combined:
+            best_combined = cur_eval[4]
+            best_eval = cur_eval
+            best_evidence_y, best_evidence_foil = set(next_y), set(next_foil)
+
         if progress:
             LOGGER.info(
-                "ABR iteration %d done: next |E_y|=%d next |E_foil|=%d",
+                "ABR iteration %d done: next |E_y|=%d next |E_foil|=%d combined_utility=%.6f",
                 iteration,
                 len(next_y),
                 len(next_foil),
+                cur_eval[4],
             )
         if next_y == evidence_y and next_foil == evidence_foil:
             converged = True
@@ -308,28 +358,14 @@ def solve_game2(
         evidence_y = next_y
         evidence_foil = next_foil
 
+    # Return the best joint allocation seen, not the final ABR iterate (C3).
+    evidence_y = best_evidence_y
+    evidence_foil = best_evidence_foil
+    metrics_y, metrics_foil, utility_y, utility_foil, _ = best_eval
+
     shared = evidence_y & evidence_foil
     unique_y = evidence_y - evidence_foil
     unique_foil = evidence_foil - evidence_y
-
-    metrics_y = compute_faithfulness_metrics(oracle=oracle, target=y, nodes=evidence_y, alpha=alpha)
-    metrics_foil = compute_faithfulness_metrics(
-        oracle=oracle, target=y_foil, nodes=evidence_foil, alpha=alpha
-    )
-    utility_y = game2_utility(
-        faithfulness_delta=metrics_y.faithfulness_delta,
-        size=len(evidence_y),
-        overlap_size=len(shared),
-        lam=lam,
-        beta=beta,
-    )
-    utility_foil = game2_utility(
-        faithfulness_delta=metrics_foil.faithfulness_delta,
-        size=len(evidence_foil),
-        overlap_size=len(shared),
-        lam=lam,
-        beta=beta,
-    )
 
     stats = oracle.cache_stats()
     if progress:
@@ -366,6 +402,7 @@ def solve_game2(
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],
         cache_size=stats["cache_size"],
-        sparsity_y=sparsity(selected_size=len(evidence_y), total_size=max(1, len(candidate_pool))),
-        sparsity_foil=sparsity(selected_size=len(evidence_foil), total_size=max(1, len(candidate_pool))),
+        total_candidates=total_candidates,
+        sparsity_y=sparsity(selected_size=len(evidence_y), total_size=max(1, total_candidates)),
+        sparsity_foil=sparsity(selected_size=len(evidence_foil), total_size=max(1, total_candidates)),
     )

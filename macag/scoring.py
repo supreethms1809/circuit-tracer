@@ -32,6 +32,17 @@ class InterventionScorer(Protocol):
     def score_remove(self, nodes: set[NodeId], target: TargetId) -> float:
         ...
 
+    def universe_fingerprint(self) -> Any:
+        """Identity of the current intervention universe.
+
+        Returned value must change whenever ``score_empty`` / ``score_keep_only``
+        results would change due to the universe being mutated (e.g. via
+        ``restrict_universe``). Backends without a mutable universe may return
+        ``None``. Used by :class:`ScoringOracle` to avoid serving stale cached
+        universe-dependent scores (I1).
+        """
+        ...
+
 
 @dataclass
 class CallbackInterventionScorer:
@@ -58,16 +69,31 @@ class CallbackInterventionScorer:
 class ScoringOracle:
     """Memoized scoring oracle keyed by (mode, target, frozenset(nodes))."""
 
+    # Modes whose result depends on the backend's intervention universe (they ablate
+    # the universe or its complement), so the cache key must include the universe
+    # fingerprint to avoid stale hits after restrict_universe (I1).
+    _UNIVERSE_DEPENDENT_MODES = frozenset({"empty", "keep_only"})
+
     def __init__(self, backend: InterventionScorer, cache_enabled: bool = True) -> None:
         self.backend = backend
         self.cache_enabled = cache_enabled
-        self._cache: dict[tuple[str, type, str, frozenset[NodeId]], float] = {}
+        self._cache: dict[tuple[str, type, str, frozenset[NodeId], Any], float] = {}
         self._oracle_calls = 0
         self._cache_hits = 0
 
-    def _cache_key(self, mode: str, target: TargetId, nodes: set[NodeId]) -> tuple[str, type, str, frozenset[NodeId]]:
+    def _universe_fingerprint(self, mode: str) -> Any:
+        if mode not in self._UNIVERSE_DEPENDENT_MODES:
+            return None
+        fingerprint_fn = getattr(self.backend, "universe_fingerprint", None)
+        if fingerprint_fn is None:
+            return None
+        return fingerprint_fn()
+
+    def _cache_key(
+        self, mode: str, target: TargetId, nodes: set[NodeId]
+    ) -> tuple[str, type, str, frozenset[NodeId], Any]:
         target_key = str(target)
-        return (mode, type(target), target_key, frozenset(nodes))
+        return (mode, type(target), target_key, frozenset(nodes), self._universe_fingerprint(mode))
 
     def _score(self, mode: str, target: TargetId, nodes: set[NodeId] | None = None) -> float:
         nodes = nodes or set()
@@ -191,6 +217,11 @@ class ReplacementModelInterventionScorer:
     def intervention_universe(self) -> set[NodeId]:
         return set(self._all_nodes)
 
+    def universe_fingerprint(self) -> frozenset[NodeId]:
+        """Fingerprint the current ablation universe so ScoringOracle invalidates
+        empty/keep_only cache entries when ``restrict_universe`` changes it (I1)."""
+        return frozenset(self._all_nodes)
+
     def restrict_universe(self, nodes: set[NodeId] | list[NodeId] | tuple[NodeId, ...]) -> None:
         supported = set(self.node_to_intervention.keys())
         self._all_nodes = set(nodes) & supported
@@ -199,16 +230,21 @@ class ReplacementModelInterventionScorer:
         self,
         spec: tuple[int, Any, int] | Intervention,
     ) -> Intervention:
+        # Honor an explicit per-node value when the spec provides one (4-tuple);
+        # only fall back to the global ablation_value for bare (layer, pos, feat)
+        # specs (I3). Graph-loaded specs are 3-tuples, so the default ablation
+        # path is unchanged.
         if len(spec) == 4:
-            layer, pos, feature_idx, _ = spec
+            layer, pos, feature_idx, value = spec
         elif len(spec) == 3:
             layer, pos, feature_idx = spec  # type: ignore[misc]
+            value = self.ablation_value
         else:
             raise ValueError(
                 "Each intervention spec must be (layer, pos, feature_idx) or "
                 "(layer, pos, feature_idx, value)."
             )
-        return (layer, pos, feature_idx, self.ablation_value)
+        return (layer, pos, feature_idx, value)
 
     def _ablation_interventions(self, nodes_to_ablate: set[NodeId]) -> list[Intervention]:
         interventions: list[Intervention] = []

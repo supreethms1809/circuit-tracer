@@ -12,6 +12,10 @@ from macag.scoring import ScoringOracle, TargetId
 LOGGER = logging.getLogger(__name__)
 
 
+# Numerical guard for the normalized-metric denominator (recoverable range).
+_RANGE_EPS = 1e-9
+
+
 @dataclass(frozen=True)
 class FaithfulnessMetrics:
     all_score: float
@@ -21,6 +25,15 @@ class FaithfulnessMetrics:
     sufficiency: float
     necessity: float
     faithfulness_delta: float
+    # Error-node-aware normalization (C1). The "recoverable range" is the gap
+    # between the full-circuit score and the all-features-ablated score. Because
+    # error nodes are (by default) never ablated, ``empty_score`` carries an
+    # error floor; dividing by the recoverable range yields metrics that stay
+    # well-conditioned even when that floor dominates the absolute scores.
+    recoverable_range: float
+    sufficiency_normalized: float
+    necessity_normalized: float
+    faithfulness_delta_normalized: float
 
 
 def compute_faithfulness_metrics(
@@ -37,6 +50,17 @@ def compute_faithfulness_metrics(
     sufficiency = keep_only_score - empty_score
     necessity = all_score - remove_score
     faithfulness_delta = alpha * sufficiency + (1.0 - alpha) * necessity
+
+    recoverable_range = all_score - empty_score
+    if abs(recoverable_range) < _RANGE_EPS:
+        sufficiency_normalized = 0.0
+        necessity_normalized = 0.0
+    else:
+        sufficiency_normalized = sufficiency / recoverable_range
+        necessity_normalized = necessity / recoverable_range
+    faithfulness_delta_normalized = (
+        alpha * sufficiency_normalized + (1.0 - alpha) * necessity_normalized
+    )
     return FaithfulnessMetrics(
         all_score=all_score,
         empty_score=empty_score,
@@ -45,6 +69,10 @@ def compute_faithfulness_metrics(
         sufficiency=sufficiency,
         necessity=necessity,
         faithfulness_delta=faithfulness_delta,
+        recoverable_range=recoverable_range,
+        sufficiency_normalized=sufficiency_normalized,
+        necessity_normalized=necessity_normalized,
+        faithfulness_delta_normalized=faithfulness_delta_normalized,
     )
 
 
@@ -102,4 +130,10 @@ def metrics_to_dict(metrics: FaithfulnessMetrics) -> dict[str, float]:
         "sufficiency": metrics.sufficiency,
         "necessity": metrics.necessity,
         "faithfulness": metrics.faithfulness_delta,
+        # Error-node-aware normalized view (C1).
+        "error_floor": metrics.empty_score,
+        "recoverable_range": metrics.recoverable_range,
+        "sufficiency_normalized": metrics.sufficiency_normalized,
+        "necessity_normalized": metrics.necessity_normalized,
+        "faithfulness_normalized": metrics.faithfulness_delta_normalized,
     }

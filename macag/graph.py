@@ -5,13 +5,48 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import json
 from pathlib import Path
-from typing import Any, Hashable, Mapping
+from typing import Any, Hashable, Mapping, Sequence
 
 NodeId = Hashable
 
 
 def _node_sort_key(node: NodeId) -> str:
     return str(node)
+
+
+def grow_connected_frontier(
+    graph: "CircuitGraph",
+    ranked_nodes: Sequence[NodeId],
+    top_k: int,
+) -> list[NodeId]:
+    """Pick up to `top_k` nodes that form a connected subcircuit, biased by rank.
+
+    Seeds with the top-ranked node, then walks the remaining nodes in rank order
+    keeping any that are connected (through the full graph) to the seed's
+    component. If the seed's component is exhausted before `top_k` is reached, the
+    remaining slots are filled by raw rank. Used by the connectivity-aware
+    prefilters so a singleton-gain top-k truncation does not hand the connected
+    greedy a mutually-disconnected pool (L2).
+    """
+    if top_k <= 0 or not ranked_nodes:
+        return []
+    seed = ranked_nodes[0]
+    kept: list[NodeId] = [seed]
+    kept_set: set[NodeId] = {seed}
+    for node in ranked_nodes[1:]:
+        if len(kept) >= top_k:
+            break
+        if graph.connected_through({seed, node}):
+            kept.append(node)
+            kept_set.add(node)
+    if len(kept) < top_k:
+        for node in ranked_nodes:
+            if len(kept) >= top_k:
+                break
+            if node not in kept_set:
+                kept.append(node)
+                kept_set.add(node)
+    return kept
 
 
 class CircuitGraph:
@@ -108,6 +143,50 @@ class CircuitGraph:
                     queue.append(nxt)
 
         return visited == selected
+
+    def connected_through(
+        self,
+        node_subset: set[NodeId] | list[NodeId] | tuple[NodeId, ...],
+        *,
+        allow_intermediate: bool = True,
+    ) -> bool:
+        """Return True iff every node in `node_subset` lies in one weakly-connected
+        component of the *full* attribution graph.
+
+        Unlike :meth:`is_weakly_connected`, which only counts edges whose endpoints
+        are both inside the subset, this routes connectivity *through* intermediate
+        nodes that are not part of the subset (error / embedding / other feature
+        nodes). This matches the circuit intuition that two transcoder features are
+        "connected" when they belong to the same sub-circuit even if they only
+        interact via an intermediate node (L1). Setting ``allow_intermediate=False``
+        recovers the stricter subset-internal behavior.
+        """
+        selected = set(node_subset)
+        if len(selected) <= 1:
+            return True
+        if not allow_intermediate:
+            return self.is_weakly_connected(selected)
+
+        missing = [node for node in selected if node not in self._node_metadata]
+        if missing:
+            return False
+
+        # BFS over the full graph starting from one subset node; succeed as soon as
+        # all subset nodes are reached.
+        start = next(iter(selected))
+        queue: deque[NodeId] = deque([start])
+        visited: set[NodeId] = {start}
+        remaining = selected - {start}
+
+        while queue and remaining:
+            current = queue.popleft()
+            for nxt in self.neighbors(current):
+                if nxt not in visited:
+                    visited.add(nxt)
+                    remaining.discard(nxt)
+                    queue.append(nxt)
+
+        return not remaining
 
     def to_dict(self) -> dict[str, Any]:
         node_entries = []
