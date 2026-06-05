@@ -198,9 +198,21 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help=(
-            "Optional stop condition on the normalized alpha-mixed objective: stop when "
-            "faithfulness_normalized >= 1 - eps (i.e. the evidence recovers all but eps of "
-            "the achievable faithfulness). eps is in [0, 1]."
+            "Optional stop condition; interpretation depends on --stop-metric. "
+            "eps is in [0, 1]."
+        ),
+    )
+    game1.add_argument(
+        "--stop-metric",
+        choices=("normalized", "raw_relative"),
+        default="normalized",
+        help=(
+            "How --faithfulness-eps stops the greedy. 'normalized' (default): stop when "
+            "faithfulness_normalized >= 1 - eps (divides by recoverable_range; degenerate "
+            "when that range collapses, e.g. unfrozen attention). 'raw_relative': "
+            "denominator-free diminishing-returns stop (stop when the best marginal raw "
+            "faithfulness gain < eps * the first feature's gain). Use this when attention "
+            "is unfrozen or recoverable_range is unreliable."
         ),
     )
 
@@ -253,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             lam=args.lam,
             budget=args.budget,
             faithfulness_eps=args.faithfulness_eps,
+            stop_metric=args.stop_metric,
             prefilter_top_k=args.prefilter_top_k,
             connected=args.connected,
             min_gain=args.min_gain,

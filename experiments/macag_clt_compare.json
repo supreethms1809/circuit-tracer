@@ -1,0 +1,11 @@
+{
+  "prompts_manifest": "experiments/macag_generalization_prompts.json",
+  "device": "cuda",
+  "note": "Multi-CLT robustness/capacity experiment. Same 8 two-hop prompts across every public cross-layer transcoder. gemma-426k vs gemma-2.5M is the clean capacity control (model+arch fixed); llama and gpt-oss add cross-model CLT generality. Headline question: does more capacity (or a different model) eliminate the negative-recoverable_range reconstruction failures the 426k CLT shows (e.g. philadelphia)?",
+  "clts": [
+    {"tag": "gemma2-426k",    "model": "google/gemma-2-2b",        "transcoder_set": "mntss/clt-gemma-2-2b-426k",   "sweep_dir": "results/macag_sweep",                     "run": false},
+    {"tag": "gemma2-2.5M",    "model": "google/gemma-2-2b",        "transcoder_set": "mntss/clt-gemma-2-2b-2.5M",   "sweep_dir": "results/macag_clt_compare/gemma2-2.5M",   "run": true},
+    {"tag": "llama32-524k",   "model": "meta-llama/Llama-3.2-1B",  "transcoder_set": "mntss/clt-llama-3.2-1b-524k", "sweep_dir": "results/macag_clt_compare/llama32-524k",  "run": true},
+    {"tag": "gptoss20b-131k", "model": "openai/gpt-oss-20b",       "transcoder_set": "mntss/clt-131k",              "sweep_dir": "results/macag_clt_compare/gptoss20b-131k","run": true}
+  ]
+}

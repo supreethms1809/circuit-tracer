@@ -97,6 +97,7 @@ def solve_game1(
     lam: float = 0.01,
     budget: int | None = None,
     faithfulness_eps: float | None = None,
+    stop_metric: str = "normalized",
     prefilter_top_k: int | None = None,
     prefilter_fn: CandidatePrefilter | None = None,
     connected: bool = False,
@@ -104,7 +105,21 @@ def solve_game1(
     progress: bool = True,
     log_every: int = 50,
 ) -> EvidenceSetResult:
-    """Greedy hill-climb solver for Game 1."""
+    """Greedy hill-climb solver for Game 1.
+
+    `stop_metric` controls how `faithfulness_eps` is interpreted:
+      * "normalized" (default): stop when faithfulness_delta_normalized >= 1 - eps.
+        This divides by recoverable_range (all - empty), which is the correct
+        error-floor-aware target with frozen attention but goes DEGENERATE when
+        the range collapses toward zero/negative (e.g. unfrozen attention),
+        producing spurious early/late stops.
+      * "raw_relative": denominator-free diminishing-returns stop. Stop before
+        adding a node whose marginal raw faithfulness gain is < eps * (the first
+        feature's gain). Stable regardless of the error floor, so it is the
+        correct choice when recoverable_range is unreliable (unfrozen attention).
+    """
+    if stop_metric not in ("normalized", "raw_relative"):
+        raise ValueError("stop_metric must be 'normalized' or 'raw_relative'.")
     if not 0.0 <= alpha <= 1.0:
         raise ValueError("alpha must be in [0, 1].")
     if lam < 0.0:
@@ -154,6 +169,7 @@ def solve_game1(
     selected: set[NodeId] = set()
     selected_order: list[NodeId] = []
     iterations = 0
+    first_gain: float | None = None  # raw marginal gain of the first added node
 
     while True:
         if budget is not None and len(selected) >= budget:
@@ -193,13 +209,34 @@ def solve_game1(
                 LOGGER.info("Game1 no improving candidate found (|E|=%d)", len(selected))
             break
 
+        # Denominator-free diminishing-returns stop (before adding): the best
+        # available feature contributes less than `eps` of the top feature's
+        # raw marginal gain. Stable when recoverable_range is unreliable.
+        if (
+            faithfulness_eps is not None
+            and stop_metric == "raw_relative"
+            and first_gain is not None
+            and first_gain > 0.0
+            and best_gain < faithfulness_eps * first_gain
+        ):
+            if progress:
+                LOGGER.info(
+                    "Game1 raw_relative stop: best_gain=%.6f < eps*first_gain=%.6f (|E|=%d)",
+                    best_gain,
+                    faithfulness_eps * first_gain,
+                    len(selected),
+                )
+            break
+
         selected.add(best_node)
         selected_order.append(best_node)
         iterations += 1
+        if first_gain is None:
+            first_gain = best_gain
         if progress:
             LOGGER.info("Game1 added node=%s gain=%.6f |E|=%d", best_node, best_gain, len(selected))
 
-        if faithfulness_eps is not None:
+        if faithfulness_eps is not None and stop_metric == "normalized":
             _, metrics = evaluate(selected)
             # Stop on the SAME alpha-mixed objective the solver optimizes, in its
             # normalized (error-floor-aware) form (C2). faithfulness_delta_normalized

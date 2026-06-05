@@ -108,6 +108,36 @@ def test_c2_eps_stop_uses_normalized_objective(alpha: float) -> None:
     assert result.metrics.faithfulness_delta_normalized >= 0.8
 
 
+def test_raw_relative_stop_is_denominator_free() -> None:
+    # Diminishing per-feature gains a=10, b=9, c=0.5. With raw_relative the first
+    # gain is 10; c's marginal gain 0.5 < eps*first_gain = 0.1*10 = 1.0, so the
+    # greedy stops BEFORE adding c -> {a, b}. This uses no recoverable_range
+    # denominator, so it is stable when that range collapses (unfrozen attention).
+    graph = _full_graph(["a", "b", "c"])
+    oracle = _oracle({"y": {"a": 10.0, "b": 9.0, "c": 0.5}})
+    result = solve_game1(
+        graph=graph,
+        oracle=oracle,
+        target="y",
+        candidates=["a", "b", "c"],
+        lam=0.0,
+        faithfulness_eps=0.1,
+        stop_metric="raw_relative",
+        progress=False,
+    )
+    assert result.evidence == {"a", "b"}
+    assert "c" not in result.evidence
+    assert result.iterations == 2
+
+
+def test_invalid_stop_metric_raises() -> None:
+    graph = _full_graph(["a"])
+    oracle = _oracle({"y": {"a": 1.0}})
+    with pytest.raises(ValueError):
+        solve_game1(graph=graph, oracle=oracle, target="y", candidates=["a"],
+                    stop_metric="bogus", progress=False)
+
+
 # --------------------------------------------------------------------------- C3
 def test_c3_best_iterate_returned_over_oscillating_abr() -> None:
     # Symmetric weights, budget=1, beta high → ABR oscillates {A},{A} <-> {B},{B}.

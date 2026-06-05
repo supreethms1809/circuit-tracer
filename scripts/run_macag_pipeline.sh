@@ -92,7 +92,8 @@ GRAPH="$OUTDIR/graphs/$SLUG.json"
 KWARGS="$OUTDIR/oracle_kwargs.json"
 G1_OUT="$OUTDIR/macag_game1.json"
 G2_OUT="$OUTDIR/macag_game2.json"
-ANNOTATED="$OUTDIR/graphs/${SLUG}_macag.json"
+MACAG_SLUG="${SLUG}-macag"
+ANNOTATED="$OUTDIR/graphs/${MACAG_SLUG}.json"
 mkdir -p "$OUTDIR/graphs"
 
 CAND_ARG=()
@@ -181,11 +182,34 @@ python -m macag.cli.annotate_graph \
   --macag-result-json "$G1_OUT" --label-prefix "MACAG:g1" \
   --output-json "$ANNOTATED"
 
+# Give the annotated graph its own slug + register it so the frontend can load
+# it. The server lists graphs from graph-metadata.json and fetches each by
+# "<slug>.json", so the internal slug must match the filename and have an entry.
+MACAG_SLUG="$MACAG_SLUG" ANNOTATED="$ANNOTATED" OUTDIR="$OUTDIR" python - <<'PY'
+import json, os
+slug = os.environ["MACAG_SLUG"]
+path = os.environ["ANNOTATED"]
+meta_path = os.path.join(os.environ["OUTDIR"], "graphs", "graph-metadata.json")
+
+g = json.load(open(path))
+g["metadata"]["slug"] = slug
+json.dump(g, open(path, "w"))
+
+meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {"graphs": []}
+keys = ("slug", "scan", "transcoder_list", "prompt_tokens",
+        "prompt", "node_threshold", "schema_version")
+entry = {k: g["metadata"].get(k) for k in keys}
+meta["graphs"] = [x for x in meta.get("graphs", []) if x.get("slug") != slug]
+meta["graphs"].append(entry)
+json.dump(meta, open(meta_path, "w"), indent=2)
+print("registered annotated graph slug:", slug)
+PY
+
 echo ">>> Done."
 echo "    graph     : $GRAPH"
 echo "    game1     : $G1_OUT"
 echo "    game2     : $G2_OUT"
-echo "    annotated : $ANNOTATED"
+echo "    annotated : $ANNOTATED  (select slug '$MACAG_SLUG' in the UI)"
 
 # --- optional: serve --------------------------------------------------------
 if [[ "$SERVE" -eq 1 ]]; then
