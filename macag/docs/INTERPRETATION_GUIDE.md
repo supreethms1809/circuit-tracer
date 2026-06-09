@@ -31,6 +31,33 @@ Interpretation:
 - High sufficiency means selected evidence alone can recover behavior.
 - High necessity means removing selected evidence harms behavior.
 
+Error-floor-aware (normalized) view, also in `scores`:
+
+- `error_floor = empty` — the score reachable from reconstruction-error nodes
+  alone (the floor features cannot move).
+- `recoverable_range = all - empty` — how much score the features can actually
+  recover above that floor.
+- `sufficiency_normalized`, `necessity_normalized`, `faithfulness_normalized`
+  divide the raw quantities by `recoverable_range`.
+
+`recoverable_range` can be **zero or negative** when ablating all features (plus,
+under unfrozen attention, free attention) does not lower — or even raises — the
+`empty` baseline. The task then lives in attention / error nodes rather than
+features. When that happens the normalized scores are degenerate; read the **raw**
+sufficiency / necessity / faithfulness instead. This is common for
+attention-mediated tasks (e.g. IOI) and for unfrozen-attention runs.
+
+## 2b. Game 1 Stop Metric
+
+`stop_metric` (the `--stop-metric` CLI flag) controls how `faithfulness_eps`
+halts the greedy search:
+
+- `normalized` (default): stop when `faithfulness_normalized >= 1 - eps`. Correct
+  with frozen attention; degenerate when `recoverable_range` collapses.
+- `raw_relative`: denominator-free — stop before adding a node whose marginal raw
+  faithfulness gain is `< eps *` the first feature's gain. Use this when
+  `recoverable_range` is unreliable (unfrozen attention).
+
 ## 3. Game 2 Decomposition Semantics
 
 - `shared = E_y ∩ E_foil`

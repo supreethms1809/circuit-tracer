@@ -110,12 +110,11 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 
 ## Conference Runner
 
-The canonical NeurIPS interface is now `paper-eval`. It is intentionally narrow:
-- `--suite`
-- `--dry-run`
-- `--validate-only`
+The canonical NeurIPS interface is now `paper-eval` (`spline_clt/paper_eval.py`). Required: `--suite`. Common: `--dry-run`, `--validate-only`. Operational extras: `--re-evaluate` (drop eval/MACAG artifacts, keep checkpoints), `--worker-id` / `--num-workers`, `--stages` to intersect with the suite’s enabled stages.
 
-All conference runs are defined by JSON config under `experiments/paper_configs/` and merged with OmegaConf defaults. Do not manually override seeds, hyperparameters, or stages from the CLI during the final campaign.
+All conference runs are defined by JSON config under `experiments/paper_configs/` and merged with OmegaConf defaults. For the **final campaign**, do not replace suite-chosen seeds or hyperparameters with ad hoc CLI overrides; use `--stages` / worker sharding only for infrastructure.
+
+Metric equations and methodology comparisons live in `docs/metric_definitions.md` and `docs/methodology_comparison.md`.
 
 ### Runnable Paper Suites
 - `experiments/paper_configs/suites/neurips_core_gpt2.json`
@@ -198,6 +197,10 @@ graph back for the existing `circuit_tracer` frontend.
 - ReplacementModel intervention buffers now use the same BOS-prepended tokenization path as graph/prompt evaluation, fixing prompt-length mismatches in MACAG.
 - MACAG annotation now tolerates both legacy Game 1 evidence lists and dict-form evidence payloads.
 - Paper aggregation now exposes explicit retained error-node metrics instead of hiding them behind circuit graphs only.
+- MACAG `connected` constraint no longer routes connectivity through logit/embedding hub nodes (it was vacuous before: every pruned graph is one weak component through the logits). Error nodes remain valid intermediates.
+- Game 1 `raw_relative` stop now compares λ-free faithfulness gains, not λ-penalized utility gains, so the sparsity penalty cannot distort the eps-relative test.
+- Empty ablation universes (candidate/graph node-ID mismatches) now raise instead of silently degenerating to `empty == all`; `score_remove` is intersected with the universe, symmetric with `score_keep_only`.
+- Solver oracle stats are per-solve (reset at solver entry); Game 2 reports `best_iteration` (0 = initial empty allocation won); subgraphs serialize in sorted order; `CircuitGraph.from_dict` prefers `node_id` over `id` to match the intervention loader.
 
 ### Operational Notes
 - `macag/cache` and `macag/output` are runtime artifacts, not source code.

@@ -83,11 +83,17 @@ def game1_utility(faithfulness_delta: float, size: int, lam: float) -> float:
 def game2_utility(
     faithfulness_delta: float,
     size: int,
-    overlap_size: int,
+    overlap_weight: float,
     lam: float,
     beta: float,
 ) -> float:
-    return faithfulness_delta - lam * size - beta * overlap_size
+    """Game 2 utility with a (possibly fractional) overlap penalty.
+
+    ``overlap_weight`` is the hard overlap count ``|E ∩ E_other|`` under ABR, or
+    the expected overlap ``sum_{n in E} p(n)`` against an empirical mixture of
+    opponent sets under fictitious play.
+    """
+    return faithfulness_delta - lam * size - beta * overlap_weight
 
 
 def overlap_rate(set_a: set[NodeId], set_b: set[NodeId]) -> float:

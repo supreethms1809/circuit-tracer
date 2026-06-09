@@ -114,9 +114,12 @@ def solve_game1(
         the range collapses toward zero/negative (e.g. unfrozen attention),
         producing spurious early/late stops.
       * "raw_relative": denominator-free diminishing-returns stop. Stop before
-        adding a node whose marginal raw faithfulness gain is < eps * (the first
-        feature's gain). Stable regardless of the error floor, so it is the
-        correct choice when recoverable_range is unreliable (unfrozen attention).
+        adding a node whose marginal raw faithfulness gain (the alpha-mixed
+        faithfulness_delta increase, EXCLUDING the lam size penalty) is
+        < eps * (the first feature's faithfulness gain). Stable regardless of the
+        error floor, so it is the correct choice when recoverable_range is
+        unreliable (unfrozen attention). Selection itself still maximizes the
+        lam-penalized utility; only the stop test is penalty-free.
     """
     if stop_metric not in ("normalized", "raw_relative"):
         raise ValueError("stop_metric must be 'normalized' or 'raw_relative'.")
@@ -128,6 +131,10 @@ def solve_game1(
         raise ValueError("budget must be non-negative when provided.")
     if min_gain < 0.0:
         raise ValueError("min_gain must be non-negative.")
+
+    # Per-solve stats: without this, reusing one oracle across several solves
+    # (Game 1 + Game 2 on the same scorer, notebooks) reports cumulative counts.
+    oracle.reset_stats()
 
     candidate_pool = dedupe_preserve_order(candidates if candidates is not None else graph.nodes())
     candidate_pool = [node for node in candidate_pool if graph.has_node(node)]
@@ -169,15 +176,19 @@ def solve_game1(
     selected: set[NodeId] = set()
     selected_order: list[NodeId] = []
     iterations = 0
-    first_gain: float | None = None  # raw marginal gain of the first added node
+    # Raw marginal faithfulness_delta gain (lam-free) of the first added node;
+    # the raw_relative stop is defined on faithfulness gains, NOT utility gains,
+    # so lam does not distort the eps-relative test.
+    first_faith_gain: float | None = None
 
     while True:
         if budget is not None and len(selected) >= budget:
             break
 
-        current_utility, _ = evaluate(selected)
+        current_utility, current_metrics = evaluate(selected)
         best_node: NodeId | None = None
         best_gain = min_gain
+        best_faith_gain = 0.0
 
         iterator: Sequence[NodeId] | Any = candidate_pool
         if progress and tqdm is not None:
@@ -194,13 +205,15 @@ def solve_game1(
             trial.add(node)
             if connected and len(trial) > 1 and not graph.connected_through(trial):
                 continue
-            trial_utility, _ = evaluate(trial)
+            trial_utility, trial_metrics = evaluate(trial)
             gain = trial_utility - current_utility
             if gain > best_gain:
                 best_gain = gain
                 best_node = node
+                best_faith_gain = trial_metrics.faithfulness_delta - current_metrics.faithfulness_delta
             elif gain == best_gain and best_node is not None and _sort_key(node) < _sort_key(best_node):
                 best_node = node
+                best_faith_gain = trial_metrics.faithfulness_delta - current_metrics.faithfulness_delta
             if progress and tqdm is None and log_every > 0 and idx % log_every == 0:
                 LOGGER.info("Game1 evaluated %d/%d candidates", idx, len(candidate_pool))
 
@@ -210,20 +223,22 @@ def solve_game1(
             break
 
         # Denominator-free diminishing-returns stop (before adding): the best
-        # available feature contributes less than `eps` of the top feature's
-        # raw marginal gain. Stable when recoverable_range is unreliable.
+        # available feature contributes less than `eps` of the top feature's raw
+        # marginal faithfulness gain. Uses lam-free faithfulness deltas so the
+        # sparsity penalty cannot distort the eps-relative test; stable when
+        # recoverable_range is unreliable.
         if (
             faithfulness_eps is not None
             and stop_metric == "raw_relative"
-            and first_gain is not None
-            and first_gain > 0.0
-            and best_gain < faithfulness_eps * first_gain
+            and first_faith_gain is not None
+            and first_faith_gain > 0.0
+            and best_faith_gain < faithfulness_eps * first_faith_gain
         ):
             if progress:
                 LOGGER.info(
-                    "Game1 raw_relative stop: best_gain=%.6f < eps*first_gain=%.6f (|E|=%d)",
-                    best_gain,
-                    faithfulness_eps * first_gain,
+                    "Game1 raw_relative stop: best_faith_gain=%.6f < eps*first_faith_gain=%.6f (|E|=%d)",
+                    best_faith_gain,
+                    faithfulness_eps * first_faith_gain,
                     len(selected),
                 )
             break
@@ -231,8 +246,8 @@ def solve_game1(
         selected.add(best_node)
         selected_order.append(best_node)
         iterations += 1
-        if first_gain is None:
-            first_gain = best_gain
+        if first_faith_gain is None:
+            first_faith_gain = best_faith_gain
         if progress:
             LOGGER.info("Game1 added node=%s gain=%.6f |E|=%d", best_node, best_gain, len(selected))
 

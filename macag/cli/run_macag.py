@@ -48,6 +48,24 @@ _ALLOWED_FACTORY_MODULE_PREFIXES = (
 )
 
 
+def _factory_accepts_kwarg(factory: Any, name: str) -> bool:
+    import inspect
+
+    try:
+        signature = inspect.signature(factory)
+    except (TypeError, ValueError):
+        return True  # signature unavailable; let the call itself surface errors
+    for parameter in signature.parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == name and parameter.kind in (
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            return True
+    return False
+
+
 def _load_factory(import_path: str) -> Any:
     if ":" not in import_path:
         raise ValueError("Factory import path must use 'module_path:factory_name' format.")
@@ -109,10 +127,16 @@ def _build_oracle(args: argparse.Namespace) -> tuple[ScoringOracle, list[NodeId]
         kwargs.update(json.loads(args.oracle_kwargs_json))
     if args.oracle_kwargs_file:
         kwargs.update(_load_json(args.oracle_kwargs_file))
-    if getattr(args, "include_error_nodes", False):
-        kwargs["include_error_nodes"] = True
 
     factory = _load_factory(args.oracle_factory)
+    if getattr(args, "include_error_nodes", False):
+        if _factory_accepts_kwarg(factory, "include_error_nodes"):
+            kwargs["include_error_nodes"] = True
+        else:
+            raise ValueError(
+                f"--include-error-nodes was set, but factory '{args.oracle_factory}' does "
+                "not accept an 'include_error_nodes' keyword argument."
+            )
     built = factory(**kwargs)
     return _normalize_factory_output(built=built, no_cache=args.no_cache)
 
@@ -220,7 +244,32 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_common_args(game2)
     game2.add_argument("--foil", required=True, help="Foil class/label.")
     game2.add_argument("--beta", type=float, default=0.1, help="Overlap penalty beta.")
-    game2.add_argument("--abr-iters", type=int, default=10, help="ABR max iterations.")
+    game2.add_argument(
+        "--abr-iters",
+        type=int,
+        default=10,
+        help="Max solver iterations (ABR rounds or fictitious-play rounds).",
+    )
+    game2.add_argument(
+        "--solver",
+        choices=("abr", "fp"),
+        default="abr",
+        help=(
+            "Update rule: 'abr' (default) best-responds to the opponent's last "
+            "evidence set; 'fp' (fictitious play) best-responds to the opponent's "
+            "empirical history of sets via an expected-overlap penalty, which "
+            "dampens ABR cycling."
+        ),
+    )
+    game2.add_argument(
+        "--fp-tol",
+        type=float,
+        default=1e-3,
+        help=(
+            "Fictitious play only: stop when the max change in empirical node "
+            "frequencies across both agents falls below this tolerance."
+        ),
+    )
 
     return parser
 
@@ -312,6 +361,8 @@ def main(argv: list[str] | None = None) -> int:
             connected=args.connected,
             min_gain=args.min_gain,
             prefilter_top_k=args.prefilter_top_k,
+            solver=args.solver,
+            fp_tol=args.fp_tol,
             progress=args.progress,
             log_every=args.log_every,
         )
@@ -341,11 +392,17 @@ def main(argv: list[str] | None = None) -> int:
                 "cache_size": result.cache_size,
                 "iterations": result.iterations,
                 "converged": result.converged,
+                "best_iteration": result.best_iteration,
                 "total_candidates": result.total_candidates,
                 "sparsity_y": result.sparsity_y,
                 "sparsity_foil": result.sparsity_foil,
             },
         }
+        if args.solver == "fp":
+            output["fp"] = {
+                "node_frequencies_y": result.node_frequencies_y,
+                "node_frequencies_foil": result.node_frequencies_foil,
+            }
 
     output_path = Path(args.output_json)
     output_path.parent.mkdir(parents=True, exist_ok=True)

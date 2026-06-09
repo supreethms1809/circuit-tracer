@@ -69,10 +69,11 @@ class CallbackInterventionScorer:
 class ScoringOracle:
     """Memoized scoring oracle keyed by (mode, target, frozenset(nodes))."""
 
-    # Modes whose result depends on the backend's intervention universe (they ablate
-    # the universe or its complement), so the cache key must include the universe
-    # fingerprint to avoid stale hits after restrict_universe (I1).
-    _UNIVERSE_DEPENDENT_MODES = frozenset({"empty", "keep_only"})
+    # Modes whose result depends on the backend's intervention universe, so the
+    # cache key must include the universe fingerprint to avoid stale hits after
+    # restrict_universe (I1). "empty"/"keep_only" ablate the universe or its
+    # complement; "remove" intersects the requested nodes with the universe.
+    _UNIVERSE_DEPENDENT_MODES = frozenset({"empty", "keep_only", "remove"})
 
     def __init__(self, backend: InterventionScorer, cache_enabled: bool = True) -> None:
         self.backend = backend
@@ -206,9 +207,14 @@ class ReplacementModelInterventionScorer:
         else:
             self._all_nodes = set(self.node_universe) & supported
             if not self._all_nodes:
-                LOGGER.warning(
+                # An empty universe means score_empty ablates NOTHING, so
+                # empty == all, recoverable_range == 0, and every normalized
+                # metric silently degenerates to 0. Fail loudly instead.
+                raise ValueError(
                     "node_universe has no overlap with supported intervention nodes; "
-                    "scoring will behave as if all nodes are ablated."
+                    "with an empty ablation universe 'empty' equals 'all' and all "
+                    "faithfulness metrics degenerate. Check that candidate node IDs "
+                    "match the graph's node_id convention."
                 )
 
     def supported_nodes(self) -> set[NodeId]:
@@ -224,7 +230,15 @@ class ReplacementModelInterventionScorer:
 
     def restrict_universe(self, nodes: set[NodeId] | list[NodeId] | tuple[NodeId, ...]) -> None:
         supported = set(self.node_to_intervention.keys())
-        self._all_nodes = set(nodes) & supported
+        restricted = set(nodes) & supported
+        if not restricted and supported:
+            raise ValueError(
+                "restrict_universe produced an empty ablation universe: none of the "
+                f"{len(set(nodes))} requested nodes are supported intervention nodes. "
+                "With an empty universe 'empty' equals 'all' and all faithfulness "
+                "metrics degenerate. Check node ID conventions."
+            )
+        self._all_nodes = restricted
 
     def _normalize_intervention(
         self,
@@ -305,7 +319,16 @@ class ReplacementModelInterventionScorer:
         return self._score_logits(logits, target)
 
     def score_remove(self, nodes: set[NodeId], target: TargetId) -> float:
-        interventions = self._ablation_interventions(set(nodes))
+        # Intersect with the universe so remove() treats out-of-universe nodes as
+        # immutable background, symmetric with score_keep_only (which never ablates
+        # outside _all_nodes). Also avoids KeyError on unsupported node IDs.
+        to_ablate = set(nodes) & self._all_nodes
+        dropped = len(nodes) - len(to_ablate)
+        if dropped:
+            LOGGER.debug(
+                "score_remove ignoring %d node(s) outside the intervention universe", dropped
+            )
+        interventions = self._ablation_interventions(to_ablate)
         logits = self._run_logits(interventions=interventions)
         return self._score_logits(logits, target)
 

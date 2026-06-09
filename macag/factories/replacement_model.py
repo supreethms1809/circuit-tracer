@@ -70,6 +70,23 @@ def resolve_target_to_logit_idx(
             )
         if not token_ids:
             raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
+        # BPE footgun: for GPT-2-style tokenizers, "Paris" and " Paris" are different
+        # single tokens, and next-token continuations mid-sentence almost always use
+        # the space-prefixed variant. Warn when both variants are single tokens but
+        # differ, so a silently-wrong logit index doesn't corrupt every score.
+        if not token_str[:1].isspace():
+            spaced_ids = _extract_token_ids(tokenizer, " " + token_str)
+            if len(spaced_ids) == 1 and len(token_ids) >= 1 and spaced_ids[0] != token_ids[0]:
+                LOGGER.warning(
+                    "Target '%s' token '%s' has no leading space; ' %s' is a different "
+                    "single token (id %d vs %d). Mid-sentence continuations usually "
+                    "need the space-prefixed variant.",
+                    label,
+                    token_str,
+                    token_str,
+                    token_ids[0],
+                    spaced_ids[0],
+                )
         # Next-token prediction scores the FIRST token of the continuation; when
         # strict_single_token is disabled and the label is multi-token, the first
         # sub-token is the relevant logit, not the last (I2).
