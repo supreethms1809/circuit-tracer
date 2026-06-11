@@ -1,5 +1,12 @@
 """Utility helpers for MACAG."""
 
+from macag.utils.attention_mediation import (
+    VERDICT_ATTENTION_MEDIATED,
+    VERDICT_FEATURE_MEDIATED,
+    VERDICT_INDETERMINATE,
+    AttentionMediationDiagnostic,
+    compute_attention_mediation_diagnostic,
+)
 from macag.utils.metrics import (
     FaithfulnessMetrics,
     compute_faithfulness_metrics,
@@ -19,6 +26,11 @@ from macag.utils.supernodes import (
 )
 
 __all__ = [
+    "AttentionMediationDiagnostic",
+    "compute_attention_mediation_diagnostic",
+    "VERDICT_ATTENTION_MEDIATED",
+    "VERDICT_FEATURE_MEDIATED",
+    "VERDICT_INDETERMINATE",
     "FaithfulnessMetrics",
     "compute_faithfulness_metrics",
     "dedupe_preserve_order",

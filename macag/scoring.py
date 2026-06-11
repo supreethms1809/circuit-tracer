@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 import json
 import logging
@@ -149,6 +150,33 @@ class ScoringOracle:
         self._cache_hits = 0
 
 
+def derive_oracle_with_freeze(oracle: ScoringOracle, freeze_attention: bool) -> ScoringOracle:
+    """Return a new ScoringOracle whose backend has ``freeze_attention`` as requested.
+
+    The derived oracle gets a fresh cache and fresh stats so frozen/unfrozen legs of a
+    dual Game 1 run report independent oracle counts. The underlying model reference is
+    shared shallowly — the model is never reloaded. Raises ``TypeError`` for backends
+    without a freeze concept (toy oracles, callback scorers).
+    """
+    backend = oracle.backend
+    if not (dataclasses.is_dataclass(backend) and hasattr(backend, "freeze_attention")):
+        raise TypeError(
+            f"Oracle backend {type(backend).__name__} has no freeze_attention field; "
+            "frozen/unfrozen derivation requires a ReplacementModel-backed scorer "
+            "(toy oracles have no attention to freeze)."
+        )
+    if backend.freeze_attention == freeze_attention:
+        return ScoringOracle(backend=backend, cache_enabled=oracle.cache_enabled)
+
+    derived = dataclasses.replace(backend, freeze_attention=freeze_attention)
+    # dataclasses.replace re-runs __post_init__, which rebuilds _all_nodes from the
+    # node_universe FIELD — discarding any post-construction restrict_universe().
+    # Re-apply the source's live universe so both legs ablate the same node set.
+    if hasattr(derived, "restrict_universe") and hasattr(backend, "intervention_universe"):
+        derived.restrict_universe(backend.intervention_universe())
+    return ScoringOracle(backend=derived, cache_enabled=oracle.cache_enabled)
+
+
 def _last_token_logits(logits: Any) -> Any:
     if logits.ndim == 3:
         return logits[0, -1]
@@ -223,10 +251,17 @@ class ReplacementModelInterventionScorer:
     def intervention_universe(self) -> set[NodeId]:
         return set(self._all_nodes)
 
-    def universe_fingerprint(self) -> frozenset[NodeId]:
+    def universe_fingerprint(self) -> tuple[frozenset[NodeId], bool]:
         """Fingerprint the current ablation universe so ScoringOracle invalidates
-        empty/keep_only cache entries when ``restrict_universe`` changes it (I1)."""
-        return frozenset(self._all_nodes)
+        empty/keep_only cache entries when ``restrict_universe`` changes it (I1).
+
+        Includes ``freeze_attention``: flipping it changes every intervention-backed
+        score (empty/keep_only/remove), which is exactly the universe-dependent mode
+        set, so the fingerprint is the natural invalidation point. ``score_all`` is
+        freeze-invariant (no interventions, so frozen-at-clean patterns equal the
+        recomputed ones) and correctly keeps its cache entries.
+        """
+        return (frozenset(self._all_nodes), self.freeze_attention)
 
     def restrict_universe(self, nodes: set[NodeId] | list[NodeId] | tuple[NodeId, ...]) -> None:
         supported = set(self.node_to_intervention.keys())

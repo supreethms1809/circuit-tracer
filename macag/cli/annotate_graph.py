@@ -79,6 +79,38 @@ def _build_groups(macag_result: dict[str, Any], label_prefix: str) -> tuple[list
     return pinned, supernodes
 
 
+def _build_groups_for_result(
+    macag_result: dict[str, Any],
+    label_prefix: str,
+    freeze_select: str,
+) -> tuple[list[str], list[list[str]]]:
+    """Build pin/supernode groups, handling dual-freeze Game 1 outputs.
+
+    A `--freeze-mode both` result has no top-level evidence; its legs live under
+    `frozen` / `unfrozen` keys, each shaped like a single-mode payload. Select
+    one or both legs per `freeze_select`; non-dual results ignore it entirely.
+    """
+    if macag_result.get("freeze_mode") != "both":
+        return _build_groups(macag_result=macag_result, label_prefix=label_prefix)
+
+    legs = ("frozen", "unfrozen") if freeze_select == "both" else (freeze_select,)
+    pinned: list[str] = []
+    supernodes: list[list[str]] = []
+    for leg in legs:
+        leg_result = macag_result.get(leg)
+        if not isinstance(leg_result, dict):
+            raise ValueError(
+                f"Dual-freeze MACAG result is missing the '{leg}' leg requested by "
+                f"freeze_select={freeze_select!r}."
+            )
+        leg_pinned, leg_supernodes = _build_groups(
+            macag_result=leg_result, label_prefix=f"{label_prefix}:{leg}"
+        )
+        pinned.extend(leg_pinned)
+        supernodes.extend(leg_supernodes)
+    return _dedupe_preserve_order(pinned), supernodes
+
+
 def annotate_graph_with_macag(
     graph_json_path: str | Path,
     macag_result_json_path: str | Path,
@@ -87,13 +119,18 @@ def annotate_graph_with_macag(
     replace_existing_supernodes: bool = False,
     replace_existing_pins: bool = False,
     update_metadata_index: bool = True,
+    freeze_select: str = "both",
 ) -> Path:
     """Annotate graph JSON qParams with MACAG evidence groups."""
+    if freeze_select not in ("frozen", "unfrozen", "both"):
+        raise ValueError("freeze_select must be 'frozen', 'unfrozen', or 'both'.")
     graph_payload = _load_json(graph_json_path)
     macag_result = _load_json(macag_result_json_path)
     qparams = _ensure_qparams(graph_payload)
 
-    pinned, supernodes = _build_groups(macag_result=macag_result, label_prefix=label_prefix)
+    pinned, supernodes = _build_groups_for_result(
+        macag_result=macag_result, label_prefix=label_prefix, freeze_select=freeze_select
+    )
 
     current_pins = [str(node) for node in qparams.get("pinnedIds", [])]
     if replace_existing_pins:
@@ -158,6 +195,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not update graph-metadata.json in output directory.",
     )
+    parser.add_argument(
+        "--freeze-select",
+        choices=("frozen", "unfrozen", "both"),
+        default="both",
+        help=(
+            "For dual-freeze Game 1 results (freeze_mode='both'): which leg(s) to "
+            "annotate. Ignored for single-mode results."
+        ),
+    )
     return parser
 
 
@@ -172,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         replace_existing_supernodes=args.replace_existing_supernodes,
         replace_existing_pins=args.replace_existing_pins,
         update_metadata_index=not args.no_metadata_index_update,
+        freeze_select=args.freeze_select,
     )
     return 0
 

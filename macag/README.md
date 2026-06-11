@@ -79,7 +79,7 @@ Oracle selection (mutually exclusive entrypoints):
 
 - `--faithfulness-eps` — optional stop condition in `[0, 1]`; interpretation
   depends on `--stop-metric`.
-- `--stop-metric {normalized,raw_relative}` (default `normalized`):
+- `--stop-metric {normalized,raw_relative}`:
   - **`normalized`** — stop when `faithfulness_normalized >= 1 - eps`. Divides by
     `recoverable_range` (`all - empty`), the correct error-floor-aware target with
     **frozen attention**. Goes degenerate when that range collapses toward
@@ -89,6 +89,23 @@ Oracle selection (mutually exclusive entrypoints):
     increase, not the λ-penalized utility gain) is `< eps *` the first feature's
     faithfulness gain. Stable regardless of the error floor, so use it when
     `recoverable_range` is unreliable (**unfrozen attention**).
+  - Unset, it resolves from `--freeze-mode`: `normalized` for `frozen`,
+    `raw_relative` for `unfrozen`/`both`. `normalized` + `--freeze-mode both` is
+    rejected — the two legs would stop under non-comparable rules.
+- `--freeze-mode {frozen,unfrozen,both}` (default `frozen`):
+  - **`frozen`** — use the factory-built oracle as-is (`freeze_attention`
+    defaults to true in the factory; a kwargs-built unfrozen oracle is honored
+    with a warning).
+  - **`unfrozen`** — derive a freeze-flipped oracle from the factory-built one
+    (same model, fresh cache).
+  - **`both`** — the matched frozen/unfrozen protocol: one model load, two
+    oracles, both Game 1 legs run under identical budget/prefilter/eps/α/λ with
+    `raw_relative` forced, and the output gains `frozen` / `unfrozen` leg
+    payloads plus an `attention_mediation` block (verdict, range flip, evidence
+    overlap, upstream/early-layer recruitment). See
+    [Frozen vs unfrozen attention](#frozen-vs-unfrozen-attention).
+  - `unfrozen`/`both` require a ReplacementModel-backed oracle
+    (`--oracle-factory`), not `--toy-oracle-json`.
 
 ### Game 2 specific
 
@@ -263,7 +280,7 @@ Batch wrappers around the pipeline, plus their analyzers. All read/write under
 | `scripts/run_macag_sweep.sh` | Run the pipeline over a prompt manifest sharing one template (e.g. the two-hop city→state→capital circuit), so the circuit can be compared across facts. | `experiments/analyze_macag_sweep.py` |
 | `scripts/run_macag_clt_compare.sh` | Run the sweep once per cross-layer transcoder in `experiments/macag_clt_compare.json` (capacity/cross-model control). | `experiments/analyze_clt_comparison.py` |
 | `scripts/run_macag_acdc.sh` | Full pipeline over the ACDC benchmark prompts (`macag/data/acdc_benchmark_prompts.json`) for all runnable CLTs. | `experiments/analyze_macag_acdc.py` |
-| `scripts/run_macag_unfrozen.sh` | Re-run Game 1 unfrozen (higher budget) reusing the frozen graphs + kwargs. | `experiments/analyze_frozen_vs_unfrozen.py`, `experiments/analyze_robust_frozen_vs_unfrozen.py` |
+| `scripts/run_macag_unfrozen.sh` | **Superseded for Game 1 by `--freeze-mode both`** (which is parameter-matched and single-invocation). Re-runs Game 1 unfrozen (higher budget) reusing the frozen graphs + kwargs; keep for reproducing the stored sweeps. | `experiments/analyze_frozen_vs_unfrozen.py`, `experiments/analyze_robust_frozen_vs_unfrozen.py` |
 | `scripts/run_macag_unfrozen_game2.sh` | Unfrozen contrastive Game 2, matched to the frozen Game 2 params. | `experiments/analyze_game2_frozen_vs_unfrozen.py` |
 | `scripts/run_macag_acdc_unfrozen.sh` | Unfrozen Game 1 (`raw_relative` stop) on the ACDC prompts. | `experiments/analyze_acdc_frozen_vs_unfrozen.py` |
 
@@ -279,18 +296,43 @@ Manifests:
 ## Frozen vs unfrozen attention
 
 `freeze_attention` is the single most consequential scoring switch and it changes
-how you should read Game 1:
+how you should read Game 1. **The recommended protocol is the built-in dual run:**
+
+```bash
+PYTHONPATH=. python -m macag.cli.run_macag game1 \
+  --graph-json graphs/<slug>.json --target y \
+  --oracle-factory "macag.factories.replacement_model:create_replacement_model_oracle" \
+  --oracle-kwargs-file oracle_kwargs.json \
+  --budget 8 --prefilter-top-k 20 --faithfulness-eps 0.1 \
+  --freeze-mode both \
+  --output-json results/<slug>/game1_dual.json
+```
+
+This loads the model once, runs frozen and unfrozen legs under identical
+parameters (`raw_relative` stop forced on both), and emits an
+`attention_mediation` block per prompt: the `verdict`
+(`attention_mediated` / `feature_mediated` / `indeterminate`), the
+`recoverable_range` sign flip, evidence-set overlap, and upstream/early-layer
+recruitment counts. Aggregating `attention_mediation.range_flip` across prompts
+gives the range-flip rate directly — no pairing script needed.
+
+For single-mode runs:
 
 - **Frozen** (default): attention carries upstream structure "for free," so the
   minimal faithful set tends to be small and `recoverable_range` is positive. Use
   `--stop-metric normalized`.
-- **Unfrozen**: ablate-all plus free attention can collapse the `empty` baseline,
-  driving `recoverable_range` toward zero/negative and making the normalized
-  faithfulness degenerate. Use `--stop-metric raw_relative`, and read the **raw**
+- **Unfrozen** (`--freeze-mode unfrozen`): ablate-all plus free attention can
+  collapse the `empty` baseline, driving `recoverable_range` toward
+  zero/negative and making the normalized faithfulness degenerate. The stop
+  metric defaults to `raw_relative`; read the **raw**
   sufficiency/necessity/faithfulness (which have no denominator) rather than the
   normalized view. The ACDC/IOI prompts are attention-mediated and show negative
   `recoverable_range` when frozen, which is exactly why the unfrozen ACDC driver
   uses `raw_relative`.
+
+For dual-run outputs, `annotate_graph` takes `--freeze-select
+{frozen,unfrozen,both}` (default `both`) and labels the groups
+`MACAG:frozen:E_star` / `MACAG:unfrozen:E_star`.
 
 ## Operational notes
 

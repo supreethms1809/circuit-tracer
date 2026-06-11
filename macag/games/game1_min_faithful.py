@@ -290,6 +290,7 @@ def solve_game1(
             "lambda": lam,
             "budget": budget,
             "faithfulness_eps": faithfulness_eps,
+            "stop_metric": stop_metric,
             "prefilter_top_k": prefilter_top_k,
             "connected": connected,
             "min_gain": min_gain,
