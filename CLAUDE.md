@@ -87,7 +87,8 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 ├── docs/
 │   └── paper-evaluation.md              # How to run paper-eval and read outputs
 ├── macag/
-│   ├── cli/                            # run_macag, annotate_graph, suggest_supernodes
+│   ├── cli/                            # run_macag, run_baselines, annotate_graph, suggest_supernodes
+│   ├── baselines/                      # Phase-2 baseline selectors (influence, EAP, Shapley/Banzhaf-gold, ACDC, bruteforce)
 │   ├── factories/                      # ReplacementModel-backed MACAG scorer builders
 │   ├── games/                          # Game 1 / Game 2 solvers
 │   ├── graph.py                        # circuit-tracer graph wrapper
@@ -105,7 +106,8 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
     ├── test_paper_reporting.py          # Suite aggregation/reporting
     ├── test_paper_runner.py             # Paper runner dry-run + smoke
     ├── test_replacement_model_alignment.py  # BOS / intervention alignment regressions
-    └── test_macag_annotate_graph.py     # MACAG annotation schema compatibility
+    ├── test_macag_annotate_graph.py     # MACAG annotation schema compatibility
+    └── test_macag_baselines.py          # Baseline selectors + run_baselines harness (B2.0-B2.4, B3.2)
 ```
 
 ## Conference Runner
@@ -160,6 +162,8 @@ graph back for the existing `circuit_tracer` frontend.
 
 ### MACAG Code Map
 - `macag/cli/run_macag.py`: main CLI for Game 1 (`game1`) and Game 2 (`game2`)
+- `macag/cli/run_baselines.py`: head-to-head baseline harness (roadmap B2.0) — runs every selector on the same candidates + oracle, emits per-k evidence/scores, per-method oracle costs, precision@k/Jaccard vs Shapley-gold, faithfulness AUC, and Spearman linearity diagnostics
+- `macag/baselines/`: baseline selectors over the same coalitional v(S) — `influence.py` (B2.1 top-k influence), `shapley_select.py` (B2.2 MC Shapley + Banzhaf over the MACAG oracle; NOT a wrapper of `attribution/shapley.py`), `eap.py` (B2.3 graph-derived EAP node scores), `acdc_prune.py` (B2.4 ported top-down τ-pruning), `bruteforce.py` (B3.2 exact best size-k subset / greedy optimality gap)
 - `macag/cli/annotate_graph.py`: merges MACAG outputs back into a graph JSON for UI inspection
 - `macag/cli/suggest_supernodes.py`: auto-generates candidate supernodes from graph metrics
 - `macag/factories/replacement_model.py`: bridge from MACAG scoring into `circuit_tracer.ReplacementModel`
@@ -282,7 +286,8 @@ conda run -n ct pytest \
     tests/test_paper_reporting.py \
     tests/test_paper_runner.py \
     tests/test_replacement_model_alignment.py \
-    tests/test_macag_annotate_graph.py -q
+    tests/test_macag_annotate_graph.py \
+    tests/test_macag_baselines.py -q
 
 # Run core Spline-CLT tests
 conda run -n ct pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py \

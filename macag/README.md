@@ -182,6 +182,43 @@ Notes:
   or a `spline_clt` checkpoint directory (auto-detected via `metadata.safetensors`).
   When set, `transcoder_set` is optional.
 
+## Baseline head-to-head: `run_baselines`
+
+`python -m macag.cli.run_baselines` runs the Phase-2 baseline selectors against
+Game 1 on the **same** candidate node set and the **same** oracle, so only the
+selection rule differs (macag.md §9.3 / Appendix A). Selectors live in
+`macag/baselines/`:
+
+| Method | Module | What it does | Selection cost |
+|--------|--------|--------------|----------------|
+| `influence` | `baselines/influence.py` | top-k by the graph's `influence` metadata | 0 oracle calls |
+| `eap` | `baselines/eap.py` | signed path-effect on the target (−foil) logit, propagated through the weighted links | 0 oracle calls |
+| `shapley` / `banzhaf` | `baselines/shapley_select.py` | MC Shapley (antithetic permutations) / MC Banzhaf over the MACAG coalitional v(S) — the gold credit reference | O(perms × \|C\|) |
+| `game1` | `games/game1_min_faithful.py` | MACAG's greedy itself (prefixes of `selected_order`) | O(\|E*\| × \|C\|) |
+| `acdc` | `baselines/acdc_prune.py` | ported ACDC: top-down prune when removal moves v by < τ; τ-sweep | O(\|C\|) per τ |
+
+```bash
+PYTHONPATH=. python -m macag.cli.run_baselines \
+  --graph-json /absolute/path/to/circuit.json \
+  --target y --budget 8 \
+  --oracle-factory macag.factories.replacement_model:create_replacement_model_oracle \
+  --oracle-kwargs-file /absolute/path/to/oracle_kwargs.json \
+  --methods influence,eap,shapley,game1,acdc \
+  --shapley-permutations 64 --shapley-seed 0 \
+  --bruteforce-k 4 \
+  --output-json /tmp/baselines.json
+```
+
+The output JSON contains, per method, the full ranking, per-k evidence sets
+scored with the games' `FaithfulnessMetrics`, and per-method selection oracle
+costs (fresh cache per method, so counts are standalone-honest); plus a
+`comparison` block with faithfulness@matched-k, faithfulness-vs-size AUC,
+precision@k / Jaccard vs the Shapley-gold ranking, pairwise Jaccard at the
+budget, and Spearman diagnostics (including EAP-score vs Game-1 marginal gain,
+the §A.5 linearity probe). `--bruteforce-k` additionally reports the exact
+best size-k subset and each method's optimality gap (roadmap B3.2; guard:
+prefilter the pool, the search refuses > `--bruteforce-max-evals` subsets).
+
 ## Visualize in the `circuit_tracer` frontend
 
 ```bash
