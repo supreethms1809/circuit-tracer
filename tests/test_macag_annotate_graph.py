@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
-from macag.cli.annotate_graph import _build_groups, _build_groups_for_result
+from macag.cli.annotate_graph import (
+    _build_groups,
+    _build_groups_for_result,
+    _default_macag_output_path,
+    _macag_title_prefix,
+    annotate_graph_with_macag,
+)
 
 
 def test_build_groups_accepts_legacy_game1_list_evidence() -> None:
@@ -63,3 +72,70 @@ def test_annotate_single_mode_result_ignores_freeze_select() -> None:
     )
     assert pinned == ["1_2_3"]
     assert supernodes == [["MACAG:E_star", "1_2_3"]]
+
+
+def test_macag_title_prefix_from_game() -> None:
+    assert _macag_title_prefix({"game": "game1"}, "MACAG") == "MACAG G1"
+    assert _macag_title_prefix({"game": "game2"}, "MACAG") == "MACAG G2"
+    assert _macag_title_prefix({"game": "game2"}, "MACAG:g2") == "MACAG G2"
+
+
+def test_macag_title_prefix_merges_multi_game() -> None:
+    merged = _macag_title_prefix(
+        {"game": "game1"},
+        "MACAG:g1",
+        existing_prefix="MACAG G2",
+    )
+    assert merged == "MACAG G1+G2"
+
+
+def test_default_macag_output_path_prepends_slug() -> None:
+    path = _default_macag_output_path(Path("/tmp/graphs/ioi_01.json"))
+    assert path.name == "macag-ioi_01.json"
+
+
+def test_annotate_graph_sets_title_prefix_and_slug(tmp_path) -> None:
+    graph_path = tmp_path / "ioi_01.json"
+    graph_path.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "slug": "ioi_01",
+                    "scan": "demo-scan",
+                    "transcoder_list": [],
+                    "prompt_tokens": ["<bos>", "hi"],
+                    "prompt": "<bos>hi",
+                    "node_threshold": 0.8,
+                    "schema_version": 1,
+                },
+                "qParams": {},
+                "nodes": [],
+                "links": [],
+            }
+        )
+    )
+    macag_path = tmp_path / "macag_game1.json"
+    macag_path.write_text(
+        json.dumps(
+            {
+                "game": "game1",
+                "evidence": {"E_star": ["1_2_3"]},
+            }
+        )
+    )
+
+    output = annotate_graph_with_macag(
+        graph_json_path=graph_path,
+        macag_result_json_path=macag_path,
+        output_path=None,
+        label_prefix="MACAG:g1",
+    )
+
+    assert output.name == "macag-ioi_01.json"
+    payload = json.loads(output.read_text())
+    assert payload["metadata"]["slug"] == "macag-ioi_01"
+    assert payload["metadata"]["title_prefix"] == "MACAG G1"
+
+    meta_index = json.loads((tmp_path / "graph-metadata.json").read_text())
+    annotated = next(entry for entry in meta_index["graphs"] if entry["slug"] == "macag-ioi_01")
+    assert annotated["title_prefix"] == "MACAG G1"

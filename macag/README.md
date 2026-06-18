@@ -36,9 +36,9 @@ Outputs land under `--outdir`:
 - `oracle_kwargs.json` — generated kwargs for the ReplacementModel oracle
 - `macag_game1.json`, `macag_game2.json` — game results
 - `macag_baselines.json` — head-to-head baseline comparison (influence, EAP, Shapley, game1, ACDC)
-- `graphs/<slug>-macag.json` — annotated graph, registered in
-  `graphs/graph-metadata.json` under the slug `<slug>-macag` so it shows up in the
-  server dropdown.
+- `graphs/macag-<slug>.json` — annotated graph, registered in
+  `graphs/graph-metadata.json` under the slug `macag-<slug>` so it shows up in the
+  dropdown with a leading **MACAG** label (via `metadata.title_prefix`).
 
 Useful flags (run `-h` for the full list): `--device cuda|cpu` (MPS is
 unsupported — safetensors lazy decoder), `--skip-attribute` to reuse an existing
@@ -254,7 +254,7 @@ The annotator adds `qParams.pinnedIds` and supernodes labeled `MACAG:shared`,
 `MACAG:unique_y`, `MACAG:unique_foil` (or `MACAG:E_star` for Game 1), and updates
 `graph-metadata.json` so the new graph appears in the server dropdown. Then open
 the annotated slug in the browser UI. (The end-to-end pipeline does this for you
-and registers the graph under `<slug>-macag`.)
+and registers the graph under `macag-<slug>` with a `MACAG …` title prefix in the UI dropdown.)
 
 ## Auto-suggest supernodes
 

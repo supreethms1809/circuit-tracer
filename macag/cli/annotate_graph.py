@@ -79,6 +79,71 @@ def _build_groups(macag_result: dict[str, Any], label_prefix: str) -> tuple[list
     return pinned, supernodes
 
 
+def _macag_title_prefix(
+    macag_result: dict[str, Any],
+    label_prefix: str,
+    existing_prefix: str | None = None,
+) -> str:
+    """Build a dropdown-visible prefix for annotated graphs in the circuit-tracer UI."""
+    if label_prefix.startswith("MACAG:"):
+        leg = label_prefix.split(":", 1)[1].strip()
+        if leg.lower().startswith("g") and leg[1:].isdigit():
+            new_tag = f"MACAG {leg.upper()}"
+        else:
+            new_tag = f"MACAG {leg.replace('_', ' ')}"
+    else:
+        game = macag_result.get("game")
+        if game == "game2":
+            new_tag = "MACAG G2"
+        elif game == "game1":
+            new_tag = "MACAG G1"
+        else:
+            new_tag = "MACAG"
+
+    if not existing_prefix or not str(existing_prefix).startswith("MACAG"):
+        return new_tag
+    existing = str(existing_prefix)
+    if new_tag in existing:
+        return existing
+
+    game_tags: set[str] = set()
+    for source in (existing, new_tag):
+        for token in ("G1", "G2"):
+            if token in source:
+                game_tags.add(token)
+    if game_tags:
+        return "MACAG " + "+".join(sorted(game_tags, key=lambda tag: int(tag[1:])))
+    return "MACAG"
+
+
+def _default_macag_output_path(graph_json_path: Path) -> Path:
+    """Prefer ``macag-<slug>.json`` so the variant is visible in filenames and URLs."""
+    stem = graph_json_path.stem
+    if stem.startswith("macag-"):
+        return graph_json_path
+    return graph_json_path.with_name(f"macag-{stem}{graph_json_path.suffix}")
+
+
+def _sync_annotated_metadata(
+    graph_payload: dict[str, Any],
+    macag_result: dict[str, Any],
+    *,
+    output_path: Path,
+    graph_json_path: Path,
+    label_prefix: str,
+) -> None:
+    metadata = graph_payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return
+    if output_path != graph_json_path:
+        metadata["slug"] = output_path.stem
+    metadata["title_prefix"] = _macag_title_prefix(
+        macag_result=macag_result,
+        label_prefix=label_prefix,
+        existing_prefix=metadata.get("title_prefix"),
+    )
+
+
 def _build_groups_for_result(
     macag_result: dict[str, Any],
     label_prefix: str,
@@ -148,7 +213,20 @@ def annotate_graph_with_macag(
         merged_supernodes = list(current_supernodes) + supernodes
     qparams["supernodes"] = merged_supernodes
 
-    output = Path(output_path) if output_path else Path(graph_json_path)
+    graph_json_path = Path(graph_json_path)
+    if output_path is None and graph_json_path.stem.startswith("macag-"):
+        output = graph_json_path
+    elif output_path is None:
+        output = _default_macag_output_path(graph_json_path)
+    else:
+        output = Path(output_path)
+    _sync_annotated_metadata(
+        graph_payload=graph_payload,
+        macag_result=macag_result,
+        output_path=output,
+        graph_json_path=graph_json_path,
+        label_prefix=label_prefix,
+    )
     output.write_text(json.dumps(graph_payload, indent=2))
 
     if update_metadata_index and isinstance(graph_payload.get("metadata"), dict):

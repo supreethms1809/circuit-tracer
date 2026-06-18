@@ -42,6 +42,8 @@ def prefilter_candidates(
     lam: float,
     top_k: int,
     connected: bool = False,
+    progress: bool = True,
+    log_every: int = 50,
 ) -> list[NodeId]:
     """Rank candidates by singleton gain and keep the top-k.
 
@@ -54,13 +56,23 @@ def prefilter_candidates(
         return []
 
     ranking: list[tuple[float, NodeId]] = []
-    for node in candidates:
+    iterator: Sequence[NodeId] | Any = candidates
+    if progress and tqdm is not None:
+        iterator = tqdm(
+            candidates,
+            desc="Game1 prefilter",
+            leave=True,
+        )
+
+    for idx, node in enumerate(iterator, start=1):
         if not graph.has_node(node):
             continue
         singleton = {node}
         metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=singleton, alpha=alpha)
         utility = game1_utility(metrics.faithfulness_delta, size=1, lam=lam)
         ranking.append((utility, node))
+        if progress and tqdm is None and log_every > 0 and idx % log_every == 0:
+            LOGGER.info("Game1 prefilter evaluated %d/%d candidates", idx, len(candidates))
 
     ranking.sort(key=lambda item: (-item[0], _sort_key(item[1])))
     ranked_nodes = [node for _, node in ranking]
@@ -157,7 +169,16 @@ def solve_game1(
             )
         else:
             candidate_pool = prefilter_candidates(
-                graph, oracle, target, candidate_pool, alpha, lam, prefilter_top_k, connected
+                graph,
+                oracle,
+                target,
+                candidate_pool,
+                alpha,
+                lam,
+                prefilter_top_k,
+                connected,
+                progress=progress,
+                log_every=log_every,
             )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
