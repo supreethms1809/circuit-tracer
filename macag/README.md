@@ -15,9 +15,9 @@ graph JSON ──► run_macag (game1 / game2) ──► result JSON ──► a
 ## Quickstart: end-to-end pipeline
 
 `scripts/run_macag_pipeline.sh` runs the whole chain for a single prompt:
-attribute (build a `circuit_tracer` graph) → `game1` + `game2` → `annotate_graph`
-→ optionally serve the UI. It assumes the conda env is already active and uses
-`python` directly.
+attribute (build a `circuit_tracer` graph) → `game1` + `game2` + baseline head-to-head
+→ `annotate_graph` → optionally serve the UI. It assumes the conda env is already
+active and uses `python` directly.
 
 ```bash
 scripts/run_macag_pipeline.sh \
@@ -35,14 +35,16 @@ Outputs land under `--outdir`:
 - `graphs/<slug>.json` — attribution graph
 - `oracle_kwargs.json` — generated kwargs for the ReplacementModel oracle
 - `macag_game1.json`, `macag_game2.json` — game results
+- `macag_baselines.json` — head-to-head baseline comparison (influence, EAP, Shapley, game1, ACDC)
 - `graphs/<slug>-macag.json` — annotated graph, registered in
   `graphs/graph-metadata.json` under the slug `<slug>-macag` so it shows up in the
   server dropdown.
 
 Useful flags (run `-h` for the full list): `--device cuda|cpu` (MPS is
 unsupported — safetensors lazy decoder), `--skip-attribute` to reuse an existing
-graph, `--serve --port 8041` to launch the visualization server at the end, and
-solver knobs `--prefilter-top-k --budget --beta --abr-iters --alpha --lam --eps`.
+graph, `--skip-baselines` to skip the head-to-head harness, `--serve --port 8041`
+to launch the visualization server at the end, and solver knobs
+`--prefilter-top-k --budget --beta --abr-iters --alpha --lam --eps`.
 
 ## `run_macag` CLI
 
@@ -272,23 +274,31 @@ Use the produced candidates file directly with MACAG via `--candidates-file`.
 
 ## Experiment drivers
 
-Batch wrappers around the pipeline, plus their analyzers. All read/write under
-`results/`.
+Two scripts cover MACAG batch evaluation. All read/write under `results/`.
 
 | Driver | What it does | Analyzer |
 | --- | --- | --- |
-| `scripts/run_macag_sweep.sh` | Run the pipeline over a prompt manifest sharing one template (e.g. the two-hop city→state→capital circuit), so the circuit can be compared across facts. | `experiments/analyze_macag_sweep.py` |
-| `scripts/run_macag_clt_compare.sh` | Run the sweep once per cross-layer transcoder in `experiments/macag_clt_compare.json` (capacity/cross-model control). | `experiments/analyze_clt_comparison.py` |
-| `scripts/run_macag_acdc.sh` | Full pipeline over the ACDC benchmark prompts (`macag/data/acdc_benchmark_prompts.json`) for all runnable CLTs. | `experiments/analyze_macag_acdc.py` |
-| `scripts/run_macag_unfrozen.sh` | **Superseded for Game 1 by `--freeze-mode both`** (which is parameter-matched and single-invocation). Re-runs Game 1 unfrozen (higher budget) reusing the frozen graphs + kwargs; keep for reproducing the stored sweeps. | `experiments/analyze_frozen_vs_unfrozen.py`, `experiments/analyze_robust_frozen_vs_unfrozen.py` |
-| `scripts/run_macag_unfrozen_game2.sh` | Unfrozen contrastive Game 2, matched to the frozen Game 2 params. | `experiments/analyze_game2_frozen_vs_unfrozen.py` |
-| `scripts/run_macag_acdc_unfrozen.sh` | Unfrozen Game 1 (`raw_relative` stop) on the ACDC prompts. | `experiments/analyze_acdc_frozen_vs_unfrozen.py` |
+| `scripts/run_macag_pipeline.sh` | Single-prompt end-to-end pipeline: attribute → game1 → game2 → baselines → annotate. Used directly for one-off runs; called internally by the ACDC driver. | — |
+| `scripts/run_macag_acdc.sh` | **Main entry point.** Full pipeline over the ACDC benchmark prompts (`macag/data/acdc_benchmark_prompts.json`) for all runnable CLTs, both frozen and unfrozen attention modes, both Game 2 solvers (ABR + FP), plus baseline head-to-head. Auto-runs all analyzers at the end. | `experiments/analyze_macag_acdc.py`, `analyze_game2_abr_vs_fp.py`, `analyze_macag_baselines.py`, `analyze_acdc_frozen_vs_unfrozen.py` |
 
-Manifests:
-- `experiments/macag_generalization_prompts.json` — the shared template + per-fact
-  `{slug, city, target, foil}` rows.
-- `experiments/macag_clt_compare.json` — the CLTs to compare (`run: false` reuses
-  an existing sweep dir in place).
+```bash
+# Full benchmark (all tasks, all CLTs, frozen + unfrozen, games + baselines + CSVs)
+scripts/run_macag_acdc.sh
+
+# Smoke test (first prompt per task)
+LIMIT=1 scripts/run_macag_acdc.sh
+
+# Single task
+TASKS="indirect_object_identification" scripts/run_macag_acdc.sh
+```
+
+Output layout: `results/macag_acdc/<clt_tag>/<slug>/` with
+`macag_game1.json` (dual-freeze by default: `frozen`/`unfrozen` legs +
+`attention_mediation`), `macag_game2_{abr,fp}.json`, `macag_baselines.json`, and
+the attribution graph. Aggregate CSVs land in the same root
+(`summary.csv`, `abr_vs_fp.csv`, `baselines.csv`, `frozen_vs_unfrozen.csv`).
+
+Manifest:
 - `macag/data/acdc_benchmark_prompts.json` — ACDC tasks
   (`indirect_object_identification`, `greater_than`, `docstring_completion`) with
   clean/corrupted prompts and correct/incorrect tokens.

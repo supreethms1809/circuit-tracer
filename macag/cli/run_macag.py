@@ -157,7 +157,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Optional top-k singleton prefilter before greedy search.",
     )
-    parser.add_argument("--connected", action="store_true", help="Require evidence connectedness.")
+    parser.add_argument(
+        "--connected",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Require evidence connectedness (default: on; disable with --no-connected).",
+    )
     parser.add_argument("--min-gain", type=float, default=0.0, help="Minimum positive gain to add nodes.")
     parser.add_argument("--candidates-file", default=None, help="Optional candidate node list (.json or text).")
     parser.add_argument("--output-json", required=True, help="Path to write result JSON.")
