@@ -19,11 +19,16 @@
 #   --freeze-select frozen|unfrozen|both annotate dual Game 1 legs (default both)
 #   --max-feature-nodes --batch-size --node-threshold --edge-threshold
 #   --freeze-attention true|false   scoring-time attention freeze (default true)
+#   --score-kind KIND  oracle score: logit_gap (default) | answer_span | logit | prob | negative_loss
 #   --graph PATH       use this graph instead of <outdir>/graphs/<slug>.json
 #   --skip-attribute   reuse an existing graph at <outdir>/graphs/<slug>.json
+#   --skip-game1       reuse <outdir>/macag_game1.json
+#   --skip-game2       reuse <outdir>/macag_game2_<solver>.json for each solver in --solvers
 #   --skip-baselines   skip the head-to-head baseline harness (influence/eap/shapley/game1/acdc)
+#   --skip-kl-rescore  skip post-hoc KL faithfulness on saved evidence sets
 #   --baseline-methods influence,eap,shapley,game1,acdc
 #   --shapley-permutations 64
+#   --shapley-seed 0     MC Shapley/Banzhaf sampling seed (or SHAPLEY_SEED env)
 #   --serve            launch the visualization server at the end
 #   --port             server port (default 8041)
 set -euo pipefail
@@ -57,6 +62,15 @@ ABR_ITERS=4
 ALPHA=0.5
 LAM=0.02
 EPS=0.1
+# Oracle score kind: logit_gap (default) | answer_span (full-span log-prob gap;
+# use when target/foil share a first token, e.g. greater_than) | logit | prob |
+# negative_loss. Env-overridable: SCORE_KIND=answer_span scripts/run_macag_pipeline.sh ...
+SCORE_KIND="${SCORE_KIND:-logit_gap}"
+# Ablation values: zero (default) | mean (per-feature mean over clean-prompt
+# positions) | corrupted (patch-style value from CORRUPTED_PROMPT at the same
+# position — the ACDC convention; requires CORRUPTED_PROMPT).
+ABLATION_MODE="${ABLATION_MODE:-zero}"
+CORRUPTED_PROMPT="${CORRUPTED_PROMPT:-}"
 # Game 1 stop metric for --faithfulness-eps when freeze_mode is frozen/unfrozen.
 # Ignored when --freeze-mode both (raw_relative is forced on both legs).
 STOP_METRIC=raw_relative
@@ -72,9 +86,18 @@ FP_TOL=1e-3
 # Set to a path (.json list or text) to restrict, e.g. for CPU tractability.
 CANDIDATES_FILE=""
 SKIP_ATTRIBUTE=0
+SKIP_GAME1=0
+SKIP_GAME2=0
 SKIP_BASELINES=0
 BASELINE_METHODS="influence,eap,shapley,game1,acdc"
 SHAPLEY_PERMUTATIONS=64
+# Seed for the MC Shapley/Banzhaf gold baseline (the only stochastic stage of
+# the pipeline). Env-overridable so sweep drivers can run seeded replicates:
+#   SHAPLEY_SEED=1 scripts/run_macag_acdc_parallel.sh ...
+SHAPLEY_SEED="${SHAPLEY_SEED:-0}"
+# Post-hoc KL faithfulness on saved evidence sets (set 0 to skip extra GPU work).
+KL_RESCORE="${KL_RESCORE:-1}"
+SKIP_KL_RESCORE=0
 # freeze attention+embeddings+error nodes during scoring (scoring-time only;
 # the attribution graph is identical either way). true = frozen baseline.
 FREEZE_ATTENTION=true
@@ -110,15 +133,22 @@ while [[ $# -gt 0 ]]; do
     --lam) LAM="$2"; shift 2;;
     --eps) EPS="$2"; shift 2;;
     --stop-metric) STOP_METRIC="$2"; shift 2;;
+    --score-kind) SCORE_KIND="$2"; shift 2;;
+    --ablation-mode) ABLATION_MODE="$2"; shift 2;;
+    --corrupted-prompt) CORRUPTED_PROMPT="$2"; shift 2;;
     --freeze-mode) FREEZE_MODE="$2"; shift 2;;
     --freeze-select) FREEZE_SELECT="$2"; shift 2;;
     --candidates-file) CANDIDATES_FILE="$2"; shift 2;;
     --freeze-attention) FREEZE_ATTENTION="$2"; shift 2;;
     --graph) GRAPH_OVERRIDE="$2"; shift 2;;
     --skip-attribute) SKIP_ATTRIBUTE=1; shift;;
+    --skip-game1) SKIP_GAME1=1; shift;;
+    --skip-game2) SKIP_GAME2=1; shift;;
     --skip-baselines) SKIP_BASELINES=1; shift;;
+    --skip-kl-rescore) SKIP_KL_RESCORE=1; KL_RESCORE=0; shift;;
     --baseline-methods) BASELINE_METHODS="$2"; shift 2;;
     --shapley-permutations) SHAPLEY_PERMUTATIONS="$2"; shift 2;;
+    --shapley-seed) SHAPLEY_SEED="$2"; shift 2;;
     --serve) SERVE=1; shift;;
     --port) PORT="$2"; shift 2;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
@@ -166,7 +196,8 @@ fi
 echo ">>> [2/6] Writing oracle kwargs -> $KWARGS (freeze_attention=$FREEZE_ATTENTION)"
 PROMPT="$PROMPT" TARGET="$TARGET" FOIL="$FOIL" MODEL="$MODEL" \
 TRANSCODER_SET="$TRANSCODER_SET" GRAPH="$GRAPH" DEVICE="$DEVICE" DTYPE="$DTYPE" \
-FREEZE_ATTENTION="$FREEZE_ATTENTION" \
+FREEZE_ATTENTION="$FREEZE_ATTENTION" SCORE_KIND="$SCORE_KIND" \
+ABLATION_MODE="$ABLATION_MODE" CORRUPTED_PROMPT="$CORRUPTED_PROMPT" \
 KWARGS="$KWARGS" python - <<'PY'
 import json, os
 freeze = os.environ.get("FREEZE_ATTENTION", "true").strip().lower() in ("1", "true", "yes", "y")
@@ -176,13 +207,19 @@ kw = {
     "prompt": os.environ["PROMPT"],
     "graph_json": os.environ["GRAPH"],
     "backend": "transformerlens",
-    "score_kind": "logit_gap",
+    "score_kind": os.environ.get("SCORE_KIND", "logit_gap"),
     "strict_single_token": False,
     "freeze_attention": freeze,
     "target_token_by_label": {"y": os.environ["TARGET"], "y_foil": os.environ["FOIL"]},
     "foil_by_target": {"y": "y_foil", "y_foil": "y"},
     "model_kwargs": {"dtype": os.environ["DTYPE"], "device": os.environ["DEVICE"]},
 }
+ablation_mode = os.environ.get("ABLATION_MODE", "zero")
+if ablation_mode != "zero":
+    kw["ablation_mode"] = ablation_mode
+    corrupted = os.environ.get("CORRUPTED_PROMPT", "")
+    if corrupted:
+        kw["corrupted_prompt"] = corrupted
 with open(os.environ["KWARGS"], "w") as f:
     json.dump(kw, f, indent=2)
 print("wrote", os.environ["KWARGS"])
@@ -195,34 +232,48 @@ G1_STOP_ARGS=()
 if [[ "$FREEZE_MODE" != "both" ]]; then
   G1_STOP_ARGS=(--stop-metric "$STOP_METRIC")
 fi
-echo ">>> [3/6] Game 1 (minimal faithful set) | freeze_mode=$FREEZE_MODE ${G1_STOP_ARGS[*]} ..."
-python -m macag.cli.run_macag game1 \
-  --graph-json "$GRAPH" --target y --input-id "$SLUG" \
-  --oracle-factory "$ORACLE_FACTORY" \
-  --oracle-kwargs-file "$KWARGS" \
-  "${CAND_ARG[@]}" \
-  --prefilter-top-k "$PREFILTER_TOP_K" --budget "$BUDGET" \
-  --alpha "$ALPHA" --lam "$LAM" \
-  --faithfulness-eps "$EPS" \
-  --freeze-mode "$FREEZE_MODE" \
-  "${G1_STOP_ARGS[@]}" \
-  --output-json "$G1_OUT"
+if [[ "$SKIP_GAME1" -eq 0 ]]; then
+  echo ">>> [3/6] Game 1 (minimal faithful set) | freeze_mode=$FREEZE_MODE ${G1_STOP_ARGS[*]} ..."
+  python -m macag.cli.run_macag game1 \
+    --graph-json "$GRAPH" --target y --input-id "$SLUG" \
+    --oracle-factory "$ORACLE_FACTORY" \
+    --oracle-kwargs-file "$KWARGS" \
+    "${CAND_ARG[@]}" \
+    --prefilter-top-k "$PREFILTER_TOP_K" --budget "$BUDGET" \
+    --alpha "$ALPHA" --lam "$LAM" \
+    --faithfulness-eps "$EPS" \
+    --freeze-mode "$FREEZE_MODE" \
+    "${G1_STOP_ARGS[@]}" \
+    --output-json "$G1_OUT"
+else
+  echo ">>> [3/6] Skipping Game 1; reusing $G1_OUT"
+  [[ -f "$G1_OUT" ]] || { echo "ERROR: $G1_OUT not found"; exit 1; }
+fi
 
 # --- 4) Game 2: contrastive allocation (one run per solver) ----------------
 echo ">>> [4/6] Game 2 (contrastive target vs foil) | solvers: $SOLVERS"
 for solver in $SOLVERS; do
   g2_out="$OUTDIR/macag_game2_${solver}.json"
+  if [[ "$SKIP_GAME2" -eq 1 && -f "$g2_out" ]]; then
+    echo ">>>      solver=$solver -> $g2_out (reuse)"
+    continue
+  fi
   echo ">>>      solver=$solver -> $g2_out"
-  python -m macag.cli.run_macag game2 \
-    --graph-json "$GRAPH" --target y --foil y_foil --input-id "$SLUG" \
-    --oracle-factory "$ORACLE_FACTORY" \
-    --oracle-kwargs-file "$KWARGS" \
-    "${CAND_ARG[@]}" \
-    --prefilter-top-k "$PREFILTER_TOP_K" --budget "$BUDGET" \
-    --beta "$BETA" --abr-iters "$ABR_ITERS" \
-    --solver "$solver" --fp-tol "$FP_TOL" \
-    --alpha "$ALPHA" --lam "$LAM" \
+  g2_cmd=(
+    python -m macag.cli.run_macag game2
+    --graph-json "$GRAPH" --target y --foil y_foil --input-id "$SLUG"
+    --oracle-factory "$ORACLE_FACTORY"
+    --oracle-kwargs-file "$KWARGS"
+  )
+  ((${#CAND_ARG[@]})) && g2_cmd+=("${CAND_ARG[@]}")
+  g2_cmd+=(
+    --prefilter-top-k "$PREFILTER_TOP_K" --budget "$BUDGET"
+    --beta "$BETA" --abr-iters "$ABR_ITERS"
+    --solver "$solver" --fp-tol "$FP_TOL"
+    --alpha "$ALPHA" --lam "$LAM"
     --output-json "$g2_out"
+  )
+  "${g2_cmd[@]}"
 done
 # Backward-compat: keep macag_game2.json as the canonical (ABR if present, else
 # the first solver run) for the annotator and existing analyzers.
@@ -235,7 +286,12 @@ fi
 
 # --- 5) baseline head-to-head (same graph + oracle, matched budget) --------
 if [[ "$SKIP_BASELINES" -eq 0 ]]; then
-  echo ">>> [5/6] Baselines (methods=$BASELINE_METHODS, budget=$BUDGET) -> $BASELINES_OUT"
+  echo ">>> [5/6] Baselines (methods=$BASELINE_METHODS, budget=$BUDGET, shapley_seed=$SHAPLEY_SEED) -> $BASELINES_OUT"
+  # ACDC_TARGET_K: opt-in budget-matched ACDC (-1 = match --budget). Adds a
+  # tau bisection on the warm cache (up to ~24 extra prune sweeps), so it is
+  # off by default; enable for the paper head-to-head runs.
+  acdc_target_args=()
+  [[ -n "${ACDC_TARGET_K:-}" ]] && acdc_target_args=(--acdc-target-k "$ACDC_TARGET_K")
   python -m macag.cli.run_baselines \
     --graph-json "$GRAPH" --target y --input-id "$SLUG" \
     --oracle-factory "$ORACLE_FACTORY" \
@@ -245,6 +301,8 @@ if [[ "$SKIP_BASELINES" -eq 0 ]]; then
     --prefilter-top-k "$PREFILTER_TOP_K" \
     --methods "$BASELINE_METHODS" \
     --shapley-permutations "$SHAPLEY_PERMUTATIONS" \
+    --shapley-seed "$SHAPLEY_SEED" \
+    "${acdc_target_args[@]}" \
     --output-json "$BASELINES_OUT"
 else
   echo ">>> [5/6] Skipping baseline harness"
@@ -261,6 +319,12 @@ python -m macag.cli.annotate_graph \
   --macag-result-json "$G1_OUT" --label-prefix "MACAG:g1" \
   --freeze-select "$FREEZE_SELECT" \
   --output-json "$ANNOTATED"
+
+if [[ "$KL_RESCORE" == "1" && "$SKIP_KL_RESCORE" -eq 0 ]]; then
+  echo ">>> KL rescore (independent faithfulness metric) -> $OUTDIR/macag_kl_faithfulness.json"
+  python -m macag.cli.rescore_kl --run-dir "$OUTDIR" --progress || \
+    echo ">>> (KL rescore failed; logit-gap results are unchanged)"
+fi
 
 echo ">>> Done."
 echo "    graph     : $GRAPH"
