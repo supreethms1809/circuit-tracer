@@ -8,8 +8,8 @@ Updated 2026-07-04. Results are collected on **two benchmarks only**:
 Everything else in `macag/data/` is an internal diagnostic set, **not** a paper
 result: `acdc_benchmark_prompts.json` (own test set), `nonlinear_benchmark_prompts.json`
 (hand-written Spline-CLT stress prompts), and the two-hop generalization
-manifest. Their drivers (`scripts/run_macag_acdc*.sh`, `run_macag_pipeline.sh`)
-remain available for ad-hoc debugging.
+manifest. Their dedicated sweep drivers were removed in the scripts cleanup;
+for ad-hoc diagnostics run single prompts through `scripts/run_macag_pipeline.sh`.
 
 All campaign configuration lives **inside** the two benchmark scripts
 (`scripts/run_mib_benchmark.sh`, `scripts/run_interpbench_benchmark.sh`):
