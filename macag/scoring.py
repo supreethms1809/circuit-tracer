@@ -14,7 +14,9 @@ from macag.graph import NodeId
 LOGGER = logging.getLogger(__name__)
 
 TargetId = Any
-ScoreKind = Literal["logit", "prob", "logit_gap", "negative_loss"]
+ScoreKind = Literal[
+    "logit", "prob", "logit_gap", "negative_loss", "kl_divergence", "answer_span"
+]
 Intervention = tuple[int, Any, int, Any]
 
 
@@ -187,6 +189,52 @@ def _last_token_logits(logits: Any) -> Any:
     raise ValueError(f"Unsupported logits shape: {tuple(logits.shape)}")
 
 
+def compute_kl_score(ref_logits: Any, intervened_logits: Any) -> float:
+    """Return ``-KL(P_ref || P_int)`` at the last token (higher = more faithful).
+
+    ``P_ref`` is the reference (no-intervention) distribution; ``P_int`` is the
+    distribution after ablation. Matches the MIB/ACDC convention of comparing the
+    intervened circuit to the full model at the scored position.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    ref = _last_token_logits(ref_logits)
+    intr = _last_token_logits(intervened_logits)
+    ref_probs = torch.softmax(ref, dim=-1)
+    int_log_probs = torch.log_softmax(intr, dim=-1)
+    kl = F.kl_div(
+        int_log_probs.unsqueeze(0),
+        ref_probs.unsqueeze(0),
+        reduction="batchmean",
+    )
+    return float(-kl.item())
+
+
+def compute_span_logprob(logits: Any, span_ids: Any, prompt_len: int) -> float:
+    """Summed teacher-forced log-prob of ``span_ids`` continuing a prompt.
+
+    ``logits`` must cover the full ``prompt + span`` sequence; span token ``i``
+    is predicted at sequence position ``prompt_len - 1 + i``. For a length-1
+    span this is the last-prompt-position log-prob of the answer token, so the
+    ``answer_span`` gap reduces exactly to ``logit_gap`` (the shared log-softmax
+    normalizer cancels between target and foil scored at the same position).
+    """
+    import torch
+
+    if logits.ndim == 3:
+        seq_logits = logits[0]
+    elif logits.ndim == 2:
+        seq_logits = logits
+    else:
+        raise ValueError(f"Unsupported logits shape: {tuple(logits.shape)}")
+    total = 0.0
+    for i, token_id in enumerate(span_ids):
+        log_probs = torch.log_softmax(seq_logits[prompt_len - 1 + i], dim=-1)
+        total += float(log_probs[int(token_id)].item())
+    return total
+
+
 def compute_scalar_score(
     logits: Any,
     target_index: int,
@@ -208,6 +256,16 @@ def compute_scalar_score(
         if foil_index is None:
             raise ValueError("score_kind='logit_gap' requires a foil index.")
         return float((token_logits[target_index] - token_logits[foil_index]).item())
+    if score_kind == "kl_divergence":
+        raise ValueError(
+            "score_kind='kl_divergence' requires full logits via compute_kl_score(); "
+            "it is not a single-token scalar."
+        )
+    if score_kind == "answer_span":
+        raise ValueError(
+            "score_kind='answer_span' requires per-continuation forwards via "
+            "compute_span_logprob(); it is not a single-token scalar."
+        )
     raise ValueError(f"Unknown score kind: {score_kind}")
 
 
@@ -226,7 +284,15 @@ class ReplacementModelInterventionScorer:
     constrained_layers: range | None = None
     freeze_attention: bool = True
     node_universe: set[NodeId] | None = None
+    # answer_span only: full token-id list per target label (multi-token answers).
+    target_span_ids_by_label: Mapping[TargetId, list[int]] | None = None
     _all_nodes: set[NodeId] = field(init=False, repr=False)
+    _ref_logits: Any = field(init=False, default=None, repr=False)
+    _prompt_token_ids: Any = field(init=False, default=None, repr=False)
+    # Real model forwards (answer_span runs 2 per logical oracle score; the
+    # oracle's oracle_calls counter stays 1-per-coalition so cost comparisons
+    # across score kinds remain per-score).
+    forward_count: int = field(init=False, default=0, repr=False)
 
     def __post_init__(self) -> None:
         supported = set(self.node_to_intervention.keys())
@@ -244,6 +310,11 @@ class ReplacementModelInterventionScorer:
                     "faithfulness metrics degenerate. Check that candidate node IDs "
                     "match the graph's node_id convention."
                 )
+        if self.score_kind == "answer_span" and not self.target_span_ids_by_label:
+            raise ValueError(
+                "score_kind='answer_span' requires target_span_ids_by_label "
+                "(the full token-id span per target label)."
+            )
 
     def supported_nodes(self) -> set[NodeId]:
         return set(self.node_to_intervention.keys())
@@ -302,26 +373,29 @@ class ReplacementModelInterventionScorer:
             interventions.append(self._normalize_intervention(spec))
         return interventions
 
+    def _resolve_foil(self, target: TargetId) -> TargetId | None:
+        if self.foil_by_target and target in self.foil_by_target:
+            return self.foil_by_target[target]
+        return self.default_foil
+
     def _target_indices(self, target: TargetId) -> tuple[int, int | None]:
+        if self.score_kind in ("kl_divergence", "answer_span"):
+            return 0, None
         target_idx = self.target_to_logit_idx[target]
         if self.score_kind != "logit_gap":
             return target_idx, None
 
-        foil_target = None
-        if self.foil_by_target and target in self.foil_by_target:
-            foil_target = self.foil_by_target[target]
-        elif self.default_foil is not None:
-            foil_target = self.default_foil
-
+        foil_target = self._resolve_foil(target)
         if foil_target is None:
             raise ValueError(
                 "score_kind='logit_gap' requires foil_by_target[target] or default_foil."
             )
         return target_idx, self.target_to_logit_idx[foil_target]
 
-    def _run_logits(self, interventions: list[Intervention]) -> Any:
+    def _run_logits(self, interventions: list[Intervention], inputs: Any = None) -> Any:
+        self.forward_count += 1
         logits, _ = self.model.feature_intervention(
-            self.prompt,
+            self.prompt if inputs is None else inputs,
             interventions,
             constrained_layers=self.constrained_layers,
             freeze_attention=self.freeze_attention,
@@ -329,7 +403,69 @@ class ReplacementModelInterventionScorer:
         )
         return logits
 
+    def _prompt_ids(self) -> Any:
+        """Prompt token ids on the model's own tokenization path (BOS-prepended).
+
+        Uses ``model.ensure_tokenized`` when available so span positions line up
+        with the graph's ``ctx_idx`` convention; it is idempotent for tensors that
+        already start with a special token, so ``cat(prompt_ids, span)`` passed
+        back into ``feature_intervention`` keeps prompt-position interventions
+        valid.
+        """
+        if self._prompt_token_ids is None:
+            ensure = getattr(self.model, "ensure_tokenized", None)
+            if ensure is not None:
+                self._prompt_token_ids = ensure(self.prompt)
+            else:
+                import torch
+
+                tokenizer = self.model.tokenizer
+                self._prompt_token_ids = tokenizer(
+                    self.prompt, return_tensors="pt", add_special_tokens=False
+                ).input_ids.squeeze(0).to(torch.long)
+        return self._prompt_token_ids
+
+    def _span_ids(self, label: TargetId) -> list[int]:
+        spans = self.target_span_ids_by_label or {}
+        if label not in spans:
+            raise ValueError(f"No answer span registered for target label {label!r}.")
+        return list(spans[label])
+
+    def _score_span(self, interventions: list[Intervention], target: TargetId) -> float:
+        """answer_span score: teacher-forced summed log-prob gap, target − foil.
+
+        Two forwards per logical score (prompt+target span, prompt+foil span);
+        interventions apply at absolute prompt positions, which appending answer
+        tokens does not disturb.
+        """
+        import torch
+
+        foil = self._resolve_foil(target)
+        if foil is None:
+            raise ValueError(
+                "score_kind='answer_span' requires foil_by_target[target] or default_foil."
+            )
+        prompt_ids = self._prompt_ids()
+        prompt_len = int(prompt_ids.shape[0])
+        gap = 0.0
+        for sign, label in ((1.0, target), (-1.0, foil)):
+            span = self._span_ids(label)
+            span_tensor = torch.tensor(
+                span, dtype=prompt_ids.dtype, device=prompt_ids.device
+            )
+            inputs = torch.cat([prompt_ids, span_tensor])
+            logits = self._run_logits(interventions, inputs=inputs)
+            gap += sign * compute_span_logprob(logits, span, prompt_len)
+        return gap
+
+    def _reference_logits(self) -> Any:
+        if self._ref_logits is None:
+            self._ref_logits = self._run_logits(interventions=[])
+        return self._ref_logits
+
     def _score_logits(self, logits: Any, target: TargetId) -> float:
+        if self.score_kind == "kl_divergence":
+            return compute_kl_score(self._reference_logits(), logits)
         target_idx, foil_idx = self._target_indices(target)
         return compute_scalar_score(
             logits=logits,
@@ -338,20 +474,27 @@ class ReplacementModelInterventionScorer:
             foil_index=foil_idx,
         )
 
-    def score_all(self, target: TargetId) -> float:
-        logits = self._run_logits(interventions=[])
+    def _score_with_interventions(
+        self, interventions: list[Intervention], target: TargetId
+    ) -> float:
+        if self.score_kind == "answer_span":
+            return self._score_span(interventions, target)
+        logits = self._run_logits(interventions=interventions)
         return self._score_logits(logits, target)
+
+    def score_all(self, target: TargetId) -> float:
+        if self.score_kind == "kl_divergence":
+            self._ref_logits = self._run_logits(interventions=[])
+            return 0.0
+        return self._score_with_interventions([], target)
 
     def score_empty(self, target: TargetId) -> float:
         interventions = self._ablation_interventions(self._all_nodes)
-        logits = self._run_logits(interventions=interventions)
-        return self._score_logits(logits, target)
+        return self._score_with_interventions(interventions, target)
 
     def score_keep_only(self, nodes: set[NodeId], target: TargetId) -> float:
         to_ablate = self._all_nodes - set(nodes)
-        interventions = self._ablation_interventions(to_ablate)
-        logits = self._run_logits(interventions=interventions)
-        return self._score_logits(logits, target)
+        return self._score_with_interventions(self._ablation_interventions(to_ablate), target)
 
     def score_remove(self, nodes: set[NodeId], target: TargetId) -> float:
         # Intersect with the universe so remove() treats out-of-universe nodes as
@@ -363,9 +506,7 @@ class ReplacementModelInterventionScorer:
             LOGGER.debug(
                 "score_remove ignoring %d node(s) outside the intervention universe", dropped
             )
-        interventions = self._ablation_interventions(to_ablate)
-        logits = self._run_logits(interventions=interventions)
-        return self._score_logits(logits, target)
+        return self._score_with_interventions(self._ablation_interventions(to_ablate), target)
 
 
 @dataclass

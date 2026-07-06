@@ -70,28 +70,63 @@ def resolve_target_to_logit_idx(
             )
         if not token_ids:
             raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
-        # BPE footgun: for GPT-2-style tokenizers, "Paris" and " Paris" are different
-        # single tokens, and next-token continuations mid-sentence almost always use
-        # the space-prefixed variant. Warn when both variants are single tokens but
-        # differ, so a silently-wrong logit index doesn't corrupt every score.
-        if not token_str[:1].isspace():
-            spaced_ids = _extract_token_ids(tokenizer, " " + token_str)
-            if len(spaced_ids) == 1 and len(token_ids) >= 1 and spaced_ids[0] != token_ids[0]:
-                LOGGER.warning(
-                    "Target '%s' token '%s' has no leading space; ' %s' is a different "
-                    "single token (id %d vs %d). Mid-sentence continuations usually "
-                    "need the space-prefixed variant.",
-                    label,
-                    token_str,
-                    token_str,
-                    token_ids[0],
-                    spaced_ids[0],
-                )
+        _warn_missing_leading_space(tokenizer, label, token_str, token_ids)
         # Next-token prediction scores the FIRST token of the continuation; when
         # strict_single_token is disabled and the label is multi-token, the first
         # sub-token is the relevant logit, not the last (I2).
         target_to_logit_idx[label] = token_ids[0]
     return target_to_logit_idx
+
+
+def _warn_missing_leading_space(
+    tokenizer: Any, label: Any, token_str: str, token_ids: list[int]
+) -> None:
+    # BPE footgun: for GPT-2-style tokenizers, "Paris" and " Paris" are different
+    # single tokens, and next-token continuations mid-sentence almost always use
+    # the space-prefixed variant. Warn when both variants are single tokens but
+    # differ, so a silently-wrong logit index doesn't corrupt every score.
+    if token_str[:1].isspace():
+        return
+    spaced_ids = _extract_token_ids(tokenizer, " " + token_str)
+    if len(spaced_ids) == 1 and len(token_ids) >= 1 and spaced_ids[0] != token_ids[0]:
+        LOGGER.warning(
+            "Target '%s' token '%s' has no leading space; ' %s' is a different "
+            "single token (id %d vs %d). Mid-sentence continuations usually "
+            "need the space-prefixed variant.",
+            label,
+            token_str,
+            token_str,
+            token_ids[0],
+            spaced_ids[0],
+        )
+
+
+def resolve_target_to_token_span(
+    tokenizer: Any,
+    target_token_by_label: Mapping[Any, str | int],
+) -> dict[Any, list[int]]:
+    """Resolve class labels to FULL token-id spans (for ``score_kind='answer_span'``).
+
+    Unlike :func:`resolve_target_to_logit_idx`, multi-token answers keep every
+    sub-token: the answer-span score teacher-forces the whole continuation, which
+    is what disambiguates targets/foils that share a first sub-token (B0.1).
+    ``int`` and ``"id:<int>"`` specs become length-1 spans.
+    """
+    spans: dict[Any, list[int]] = {}
+    for label, token_spec in target_token_by_label.items():
+        if isinstance(token_spec, int):
+            spans[label] = [token_spec]
+            continue
+        token_str = str(token_spec)
+        if token_str.startswith("id:"):
+            spans[label] = [int(token_str[3:])]
+            continue
+        token_ids = _extract_token_ids(tokenizer, token_str)
+        if not token_ids:
+            raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
+        _warn_missing_leading_space(tokenizer, label, token_str, token_ids)
+        spans[label] = token_ids
+    return spans
 
 
 _ERROR_NODE_FEATURE_TYPE = "mlp reconstruction error"
@@ -273,6 +308,66 @@ def _load_local_transcoders(
     )
 
 
+def compute_mean_ablation_values(
+    model: Any,
+    node_to_intervention: Mapping[NodeId, tuple[int, Any, int] | tuple[int, Any, int, Any]],
+    *,
+    mode: str = "prompt_positions",
+    prompt: str | None = None,
+    corrupted_prompt: str | None = None,
+) -> dict[NodeId, float]:
+    """Per-node ablation values from clean-pass activations (mean/patch-style).
+
+    - ``prompt_positions``: value for node ``(layer, pos, feat)`` = mean of the
+      feature's activation over all positions of the clean prompt (mean ablation).
+    - ``corrupted_prompt``: value = the corrupted prompt's activation at the same
+      ``(layer, pos, feat)`` (resample/patch-style, the ACDC convention). Falls
+      back to ``prompt_positions`` with a warning when the corrupted prompt
+      tokenizes to a different length (positions would not correspond).
+
+    Zero-ablation callers never reach this helper; it exists for the §11.3
+    "zero-ablation is off-manifold" robustness check.
+    """
+    if mode not in ("prompt_positions", "corrupted_prompt"):
+        raise ValueError("mode must be 'prompt_positions' or 'corrupted_prompt'.")
+    if prompt is None:
+        raise ValueError("compute_mean_ablation_values requires the clean prompt.")
+
+    def cache_for(text: str) -> Any:
+        tokens = model.ensure_tokenized(text) if hasattr(model, "ensure_tokenized") else text
+        _logits, cache = model.get_activations(tokens, sparse=False)
+        if cache.ndim == 4:  # [n_layers, batch, seq, d] -> single-batch squeeze
+            cache = cache.squeeze(1)
+        return cache
+
+    clean_cache = cache_for(prompt)
+    source_cache = clean_cache
+    use_corrupted = False
+    if mode == "corrupted_prompt":
+        if corrupted_prompt is None:
+            raise ValueError("mode='corrupted_prompt' requires corrupted_prompt.")
+        corrupted_cache = cache_for(corrupted_prompt)
+        if corrupted_cache.shape[1] != clean_cache.shape[1]:
+            LOGGER.warning(
+                "corrupted_prompt tokenizes to %d positions vs clean %d; positions do not "
+                "correspond — falling back to prompt_positions mean ablation.",
+                corrupted_cache.shape[1],
+                clean_cache.shape[1],
+            )
+        else:
+            source_cache = corrupted_cache
+            use_corrupted = True
+
+    values: dict[NodeId, float] = {}
+    for node, spec in node_to_intervention.items():
+        layer, pos, feature_idx = int(spec[0]), spec[1], int(spec[2])
+        if use_corrupted:
+            values[node] = float(source_cache[layer, int(pos), feature_idx].item())
+        else:
+            values[node] = float(source_cache[layer, :, feature_idx].mean().item())
+    return values
+
+
 def create_replacement_model_scorer(
     *,
     model_name: str,
@@ -286,6 +381,8 @@ def create_replacement_model_scorer(
     foil_by_target: Mapping[Any, Any] | None = None,
     default_foil: Any | None = None,
     ablation_value: float = 0.0,
+    ablation_mode: str = "zero",
+    corrupted_prompt: str | None = None,
     constrained_layers: Any = None,
     freeze_attention: bool = True,
     feature_types: Sequence[str] | None = None,
@@ -333,6 +430,38 @@ def create_replacement_model_scorer(
         include_error_nodes=include_error_nodes,
     )
 
+    if ablation_mode not in ("zero", "mean", "corrupted"):
+        raise ValueError("ablation_mode must be 'zero', 'mean', or 'corrupted'.")
+    if ablation_mode != "zero":
+        # Rewrite the 3-tuple specs to 4-tuples carrying per-node values; the
+        # scorer's _normalize_intervention honors explicit values as-is.
+        values = compute_mean_ablation_values(
+            model,
+            node_to_intervention,
+            mode="corrupted_prompt" if ablation_mode == "corrupted" else "prompt_positions",
+            prompt=prompt,
+            corrupted_prompt=corrupted_prompt,
+        )
+        node_to_intervention = {
+            node: (spec[0], spec[1], spec[2], values[node])
+            for node, spec in node_to_intervention.items()
+        }
+
+    target_span_ids_by_label: dict[Any, list[int]] | None = None
+    if score_kind == "answer_span":
+        if target_token_by_label is None:
+            raise ValueError(
+                "score_kind='answer_span' requires `target_token_by_label` "
+                "(spans are derived from the label token strings)."
+            )
+        target_span_ids_by_label = resolve_target_to_token_span(
+            tokenizer=model.tokenizer,
+            target_token_by_label=target_token_by_label,
+        )
+        # Multi-token answers are the point of answer_span; never enforce
+        # single-token resolution for the (unused-for-scoring) logit indices.
+        strict_single_token = False
+
     if target_to_logit_idx is None:
         if target_token_by_label is None:
             raise ValueError(
@@ -355,6 +484,7 @@ def create_replacement_model_scorer(
         ablation_value=ablation_value,
         constrained_layers=_coerce_constrained_layers(constrained_layers),
         freeze_attention=freeze_attention,
+        target_span_ids_by_label=target_span_ids_by_label,
     )
     return scorer
 
