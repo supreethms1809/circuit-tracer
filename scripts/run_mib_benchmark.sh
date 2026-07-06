@@ -16,6 +16,7 @@
 #   SEEDS="0 1 2"          seed list
 #   GOLD_PER_TASK=50       prompts per task that get the MC-Shapley gold baseline
 #   BASELINE_METHODS       fast-pass selector list
+#   ACDC_TARGET_K=-1       budget-matched ACDC (bisect tau to |E|=budget); "" disables
 #   ALLOW_SMALL_JSON=1     run even if the prompt JSON looks pilot-sized
 # Sweep-level knobs (WORKERS_*, STAGGER, DEVICE, ...) pass through to
 # run_macag_mib_parallel.sh as usual.
@@ -27,6 +28,7 @@ export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 SEEDS="${SEEDS:-0 1 2}"
 JSON="${JSON:-macag/data/mib_benchmark_prompts.json}"
 BASELINE_METHODS="${BASELINE_METHODS:-influence,eap,game1,acdc}"
+ACDC_TARGET_K="${ACDC_TARGET_K--1}"
 GOLD_PER_TASK="${GOLD_PER_TASK:-50}"
 FREEZE_MODE="${FREEZE_MODE:-both}"
 COMBINED_OUT="${COMBINED_OUT:-results/macag_mib_seeds}"
@@ -68,6 +70,7 @@ for SEED in $SEEDS; do
 
   step "fast-pass sweep (blocks until all shards + aggregation finish)"
   if ! SHAPLEY_SEED="$SEED" BASELINE_METHODS="$BASELINE_METHODS" \
+       ACDC_TARGET_K="$ACDC_TARGET_K" \
        JSON="$JSON" OUTROOT="$OUTROOT" FREEZE_MODE="$FREEZE_MODE" \
        scripts/run_macag_mib_parallel.sh > "$OUTROOT/parallel.log" 2>&1; then
     echo ">>> WARNING: sweep reported shard failures — check $OUTROOT/status.*.txt," >&2

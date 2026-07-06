@@ -31,7 +31,7 @@ import logging
 from pathlib import Path
 from typing import Any, Sequence
 
-from macag.baselines.acdc_prune import acdc_tau_sweep
+from macag.baselines.acdc_prune import acdc_target_size, acdc_tau_sweep
 from macag.baselines.bruteforce import best_subset_bruteforce
 from macag.baselines.common import (
     SelectionResult,
@@ -164,6 +164,7 @@ def _run_selection(
             budget=args.budget,
             prefilter_top_k=args.prefilter_top_k,
             min_gain=args.min_gain,
+            connected=args.connected,
             progress=args.progress,
         )
         # solve_game1 resets stats internally; its counters are this method's cost.
@@ -323,6 +324,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--prefilter-top-k", type=int, default=None, help="Game 1 singleton prefilter size.")
     parser.add_argument("--min-gain", type=float, default=0.0, help="Game 1 minimum positive gain.")
+    parser.add_argument(
+        "--no-connected",
+        action="store_false",
+        dest="connected",
+        help="Let the game1 selector pick disconnected evidence sets. Default keeps the "
+        "connectivity constraint so the head-to-head 'game1' is the same method the "
+        "run_macag CLI reports (both default to connected).",
+    )
 
     parser.add_argument(
         "--acdc-taus",
@@ -334,6 +343,13 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("top_down", "given"),
         default="top_down",
         help="ACDC traversal order (top_down = output side first).",
+    )
+    parser.add_argument(
+        "--acdc-target-k",
+        type=int,
+        default=None,
+        help="Bisect tau so ACDC keeps ~k nodes (budget-matched ACDC); -1 uses --budget. "
+        "Adds methods.acdc.matched_k and an acdc entry in comparison.faithfulness_at_k.",
     )
 
     parser.add_argument(
@@ -464,6 +480,38 @@ def main(argv: list[str] | None = None) -> int:
                 best_by_size[size] = {"evidence": entry["kept"], "scores": entry["scores"], "tau": entry["tau"]}
         acdc_output["best_by_size"] = {str(size): best_by_size[size] for size in sorted(best_by_size)}
 
+        if args.acdc_target_k is not None:
+            # Budget-matched ACDC: bisect tau to k on the warm evaluation cache.
+            target_k = args.budget if args.acdc_target_k == -1 else args.acdc_target_k
+            matched = acdc_target_size(
+                graph,
+                oracle,
+                args.target,
+                candidates,
+                target_k=target_k,
+                alpha=args.alpha,
+                order=args.acdc_order,
+                seed_results=sweep,
+                progress=args.progress,
+            )
+            matched_metrics = compute_faithfulness_metrics(
+                oracle=oracle, target=args.target, nodes=set(matched.kept), alpha=args.alpha
+            )
+            acdc_output["matched_k"] = {
+                "target_k": target_k,
+                "achieved_k": matched.params["achieved_k"],
+                "exact": matched.params["exact"],
+                "tau": matched.tau,
+                "bisection_iters": matched.params["bisection_iters"],
+                "evidence": _sort_nodes(set(matched.kept)),
+                "scores": metrics_to_dict(matched_metrics)
+                | {
+                    "utility": game1_utility(
+                        matched_metrics.faithfulness_delta, size=len(matched.kept), lam=args.lam
+                    )
+                },
+            }
+
     bruteforce_output: dict[str, Any] | None = None
     if args.bruteforce_k:
         bruteforce_output = {}
@@ -511,6 +559,18 @@ def main(argv: list[str] | None = None) -> int:
         args.budget,
         game1_marginals,
     )
+    if acdc_output is not None and acdc_output.get("best_by_size"):
+        # ACDC has no ranked prefixes, so _comparison_block skips it; mirror its
+        # per-size faithfulness (and the budget-matched point when computed) into
+        # faithfulness_at_k so curve/at-k consumers see every method.
+        acdc_at_k = {
+            size: block["scores"]["faithfulness"]
+            for size, block in acdc_output["best_by_size"].items()
+        }
+        matched = acdc_output.get("matched_k")
+        if matched is not None:
+            acdc_at_k[str(matched["achieved_k"])] = matched["scores"]["faithfulness"]
+        comparison["faithfulness_at_k"]["acdc"] = acdc_at_k
 
     output: dict[str, Any] = {
         "input_id": args.input_id,
@@ -527,6 +587,8 @@ def main(argv: list[str] | None = None) -> int:
             "antithetic": not args.no_antithetic,
             "acdc_taus": _parse_float_list(args.acdc_taus),
             "acdc_order": args.acdc_order,
+            "acdc_target_k": args.acdc_target_k,
+            "game1_connected": args.connected,
             "prefilter_top_k": args.prefilter_top_k,
             "candidate_count": len(candidates),
         },

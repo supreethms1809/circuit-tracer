@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from macag.baselines.acdc_prune import acdc_prune, acdc_tau_sweep
+from macag.baselines.acdc_prune import acdc_prune, acdc_target_size, acdc_tau_sweep
 from macag.baselines.bruteforce import best_subset_bruteforce
 from macag.baselines.common import (
     coalition_value,
@@ -243,6 +243,58 @@ def test_acdc_given_order_and_sweep() -> None:
     assert set(sweep[1].kept) == {"a"}  # only a's degradation (6) clears tau=5
 
 
+def test_acdc_target_size_hits_exact_sizes_on_additive_game() -> None:
+    oracle = _additive_oracle()
+    for target_k, expected in ((2, {"a", "b"}), (1, {"a"}), (3, {"a", "b", "c"})):
+        result = acdc_target_size(_graph(), oracle, "y", ["a", "b", "c"], target_k=target_k)
+        assert set(result.kept) == expected, target_k
+        assert result.params["achieved_k"] == target_k
+        assert result.params["exact"] is True
+        assert result.params["target_k"] == target_k
+
+
+def test_acdc_target_size_unreachable_returns_nearest_by_value() -> None:
+    """Synergy game only realizes sizes {3, 2, 0}; k=1 is a plateau gap.
+
+    Nearest achievable sizes are 0 and 2 (distance 1 each); the value tie-break
+    must pick {a, b} (v=10) over the empty set (v=0) and flag exact=False.
+    """
+    oracle = _synergy_oracle()
+    graph = CircuitGraph(nodes=["a", "b", "c"])
+    result = acdc_target_size(graph, oracle, "y", ["a", "b", "c"], target_k=1, alpha=1.0)
+    assert set(result.kept) == {"a", "b"}
+    assert result.params["achieved_k"] == 2
+    assert result.params["exact"] is False
+    assert result.params["bisection_iters"] >= 1
+
+
+def test_acdc_target_size_seed_midpoint_collision() -> None:
+    """Symmetric degradations make the first bisection midpoint hit the tau=0 seed.
+
+    Weights {a:5, b:4, c:-5} give lo=-6, hi=6, mid=0.0 — already evaluated. The
+    search must reuse that result to narrow the bracket (not break), eventually
+    reaching tau≈4.5 where exactly {a} survives for target_k=1.
+    """
+    backend = ToyAdditiveInterventionScorer(
+        weights_by_target={"y": {"a": 5.0, "b": 4.0, "c": -5.0}},
+        base_by_target={"y": 100.0},
+    )
+    oracle = ScoringOracle(backend=backend, cache_enabled=True)
+    graph = CircuitGraph(nodes=["a", "b", "c"])
+    result = acdc_target_size(graph, oracle, "y", ["a", "b", "c"], target_k=1)
+    assert set(result.kept) == {"a"}
+    assert result.params["achieved_k"] == 1
+    assert result.params["exact"] is True
+
+
+def test_acdc_target_size_validates_inputs() -> None:
+    oracle = _additive_oracle()
+    with pytest.raises(ValueError, match="target_k"):
+        acdc_target_size(_graph(), oracle, "y", ["a", "b", "c"], target_k=0)
+    with pytest.raises(ValueError, match="non-empty"):
+        acdc_target_size(_graph(), oracle, "y", ["zz"], target_k=1)
+
+
 # ------------------------------------------------------------------ bruteforce
 def test_bruteforce_finds_top_pair_on_additive_game() -> None:
     oracle = _additive_oracle()
@@ -308,7 +360,9 @@ def test_run_baselines_harness_end_to_end(tmp_path) -> None:
             "--methods", "influence,eap,shapley,game1,acdc",
             "--shapley-permutations", "4",
             "--acdc-taus", "2.0",
+            "--acdc-target-k", "2",
             "--bruteforce-k", "2",
+            "--no-connected",  # toy features only touch via the logit hub
             "--no-progress",
             "--output-json", str(output_path),
         ]
@@ -338,6 +392,16 @@ def test_run_baselines_harness_end_to_end(tmp_path) -> None:
     assert acdc["sweep"][0]["kept"] == ["a", "b"]
     assert acdc["best_by_size"]["2"]["scores"]["faithfulness"] == pytest.approx(10.0)
 
+    # Budget-matched ACDC (--acdc-target-k 2) bisects tau to exactly k=2 and is
+    # mirrored into the comparison map alongside the ranked methods.
+    matched = acdc["matched_k"]
+    assert matched["target_k"] == 2 and matched["achieved_k"] == 2
+    assert matched["exact"] is True
+    assert matched["evidence"] == ["a", "b"]
+    assert matched["scores"]["faithfulness"] == pytest.approx(10.0)
+    assert payload["comparison"]["faithfulness_at_k"]["acdc"]["2"] == pytest.approx(10.0)
+    assert payload["params"]["acdc_target_k"] == 2
+
     # Brute force at k=2 matches every method's 2-prefix -> zero optimality gap.
     brute = payload["bruteforce"]["2"]
     assert brute["best_set"] == ["a", "b"]
@@ -350,6 +414,103 @@ def test_run_baselines_harness_end_to_end(tmp_path) -> None:
     assert comparison["spearman"]["eap|influence"] == pytest.approx(1.0)
     assert comparison["spearman"]["eap|game1_marginal_gain"] == pytest.approx(1.0)
     assert comparison["auc_raw_faithfulness"]["game1"] == pytest.approx((6.0 + 10.0 + 11.0) / 3.0)
+
+
+def test_run_baselines_game1_connected_default(tmp_path) -> None:
+    """game1 defaults to the connectivity constraint (same method as run_macag).
+
+    On a graph whose features only meet at the logit hub, connected greedy
+    cannot extend past its seed node — pinning both the default and the
+    hub-exclusion connectivity semantics.
+    """
+    graph_payload = {
+        "nodes": [
+            {"node_id": "a", "feature_type": "cross layer transcoder", "layer": "0", "ctx_idx": 1, "influence": 6.0},
+            {"node_id": "b", "feature_type": "cross layer transcoder", "layer": "1", "ctx_idx": 1, "influence": 4.0},
+            {"node_id": "L", "feature_type": "logit", "clerp": 'Output " y"', "is_target_logit": True},
+        ],
+        "links": [
+            {"source": "a", "target": "L", "weight": 6.0},
+            {"source": "b", "target": "L", "weight": 4.0},
+        ],
+    }
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps(graph_payload))
+    toy_path = tmp_path / "toy.json"
+    toy_path.write_text(
+        json.dumps({"weights_by_target": {"y": WEIGHTS}, "base_by_target": {"y": 100.0}})
+    )
+    output_path = tmp_path / "baselines.json"
+
+    exit_code = run_baselines_main(
+        [
+            "--graph-json", str(graph_path),
+            "--target", "y",
+            "--budget", "2",
+            "--toy-oracle-json", str(toy_path),
+            "--methods", "game1",
+            "--no-progress",
+            "--output-json", str(output_path),
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(output_path.read_text())
+
+    assert payload["params"]["game1_connected"] is True
+    game1 = payload["methods"]["game1"]
+    assert game1["params"]["connected"] is True
+    # b is only reachable from a through the logit hub, so the connected
+    # greedy stops at the seed node despite budget=2.
+    assert game1["ranking"] == ["a"]
+    assert game1["extras"]["stopped_early"] is True
+    assert list(game1["results"].keys()) == ["1"]
+
+
+def test_merge_baselines_deferred_shapley(tmp_path) -> None:
+    """Fast pass without shapley + shapley-only sidecar == full-run comparison."""
+    from macag.cli.merge_baselines import main as merge_main
+
+    graph_payload = {
+        "nodes": [
+            {"node_id": "a", "feature_type": "cross layer transcoder", "layer": "0", "ctx_idx": 1, "influence": 6.0},
+            {"node_id": "b", "feature_type": "cross layer transcoder", "layer": "1", "ctx_idx": 1, "influence": 4.0},
+            {"node_id": "c", "feature_type": "cross layer transcoder", "layer": "2", "ctx_idx": 1, "influence": 1.0},
+        ],
+        "links": [],
+    }
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps(graph_payload))
+    toy_path = tmp_path / "toy.json"
+    toy_path.write_text(
+        json.dumps({"weights_by_target": {"y": WEIGHTS}, "base_by_target": {"y": 100.0}})
+    )
+
+    common = [
+        "--graph-json", str(graph_path), "--target", "y", "--budget", "3",
+        "--toy-oracle-json", str(toy_path), "--no-progress",
+        "--no-connected",  # edgeless toy graph: connected game1 would cap at 1 node
+    ]
+    fast_path = tmp_path / "macag_baselines.json"
+    run_baselines_main(common + ["--methods", "influence,game1",
+                                 "--output-json", str(fast_path)])
+    sidecar_path = tmp_path / "macag_baselines_shapley.json"
+    run_baselines_main(common + ["--methods", "shapley", "--shapley-permutations", "4",
+                                 "--output-json", str(sidecar_path)])
+
+    fast = json.loads(fast_path.read_text())
+    assert "shapley" not in fast["methods"]
+    assert "agreement_vs_shapley" not in fast["comparison"]
+
+    assert merge_main(["--main", str(fast_path), "--extra", str(sidecar_path)]) == 0
+    merged = json.loads(fast_path.read_text())
+    assert merged["methods"]["shapley"]["ranking"] == ["a", "b", "c"]
+    assert merged["comparison"]["faithfulness_at_k"]["shapley"]["3"] == pytest.approx(11.0)
+    # gold-agreement recomputed: influence's 2-prefix matches gold exactly
+    agreement = merged["comparison"]["agreement_vs_shapley"]
+    assert agreement["influence"]["2"]["precision_at_k"] == pytest.approx(1.0)
+    assert agreement["game1"]["2"]["jaccard"] == pytest.approx(1.0)
+    assert merged["comparison"]["spearman"]["shapley|game1_marginal_gain"] == pytest.approx(1.0)
+    assert "shapley" in merged["params"]["methods"]
 
 
 def test_run_baselines_rejects_unknown_method(tmp_path) -> None:
