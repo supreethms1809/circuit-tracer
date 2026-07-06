@@ -45,13 +45,20 @@ class _FreezeSwitchingScorer:
         )
 
 
-def _write_graph(tmp_path: Path, node_ids: list[str]) -> Path:
+def _write_graph(tmp_path: Path, node_ids: list[str], connected: bool = True) -> Path:
     nodes = [
         {"node_id": node_id, "feature_type": "cross layer transcoder"}
         for node_id in node_ids
     ]
+    # Chain the nodes: the CLI defaults to --connected (since 25be202), and in
+    # an edgeless graph the connectivity constraint caps evidence at one node.
+    edges = (
+        [{"source": a, "target": b} for a, b in zip(node_ids, node_ids[1:])]
+        if connected
+        else []
+    )
     path = tmp_path / "graph.json"
-    path.write_text(json.dumps({"nodes": nodes, "edges": []}))
+    path.write_text(json.dumps({"nodes": nodes, "edges": edges}))
     return path
 
 
@@ -85,6 +92,26 @@ def test_cli_game1_single_mode_output_schema_unchanged(tmp_path: Path) -> None:
     assert payload["params"]["stop_metric"] == "normalized"  # unset default, frozen mode
     assert "freeze_attention" not in payload["params"]
     assert payload["evidence"]["E_star"] == ["a", "b"]
+
+
+def test_cli_game1_connected_default_caps_edgeless_graph(tmp_path: Path) -> None:
+    """Pin the behavior that silently broke the fixtures above (25be202).
+
+    With the CLI's connected=True default, an edgeless graph can never grow the
+    evidence past one node; --no-connected restores the full greedy selection.
+    """
+    graph = _write_graph(tmp_path, ["a", "b"], connected=False)
+    toy = _write_toy_oracle(tmp_path, {"a": 2.0, "b": 1.0})
+
+    out_default = tmp_path / "out_default.json"
+    assert run_macag.main(_base_args(graph, out_default) + ["--toy-oracle-json", str(toy)]) == 0
+    assert json.loads(out_default.read_text())["evidence"]["E_star"] == ["a"]
+
+    out_free = tmp_path / "out_free.json"
+    assert run_macag.main(
+        _base_args(graph, out_free) + ["--toy-oracle-json", str(toy), "--no-connected"]
+    ) == 0
+    assert json.loads(out_free.read_text())["evidence"]["E_star"] == ["a", "b"]
 
 
 def test_cli_game1_freeze_mode_both_rejects_toy_oracle(tmp_path: Path) -> None:
