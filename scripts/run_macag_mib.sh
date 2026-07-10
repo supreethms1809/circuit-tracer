@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # Run the full MACAG pipeline over MIB-bench prompts (macag/data/mib_benchmark_prompts.json).
 # Reuses the same game outputs and analyzers as the ACDC sweep; only the prompt source
-# and per-model CLT routing differ (gemma2 MIB prompts -> gemma2 CLTs only).
+# and per-model CLT routing differ (gemma2 MIB prompts -> gemma2 CLTs, llama3 MIB
+# prompts -> the llama32-524k CLT; llama3 here means Llama-3.2-1B, not the MIB
+# leaderboard's Llama-3.1-8B -- see build_mib_benchmark_prompts.py note).
 #
 # Build the prompt JSON first (once, or when changing split/limit):
 #   conda run -n ct python experiments/build_mib_benchmark_prompts.py \
 #     --models gemma2 --tasks ioi mcqa arc_easy --split validation --limit-per-task 10
+#   conda run -n ct python experiments/build_mib_benchmark_prompts.py \
+#     --models llama3 --tasks ioi mcqa arithmetic_addition arithmetic_subtraction \
+#         arc_easy arc_challenge --split validation --limit-per-task 10
 #
 # Usage:
 #   scripts/run_macag_mib.sh
 #   LIMIT=2 scripts/run_macag_mib.sh                    # smoke
 #   TASKS="ioi" MIB_MODELS="gemma2" scripts/run_macag_mib.sh
+#   MIB_MODELS="llama3" scripts/run_macag_mib.sh        # llama3 only
 #
 # Output: results/macag_mib/<clt_tag>/<slug>/ + summary CSVs from existing analyzers.
 set -uo pipefail
@@ -36,7 +42,7 @@ ANALYZE_ONLY="${ANALYZE_ONLY:-0}"
 CLT_TAGS=(gemma2-426k gemma2-2.5M llama32-524k)
 CLT_MODEL=(google/gemma-2-2b google/gemma-2-2b meta-llama/Llama-3.2-1B)
 CLT_TSET=(mntss/clt-gemma-2-2b-426k mntss/clt-gemma-2-2b-2.5M mntss/clt-llama-3.2-1b-524k)
-CLT_MIB_MODELS=(gemma2 gemma2 "")
+CLT_MIB_MODELS=(gemma2 gemma2 llama3)
 
 if [[ ! -f "$JSON" ]]; then
   echo "ERROR: $JSON not found. Build it with:" >&2
