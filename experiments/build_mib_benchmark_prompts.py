@@ -4,11 +4,16 @@
 Produces ``macag/data/mib_benchmark_prompts.json`` with the same per-prompt
 schema as ``acdc_benchmark_prompts.json``, plus ``mib_model`` / ``mib_split`` /
 ``mib_task`` metadata so ``scripts/run_macag_mib.sh`` can route each prompt to
-the matching hub CLT (gemma2 prompts -> gemma2 CLTs only).
+the matching hub CLT (gemma2 prompts -> gemma2 CLTs, llama3 prompts -> the
+llama32-524k CLT only).
 
 Example:
   conda run -n ct python experiments/build_mib_benchmark_prompts.py \\
     --models gemma2 --tasks ioi mcqa --split validation --limit-per-task 10
+
+  conda run -n ct python experiments/build_mib_benchmark_prompts.py \\
+    --models llama3 --tasks ioi mcqa arithmetic_addition arithmetic_subtraction \\
+        arc_easy arc_challenge --split validation --limit-per-task 10
 """
 from __future__ import annotations
 
@@ -23,8 +28,15 @@ MIB_DIR = REPO_ROOT / "external" / "MIB-circuit-track"
 DEFAULT_OUT = REPO_ROOT / "macag" / "data" / "mib_benchmark_prompts.json"
 
 # MIB leaderboard cells with a matching public hub CLT in run_macag_mib.sh.
+# NOTE: the MIB leaderboard's "llama3" cells were collected against
+# meta-llama/Llama-3.1-8B, but the only public CLT we have is
+# mntss/clt-llama-3.2-1b-524k (meta-llama/Llama-3.2-1B). We tokenize/route
+# against the 3.2-1B model here since that's the model MACAG can actually
+# score; this reuses the MIB prompt text/labels but is not a reproduction of
+# the official Llama leaderboard cell (different model size).
 MIB_MODEL_TO_HF = {
     "gemma2": "google/gemma-2-2b",
+    "llama3": "meta-llama/Llama-3.2-1B",
 }
 
 MIB_TASK_TO_HF = {
@@ -38,6 +50,14 @@ MIB_TASK_TO_HF = {
 
 # gemma2 MIB cells (from MIB COL_MAPPING).
 GEMMA2_TASKS = ("ioi", "mcqa", "arc_easy")
+
+# llama3 MIB cells (from MIB COL_MAPPING).
+LLAMA3_TASKS = ("ioi", "mcqa", "arithmetic_addition", "arithmetic_subtraction", "arc_easy", "arc_challenge")
+
+MODEL_TASKS = {
+    "gemma2": GEMMA2_TASKS,
+    "llama3": LLAMA3_TASKS,
+}
 
 
 def _decode_token(tokenizer: Any, token_id: int) -> str:
@@ -94,8 +114,8 @@ def export_prompts(
             raise ValueError(f"Unsupported mib_model={model!r}; known: {sorted(MIB_MODEL_TO_HF)}")
         tokenizer = AutoTokenizer.from_pretrained(MIB_MODEL_TO_HF[model])
         for task in tasks:
-            if model == "gemma2" and task not in GEMMA2_TASKS:
-                print(f"skip {model}/{task}: no gemma2 MIB leaderboard cell")
+            if task not in MODEL_TASKS.get(model, MIB_TASK_TO_HF.keys()):
+                print(f"skip {model}/{task}: no {model} MIB leaderboard cell")
                 continue
             if task not in MIB_TASK_TO_HF:
                 raise ValueError(f"Unknown task {task!r}")
@@ -167,6 +187,7 @@ def export_prompts(
             ),
             "mib_model_to_clt_tags": {
                 "gemma2": ["gemma2-426k", "gemma2-2.5M"],
+                "llama3": ["llama32-524k"],
             },
         },
         "tasks": out_tasks,
