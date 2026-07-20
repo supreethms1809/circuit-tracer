@@ -1,0 +1,29 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small_1b.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_feature_match_1b.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_small_spline_1b",
+  "description": "Single spline-CLT run on GPT-2 small at 1B tokens (~1 epoch over 7.81M sequences, seq_len=128, batch=64). Feature-match d_t=12288. Single seed. All tuning lives in common_gpt2_small_1b.json + gpt2_small_spline_feature_match_1b.json so the existing 4-variant paper_gpt2_small suite is untouched. Pair against the matched linear baseline from paper_gpt2_small at report time.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "spline_feature_match_gpt2_small_1b": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_small_1b",
+    "baseline_variant": "spline_feature_match_gpt2_small_1b",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small_probe_gl.json",
+    "../macag/default.json",
+    "../models/gpt2_small_probe_gl.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "probe_gl_gpt2_small",
+  "description": "Matched CONTROL for probe_pl_gpt2_small: identical in every respect except recon_normalization=global. Same code, so both log rel_fro_per_layer_mean / rel_fro_worst_layer.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "probe_gl_gpt2_small": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "probe_gl_gpt2_small",
+    "baseline_variant": "probe_gl_gpt2_small",
+    "bootstrap_samples": 10,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

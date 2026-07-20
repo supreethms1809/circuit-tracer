@@ -19,8 +19,8 @@
     "n_tokens": 93388800,
     "seq_len": 128,
     "batch_size": 32,
-    "cache_dir": "/lscratch/gpt2/activations",
-    "val_cache_dir": "shared/activations/gpt2/val",
+    "cache_dir": "/lscratch/gpt2/activations/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/gpt2/val",
     "val_fraction": 0.05,
     "max_train_samples": 729600,
     "eval_samples": 2500,
@@ -41,7 +41,7 @@
     "circuit": {
       "top_k_features": 32,
       "alpha": 0.5,
-      "run_shapley": true,
+      "run_shapley": false,
       "shapley_samples": 128
     },
     "monosemanticity": {

@@ -1,0 +1,15 @@
+{
+  "defaults": [
+    "./paper_gpt2_small_ravel.json"
+  ],
+  "suite_name": "ravel_eval_suite_dt12288",
+  "model_variants": {
+    "spline_feature_match_gpt2_small": {
+      "label": "Spline-CLT (feature-match, d_t=12288)",
+      "checkpoint_path": "/gscratch/ssuresh/results/paper/paper_v2_gpt2_small_dt_sweep/runs/spline_dt12288_gpt2_small_pv2/seed_101/checkpoints/spline_dt12288_gpt2_small_pv2_seed101_best",
+      "training": {
+        "d_transcoder": 12288
+      }
+    }
+  }
+}

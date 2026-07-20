@@ -1,0 +1,61 @@
+{
+  "output_root": "results/paper",
+  "wandb": {
+    "project": "spline-clt-2B",
+    "entity": "uwyo",
+    "mode": "online"
+  },
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": true,
+    "macag": false,
+    "report": true
+  },
+  "dataset": {
+    "model_name": "gpt2",
+    "dataset_name": "ssuresh/codelion_all-5B",
+    "dataset_config": "",
+    "n_tokens": 2000000000,
+    "collection_chunk_n_tokens": 20000000,
+    "seq_len": 128,
+    "batch_size": 128,
+    "cache_dir": "/lscratch/gpt2_2b/activations/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/gpt2_2b/val",
+    "val_fraction": 0.05,
+    "max_train_samples": 14843750,
+    "eval_samples": 2500,
+    "dtype": "bfloat16",
+    "device": null,
+    "seed": 17
+  },
+  "evaluation": {
+    "graph": {
+      "max_features": 256,
+      "max_n_logits": 8,
+      "desired_logit_prob": 0.9,
+      "node_threshold": 0.8,
+      "edge_threshold": 0.98,
+      "attribution_batch_size": 32
+    },
+    "circuit": {
+      "top_k_features": 32,
+      "alpha": 0.5,
+      "run_shapley": false,
+      "shapley_samples": 128
+    },
+    "monosemanticity": {
+      "enabled": true,
+      "n_features": 500,
+      "top_k_examples": 10,
+      "n_samples": 2000
+    },
+    "splines": {
+      "enabled": true,
+      "n_features": 20,
+      "top_dims": 3,
+      "n_samples": 1000,
+      "no_plot": true
+    }
+  }
+}

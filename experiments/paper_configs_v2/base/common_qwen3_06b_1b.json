@@ -1,0 +1,62 @@
+{
+  "output_root": "results/paper",
+  "wandb": {
+    "project": "spline-clt-paper-v2",
+    "entity": "uwyo",
+    "mode": "online"
+  },
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": true,
+    "macag": false,
+    "report": true
+  },
+  "dataset": {
+    "model_name": "Qwen/Qwen3-0.6B",
+    "dataset_name": "ssuresh/codelion_all-5B",
+    "dataset_config": "",
+    "n_tokens": 1000000000,
+    "collection_chunk_n_tokens": 6000000,
+    "seq_len": 128,
+    "batch_size": 64,
+    "cache_dir": "/lscratch/paper_v2/qwen3_06b/activations/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v2/qwen3_06b/val",
+    "val_fraction": 0.05,
+    "dedup": true,
+    "max_train_samples": 7421875,
+    "eval_samples": 2500,
+    "dtype": "bfloat16",
+    "device": null,
+    "seed": 17
+  },
+  "evaluation": {
+    "graph": {
+      "max_features": 256,
+      "max_n_logits": 8,
+      "desired_logit_prob": 0.9,
+      "node_threshold": 0.8,
+      "edge_threshold": 0.98,
+      "attribution_batch_size": 32
+    },
+    "circuit": {
+      "top_k_features": 32,
+      "alpha": 0.5,
+      "run_shapley": false,
+      "shapley_samples": 128
+    },
+    "monosemanticity": {
+      "enabled": true,
+      "n_features": 500,
+      "top_k_examples": 10,
+      "n_samples": 2000
+    },
+    "splines": {
+      "enabled": true,
+      "n_features": 20,
+      "top_dims": 3,
+      "n_samples": 1000,
+      "no_plot": true
+    }
+  }
+}

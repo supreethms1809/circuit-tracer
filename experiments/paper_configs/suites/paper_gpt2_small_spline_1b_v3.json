@@ -1,0 +1,35 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small_1b.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_feature_match_1b_v3.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_small_spline_1b_v3",
+  "description": "Run A (v3): fresh spline-CLT, GPT-2 small, 1B/2B tokens, grid refine DISABLED, and a DEDUPED, train-disjoint validation holdout. dataset.dedup=true makes collection (1) keep only unique 128-token windows in val and (2) exclude every val window's content from train across all chunks (val_hashes.txt in the val dir). This fixes the v2 contamination where ~64% of val was one memorized window (val_loss ~0.24 was optimistic; true generalization nmse ~0.087). New variant/run_name + isolated gpt2_2b_v3 cache dirs so it starts fresh at ci=0 (must NOT reuse a run with existing training_state.pt). Fold in any lambda_sparsity / JumpReLU bandwidth / total_steps tuning separately.",
+  "seeds": [
+    101
+  ],
+  "dataset": {
+    "cache_dir": "/lscratch/gpt2_2b_v3/activations/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/gpt2_2b_v3/val",
+    "collection_chunk_n_tokens": 20000000,
+    "dedup": true
+  },
+  "model_variants": {
+    "spline_feature_match_gpt2_small_1b_v3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_small_1b_v3",
+    "baseline_variant": "spline_feature_match_gpt2_small_1b_v3",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

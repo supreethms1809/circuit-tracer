@@ -1,0 +1,37 @@
+{
+  "defaults": [
+    "../base/common_gpt2_large_1b.json",
+    "../macag/default.json",
+    "../models/gpt2_large_spline_1b.json",
+    "../models/gpt2_large_linear_1b.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v2_gpt2_large",
+  "description": "paper_configs_v2: GPT-2 large spline vs linear feature-match (d_t=5120) at 1B tokens, single seed, following the gpt2-small 1b_v3 recipe (grid refine DISABLED, deduped train-disjoint val). Sized for one 2-node x 2-GPU FSDP job: per-rank batch 32 = global 128 sequences/step, so 1B tokens x 0.95 / (128 x 128 tokens) = 58000 steps. Collection chunks reduced to 4M tokens because gpt2-large activations are ~184 KB/token (36 layers x 1280 dims x in+out x bf16), keeping each per-node /lscratch chunk near ~740 GB.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "spline_feature_match_gpt2_large_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "linear_feature_match_gpt2_large_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_large_pv2",
+    "baseline_variant": "linear_feature_match_gpt2_large_pv2",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

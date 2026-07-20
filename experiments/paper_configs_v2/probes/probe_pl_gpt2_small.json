@@ -1,0 +1,29 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small_probe_pl.json",
+    "../macag/default.json",
+    "../models/gpt2_small_probe_pl.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "probe_pl_gpt2_small",
+  "description": "Per-layer normalized reconstruction. Live run 7812 (global NMSE) fits layer 2 (59% of ||y||^2, of which 99.5% is dim #447) to rel_fro 0.062 while layers 5-8 sit at rel_fro 0.86-0.91 with <2 active features/token. Prediction: per-layer normalization raises mid-layer L0 and drops mid-layer rel_fro, at the cost of a worse AGGREGATE rel_fro (which was mostly a dim-447 score). Identical to 7812 except recon_normalization.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "probe_pl_gpt2_small": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "probe_pl_gpt2_small",
+    "baseline_variant": "probe_pl_gpt2_small",
+    "bootstrap_samples": 10,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

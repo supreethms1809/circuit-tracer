@@ -1,0 +1,29 @@
+{
+  "defaults": [
+    "../base/common_qwen_qprobe_b03.json",
+    "../macag/default.json",
+    "../models/qwen_qprobe_b03.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "qprobe_b03_qwen",
+  "description": "qwen energy-tempered per-layer, beta=0.3. Must recover layer 2 (was rel_fro 0.987, yhat 6.6% norm under beta=0) without re-abandoning the middle. 1600 steps.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "qprobe_b03_qwen": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "qprobe_b03_qwen",
+    "baseline_variant": "qprobe_b03_qwen",
+    "bootstrap_samples": 10,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

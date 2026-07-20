@@ -1,0 +1,38 @@
+{
+  "defaults": [
+    "../base/common.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_feature_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_gpt2_small",
+  "description": "Evaluate pre-trained GPT-2 small spline feature match variant on NeurIPS core benchmarks (no training, Jacobian-based attribution only)",
+  "stages": {
+    "collect_dataset": false,
+    "train": false,
+    "evaluate": true,
+    "macag": false,
+    "report": true
+  },
+  "seeds": [
+    101
+  ],
+  "dataset": {
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v2/gpt2_small/val"
+  },
+  "model_variants": {
+    "spline_feature_match_gpt2_small": {}
+  },
+  "evaluation": {
+    "circuit": {
+      "run_shapley": false
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_small",
+    "baseline_variant": "spline_feature_match_gpt2_small",
+    "bootstrap_samples": 200,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

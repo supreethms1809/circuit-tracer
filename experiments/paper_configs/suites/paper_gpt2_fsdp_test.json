@@ -1,0 +1,45 @@
+{
+  "defaults": [
+    "../base/common_test.json",
+    "../macag/default.json",
+    "../models/gpt2_small_linear_feature_match.json",
+    "../models/gpt2_small_linear_param_match.json",
+    "../models/gpt2_small_spline_feature_match.json",
+    "../models/gpt2_small_spline_param_match.json",
+    "../benchmarks/smoke_trial.json"
+  ],
+  "suite_name": "paper_gpt2_fsdp_test",
+  "description": "GPT-2 small 4-variant test suite using common_test defaults.",
+  "seeds": [
+    17
+  ],
+  "model_variants": {
+    "spline_feature_match_gpt2_small": {
+      "training": {
+        "use_fsdp": true
+      }
+    },
+    "spline_param_match_gpt2_small": {
+      "training": {
+        "use_fsdp": true
+      }
+    },
+    "linear_feature_match_gpt2_small": {
+      "training": {
+        "use_fsdp": true
+      }
+    },
+    "linear_param_match_gpt2_small": {
+      "training": {
+        "use_fsdp": true
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_feature_match_gpt2_small",
+    "baseline_variant": "linear_feature_match_gpt2_small",
+    "bootstrap_samples": 100,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "smoke_factual_france"
+  }
+}

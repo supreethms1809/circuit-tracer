@@ -1,0 +1,29 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small_verify_mean.json",
+    "../macag/default.json",
+    "../models/gpt2_small_verify_mean.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "verify_mean_gpt2_small",
+  "description": "Verify MEAN sparsity (lambda 7.56e-3) reproduces 7828's SUM sparsity (6.3e-4). Unit-test-proven bit-identical; this confirms the wiring on real GPU.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "verify_mean_gpt2_small": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "verify_mean_gpt2_small",
+    "baseline_variant": "verify_mean_gpt2_small",
+    "bootstrap_samples": 10,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

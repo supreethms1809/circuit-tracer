@@ -1,0 +1,43 @@
+{
+  "model_variants": {
+    "verify_mean_gpt2_small": {
+      "label": "VERIFY: gpt2-small per_layer recon + MEAN sparsity, lambda 7.56e-3 (must match 7828)",
+      "model_name": "gpt2",
+      "scan_id": "verify-mean-gpt2-small",
+      "training": {
+        "n_layers": 12,
+        "d_model": 768,
+        "d_transcoder": 12288,
+        "encoder_type": "kan",
+        "grid_size": 5,
+        "spline_order": 3,
+        "learning_rate": 5e-05,
+        "warmup_steps": 1450,
+        "total_steps": 1500,
+        "batch_size": 128,
+        "lambda_sparsity": 0.00756,
+        "c_sparsity": 1.0,
+        "grad_clip": 1.0,
+        "log_every": 20,
+        "eval_every": 725,
+        "save_every": 1500,
+        "keep_last_checkpoints": 3,
+        "update_grid_every": 0,
+        "update_grid_from": 2900,
+        "reset_optimizer_every": 0,
+        "val_fraction": 0.05,
+        "num_workers": 0,
+        "pin_memory": false,
+        "prefetch_factor": null,
+        "persistent_workers": false,
+        "dtype": "bfloat16",
+        "device": null,
+        "run_name": "verify_mean_gpt2_small",
+        "lambda_kan_reg": 0.001,
+        "tf32": true,
+        "recon_normalization": "per_layer",
+        "sparsity_normalization": "mean"
+      }
+    }
+  }
+}

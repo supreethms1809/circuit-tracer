@@ -1,0 +1,69 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small_1b_dtsweep.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_dt768.json",
+    "../models/gpt2_small_spline_dt1536.json",
+    "../models/gpt2_small_spline_dt3072.json",
+    "../models/gpt2_small_spline_dt5568.json",
+    "../models/gpt2_small_spline_dt6144.json",
+    "../models/gpt2_small_spline_dt12288.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v2_gpt2_small_dt_sweep",
+  "description": "paper_configs_v2: Spline-CLT d_transcoder sweep on GPT-2 small (768/1536/3072/5568/6144/12288 = 1x/2x/4x/~7x/8x/16x d_model) at 1B tokens. Grid refine DISABLED, deduped train-disjoint val. Global batch 256 seq/step (1 node x 2 GPU x batch 128) -> 1B x 0.95 / (256 x 128) = 29000 steps. Dedicated activation cache under paper_v2/gpt2_small_1b_dtsweep (does not share the running 2B gpt2_small cache). Single seed; rerun knee point with more seeds if needed.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "spline_dt768_gpt2_small_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "spline_dt1536_gpt2_small_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "spline_dt3072_gpt2_small_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "spline_dt5568_gpt2_small_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "spline_dt6144_gpt2_small_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "spline_dt12288_gpt2_small_pv2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_dt12288_gpt2_small_pv2",
+    "baseline_variant": "spline_dt768_gpt2_small_pv2",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

@@ -17,10 +17,11 @@
     "dataset_name": "ssuresh/codelion_all-5B",
     "dataset_config": "",
     "n_tokens": 29982720,
+    "collection_chunk_n_tokens": 5000000,
     "seq_len": 128,
-    "batch_size": 16,
-    "cache_dir": "/lscratch/qwen3-06b/activations",
-    "val_cache_dir": "shared/activations/qwen3-06b/val",
+    "batch_size": 128,
+    "cache_dir": "/gscratch/ssuresh/shared/activations/qwen3-06b/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/qwen3-06b/val",
     "val_fraction": 0.05,
     "max_train_samples": 234240,
     "eval_samples": 2500,
@@ -40,7 +41,7 @@
     "circuit": {
       "top_k_features": 32,
       "alpha": 0.5,
-      "run_shapley": true,
+      "run_shapley": false,
       "shapley_samples": 128
     },
     "monosemanticity": {

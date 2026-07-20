@@ -9,12 +9,24 @@
     "../benchmarks/neurips_core.json"
   ],
   "suite_name": "paper_qwen3_06b",
-  "description": "Qwen3-0.6B 4-variant paper matrix. Feature-match at d_t=16384 for both encoder types; param-match computed via encoder+decoder param formula.",
+  "description": "Qwen3-0.6B 4-variant paper matrix. Feature-match at d_t=4096 for both encoder types; param-match computed via encoder+decoder param formula.",
   "seeds": [
-    101,
-    202,
-    303
+    101
   ],
+  "model_variants": {
+    "spline_feature_match_qwen3_06b": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "spline_param_match_qwen3_06b": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "linear_feature_match_qwen3_06b": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "linear_param_match_qwen3_06b": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    }
+  },
   "reporting": {
     "primary_variant": "spline_feature_match_qwen3_06b",
     "baseline_variant": "linear_feature_match_qwen3_06b",

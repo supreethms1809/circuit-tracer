@@ -1,0 +1,203 @@
+{
+  "suite_name": "ravel_eval_suite",
+  "description": "RAVEL benchmark suite for gpt2",
+  "benchmark_manifest_version": "ravel-v1",
+  "stages": {
+    "collect_dataset": false,
+    "train": false,
+    "evaluate": true,
+    "macag": false,
+    "report": true
+  },
+  "seeds": [
+    101
+  ],
+  "dataset": {
+    "model_name": "gpt2",
+    "dataset_name": "Salesforce/wikitext",
+    "dataset_config": "wikitext-2-raw-v1",
+    "n_tokens": 100000,
+    "seq_len": 128,
+    "batch_size": 32,
+    "val_fraction": 0.05,
+    "device": "cuda",
+    "dtype": "bfloat16"
+  },
+  "model_variants": {
+    "spline_clt_best": {
+      "label": "Spline-CLT Checkpoint",
+      "model_name": "gpt2",
+      "scan_id": "spline-clt-best",
+      "training": {
+        "n_layers": 12,
+        "d_model": 768,
+        "d_transcoder": 4096,
+        "grid_size": 5,
+        "spline_order": 3,
+        "learning_rate": 0.0001,
+        "total_steps": 1000,
+        "batch_size": 32,
+        "lambda_sparsity": 0.002,
+        "c_sparsity": 1.0,
+        "grad_clip": 1.0,
+        "save_every": 10000,
+        "eval_every": 1000,
+        "log_every": 100,
+        "update_grid_every": 100000,
+        "update_grid_from": 5000,
+        "val_fraction": 0.05,
+        "warmup_steps": 100,
+        "encoder_type": "kan",
+        "device": "cuda",
+        "dtype": "bfloat16"
+      }
+    }
+  },
+  "evaluation": {
+    "circuit": {
+      "top_k_features": 32,
+      "run_shapley": true,
+      "shapley_samples": 64,
+      "alpha": 0.5
+    },
+    "graph": {
+      "max_features": 64,
+      "max_n_logits": 5,
+      "desired_logit_prob": 0.95,
+      "node_threshold": 0.8,
+      "edge_threshold": 0.98,
+      "attribution_batch_size": 16,
+      "spline_attribution_method": "jacobian_ablation"
+    },
+    "monosemanticity": {
+      "enabled": false,
+      "n_features": 100,
+      "n_samples": 1000,
+      "top_k_examples": 5
+    },
+    "splines": {
+      "enabled": false,
+      "n_features": 10,
+      "n_samples": 500,
+      "top_dims": 3,
+      "no_plot": true
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_clt_best",
+    "baseline_variant": "spline_clt_best",
+    "bootstrap_samples": 100,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ravel_aarau_country_0"
+  },
+  "benchmark_entries": [
+    {
+      "prompt_id": "ravel_aarau_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Aarau\", \"country\": \"",
+      "target_token": " Switzerland",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Aarau is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Aarau is (",
+      "target_token": " 47",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Aarau\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aarau\", \"language\": \"",
+      "target_token": " German",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Aarau\", \"timezone\": \"",
+      "target_token": " Europe/Zurich",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abadan\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abadan is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abadan is (",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abadan\", \"long\": \"",
+      "target_token": " 48",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abadan\", \"language\": \"",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abadan\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    }
+  ]
+}

@@ -14,6 +14,23 @@
   "seeds": [
     101
   ],
+  "model_variants": {
+    "spline_dt768_gpt2_small": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "spline_dt1536_gpt2_small": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "spline_dt3072_gpt2_small": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "spline_dt6144_gpt2_small": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    },
+    "spline_feature_match_gpt2_small": {
+      "training": { "use_fsdp": true, "resume_training_if_exists": true, "fsdp_cpu_offload": true }
+    }
+  },
   "reporting": {
     "primary_variant": "spline_feature_match_gpt2_small",
     "baseline_variant": "spline_dt768_gpt2_small",

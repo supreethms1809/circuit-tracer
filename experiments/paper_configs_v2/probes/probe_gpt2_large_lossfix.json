@@ -1,0 +1,29 @@
+{
+  "defaults": [
+    "../base/common_gpt2_large_probe.json",
+    "../macag/default.json",
+    "../models/gpt2_large_probe.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "probe_gpt2_large_lossfix",
+  "description": "Validation gate for the NMSE loss fix. gpt2-large is the model that collapsed (L0 91816 -> 0.9 by step 1856, rel_fro 0.999). Falsifiable prediction: with l_recon = sum((yhat-y)^2)/sum(y^2) and lambda_sparsity=6.3e-4, L0 should settle in the hundreds rather than ->1, and rel_fro should fall well below 0.99. Also yields post-TF32 throughput on the real path. 1 node x 2 GPU.",
+  "seeds": [
+    101
+  ],
+  "model_variants": {
+    "probe_spline_gpt2_large": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "probe_spline_gpt2_large",
+    "baseline_variant": "probe_spline_gpt2_large",
+    "bootstrap_samples": 10,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}

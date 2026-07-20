@@ -1,0 +1,27 @@
+{
+  "benchmark_manifest_version": "neurips-core-v2",
+  "benchmark_entries": [
+    {"prompt_id": "ioi_john_mary", "family": "ioi", "prompt": "John gave Mary the book. She handed it to", "target_token": " Mary", "foil_token": " John", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_alice_bob", "family": "ioi", "prompt": "Alice thanked Bob for the gift. He passed it to", "target_token": " Bob", "foil_token": " Alice", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_sarah_james", "family": "ioi", "prompt": "Sarah called James after dinner. He told the story to", "target_token": " James", "foil_token": " Sarah", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_emma_liam", "family": "ioi", "prompt": "Emma showed Liam the map. He gave directions to", "target_token": " Liam", "foil_token": " Emma", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_chloe_jack", "family": "ioi", "prompt": "Chloe emailed Jack the schedule. He forwarded it to", "target_token": " Jack", "foil_token": " Chloe", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_mia_luke", "family": "ioi", "prompt": "Mia brought Luke the coffee. He carried it to", "target_token": " Luke", "foil_token": " Mia", "split": "main", "include_macag": true},
+    {"prompt_id": "ioi_sophie_ryan", "family": "ioi", "prompt": "Sophie mailed Ryan the tickets. He showed them to", "target_token": " Ryan", "foil_token": " Sophie", "split": "main", "include_macag": true},
+
+    {"prompt_id": "factual_capital_france", "family": "factual", "prompt": "The capital of France is", "target_token": " Paris", "foil_token": " Lyon", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_germany", "family": "factual", "prompt": "The capital of Germany is", "target_token": " Berlin", "foil_token": " Munich", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_italy", "family": "factual", "prompt": "The capital of Italy is", "target_token": " Rome", "foil_token": " Milan", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_spain", "family": "factual", "prompt": "The capital of Spain is", "target_token": " Madrid", "foil_token": " Barcelona", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_japan", "family": "factual", "prompt": "The capital of Japan is", "target_token": " Tokyo", "foil_token": " Osaka", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_capital_china", "family": "factual", "prompt": "The capital of China is", "target_token": " Beijing", "foil_token": " Shanghai", "split": "main", "include_macag": true},
+    {"prompt_id": "factual_eiffel_tower", "family": "factual", "prompt": "The Eiffel Tower is located in", "target_token": " Paris", "foil_token": " London", "split": "main", "include_macag": true},
+
+    {"prompt_id": "arith_25_37", "family": "arithmetic", "prompt": "25 + 37 =", "target_token": " 62", "foil_token": " 63", "split": "main", "include_macag": true},
+    {"prompt_id": "arith_14_28", "family": "arithmetic", "prompt": "14 + 28 =", "target_token": " 42", "foil_token": " 43", "split": "main", "include_macag": true},
+    {"prompt_id": "arith_31_18", "family": "arithmetic", "prompt": "31 + 18 =", "target_token": " 49", "foil_token": " 50", "split": "main", "include_macag": true},
+    {"prompt_id": "arith_47_16", "family": "arithmetic", "prompt": "47 + 16 =", "target_token": " 63", "foil_token": " 64", "split": "main", "include_macag": true},
+    {"prompt_id": "arith_12_19", "family": "arithmetic", "prompt": "12 + 19 =", "target_token": " 31", "foil_token": " 32", "split": "main", "include_macag": true},
+    {"prompt_id": "arith_34_27", "family": "arithmetic", "prompt": "34 + 27 =", "target_token": " 61", "foil_token": " 62", "split": "main", "include_macag": true}
+  ]
+}

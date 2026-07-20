@@ -1,0 +1,38 @@
+{
+  "defaults": [
+    "../base/common_qwen3_06b.json",
+    "../macag/default.json",
+    "../models/qwen3_06b_spline_feature_match.json",
+    "../models/qwen3_06b_linear_feature_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_qwen3_06b",
+  "description": "paper_configs_v3: Qwen3-0.6B spline vs linear feature-match at R=12 (d_t=12288). KAN encoders are FSDP-ignored (fp32, fully replicated): encoder ~52 GiB/GPU; total peak ~76-83 GiB on 146GB. Run on 4 nodes x 2 GPUs (world=8): 1B x 0.95 / (256 x 128) = 29000 steps. 2 nodes also fine. 1B tokens, 2 seeds. Grid refine DISABLED, deduped val, recon_layer_energy_beta=0.5. Reuses paper_v2 activation cache. Results under results/paper/paper_v3_qwen3_06b/.",
+  "seeds": [
+    101,
+    202
+  ],
+  "model_variants": {
+    "spline_feature_match_qwen3_06b_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    },
+    "linear_feature_match_qwen3_06b_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_feature_match_qwen3_06b_pv3",
+    "baseline_variant": "linear_feature_match_qwen3_06b_pv3",
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ioi_john_mary"
+  }
+}
