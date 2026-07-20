@@ -198,3 +198,12 @@ exercise_local/
 
 # Claude Code
 .claude/
+
+# ad-hoc profiling scratch (see logs/v2_collapse_evidence/FINDINGS.md)
+.prof/
+slurm-*.out
+
+# slurm log trees and agent-loop scratch
+logs/
+.agent_loop_*.pid
+.agent_slurm_training_baseline.json
