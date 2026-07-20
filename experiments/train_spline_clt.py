@@ -45,6 +45,12 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--total-steps", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--use-fsdp", action="store_true", help="Enable FSDP sharding (requires torchrun).")
+    parser.add_argument(
+        "--fsdp-cpu-offload",
+        action="store_true",
+        help="Offload FSDP parameters to CPU when idle (requires --use-fsdp / torchrun).",
+    )
 
     args = parser.parse_args()
 
@@ -67,6 +73,10 @@ def main():
         config.total_steps = args.total_steps
     if args.device is not None:
         config.device = args.device
+    if args.use_fsdp:
+        config.use_fsdp = True
+    if args.fsdp_cpu_offload:
+        config.fsdp_cpu_offload = True
 
     # Collect activations if requested
     if args.collect_data:
@@ -79,9 +89,10 @@ def main():
         if args.n_tokens is not None:
             data_config.n_tokens = args.n_tokens
 
-        dataset = collect_activations(data_config)
+        coll = collect_activations(data_config)
+        dataset = coll.dataset
         if dataset is None:
-            print(f"Collected activations and saved to {config.data_dir}")
+            print(f"Collected {coll.n_sequences} sequences and saved to {config.data_dir}")
             if not args.config:
                 raise ValueError(
                     "Config is required when load_after_collect=False because "

@@ -26,6 +26,10 @@ class DatasetConfig(BaseModel):
     seq_len: int = 128
     batch_size: int = 32
     cache_dir: str = "shared/activations"
+    #: When set (>0) with offline collection, ``n_tokens`` is the **total** corpus
+    #: budget and activations are collected in contiguous chunks of this many tokens,
+    #: training between chunks while saving optimizer state for seamless resume.
+    collection_chunk_n_tokens: int | None = None
     #: Optional separate directory for the val split. Train and val are
     #: written to two distinct memmap files at collection time; the train
     #: cache typically lives on a per-node local NVMe (regenerable) while
@@ -34,6 +38,13 @@ class DatasetConfig(BaseModel):
     #: written next to train files in ``cache_dir``.
     val_cache_dir: str | None = None
     val_fraction: float = 0.05
+    #: Deduplicate the val holdout and keep it disjoint from train by exact
+    #: token-window content (removes the corpus's repeated-window contamination
+    #: and any train/val leakage). Recommended for real runs; off by default for
+    #: backward-compatible collection. See ``DataConfig.dedup``.
+    dedup: bool = False
+    #: When ``dedup`` is set, also drop duplicate windows within each train chunk.
+    dedup_train: bool = False
     max_train_samples: int = 10_000
     eval_samples: int = 500
     dtype: Literal["float32", "bfloat16"] = "bfloat16"
@@ -49,29 +60,44 @@ class TrainingSettings(BaseModel):
     grid_size: int = 5
     spline_order: int = 3
     learning_rate: float = 1e-4
+    optimizer: Literal["adamw", "adafactor"] = "adamw"
     warmup_steps: int = 5_000
     total_steps: int = 400_000
     batch_size: int = 32
     lambda_sparsity: float = 0.002
     c_sparsity: float = 1.0
+    lambda_kan_reg: float = 0.001
+    recon_normalization: Literal["global", "per_layer"] = "global"
+    sparsity_normalization: Literal["sum", "mean"] = "sum"
+    recon_layer_energy_beta: float = 0.0
     grad_clip: float = 1.0
     log_every: int = 200
     eval_every: int = 10_000
     save_every: int = 10_000
+    #: Retain only the newest N periodic step checkpoints (never touches
+    #: _best/_final or the dir referenced by training_state.pt). <= 0 keeps all.
+    keep_last_checkpoints: int = 2
     update_grid_every: int = 100_000
     update_grid_from: int = 5_000
     reset_optimizer_every: int = 0
+    use_fsdp: bool = False
+    #: FSDP CPU parameter offload (requires ``use_fsdp``); trades throughput for VRAM.
+    fsdp_cpu_offload: bool = False
     val_fraction: float = 0.05
     num_workers: int = 0
     pin_memory: bool = False
     prefetch_factor: int | None = None
     persistent_workers: bool = False
+    dataloader_max_host_gib: float = 64.0
+    tf32: bool = True
     dtype: Literal["float32", "bfloat16"] = "bfloat16"
     device: str | None = None
     run_name: str | None = None
     wandb_project: str | None = None
     wandb_entity: str | None = None
     wandb_mode: Literal["online", "offline", "disabled"] = "online"
+    #: Load optimizer + LR step counter from ``training_state.pt`` when present (chunked offline enables).
+    resume_training_if_exists: bool = False
 
 
 class ModelVariantConfig(BaseModel):
@@ -96,7 +122,7 @@ class GraphBuildConfig(BaseModel):
 class CircuitEvaluationConfig(BaseModel):
     top_k_features: int = 16
     alpha: float = 0.5
-    run_shapley: bool = True
+    run_shapley: bool = False
     shapley_samples: int = 64
 
 

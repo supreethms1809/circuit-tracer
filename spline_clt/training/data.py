@@ -5,6 +5,7 @@ and MLP outputs at all layers. These cached activations are used to train
 the Spline-CLT to reconstruct MLP outputs.
 """
 
+import gc
 import os
 from dataclasses import dataclass
 
@@ -40,6 +41,7 @@ class DataConfig:
     feature_input_hook: str = "hook_resid_mid"
     feature_output_hook: str = "hook_mlp_out"
     device: str = "cuda"
+    dtype: str = "float32"
     seed: int = 0
     #: If True (default), reload the saved mmap into RAM and return an
     #: ``ActivationDataset``. For large suites this duplicates the full cache
@@ -47,6 +49,48 @@ class DataConfig:
     #: files on disk (e.g. paper runs that load a bounded slice later) should set
     #: this to False.
     load_after_collect: bool = False
+    #: Skip this many contiguous ``seq_len`` windows from the shuffled corpus before
+    #: counting toward ``n_tokens``. Legacy window-level cursor; superseded by
+    #: ``skip_items`` for chunked collection (window-level skip re-tokenizes the whole
+    #: consumed prefix every chunk, which is O(chunks^2) over a run). Kept only as a
+    #: fallback for callers that have not migrated to the item cursor.
+    skip_sequences: int = 0
+    #: Skip this many whole shuffled corpus *items* before collecting. Items are
+    #: dropped with ``Dataset.select`` (no tokenization of the skipped prefix), so the
+    #: per-chunk resume cost is O(items_in_this_chunk) instead of O(consumed_prefix).
+    #: This is the preferred chunked-collection cursor; when > 0 it takes precedence
+    #: over ``skip_sequences``.
+    skip_items: int = 0
+    #: Deduplicate the validation holdout and keep it disjoint from train by exact
+    #: token-window content. When True: (1) the val split keeps only the FIRST
+    #: occurrence of each distinct 128-token window (drops within-val duplicates —
+    #: the corpus has degenerate windows repeated thousands of times); (2) every
+    #: sequence whose window content matches a val window is EXCLUDED from train,
+    #: across all chunks, so the model never trains on a held-out window. Val window
+    #: hashes are persisted to ``val_hashes_path`` so later chunks (which collect
+    #: train-only) can still exclude them. Off by default to preserve legacy behavior.
+    dedup: bool = False
+    #: When ``dedup`` is True, also drop duplicate windows *within* the train split
+    #: of each chunk (keep one copy of each distinct window). Reduces wasted training
+    #: on repeated boilerplate. Independent of the val disjointness above.
+    dedup_train: bool = False
+    #: File holding hex token-window hashes reserved for validation (one per line),
+    #: accumulated across chunks. Defaults to ``<val_save_dir>/val_hashes.txt``.
+    #: Only consulted when ``dedup`` is True.
+    val_hashes_path: str | None = None
+
+
+@dataclass
+class ActivationCollectResult:
+    """Return value from :func:`collect_activations`."""
+
+    dataset: "ActivationDataset | None"
+    #: Total sequences written to memmaps for this collect call (train + val slots).
+    n_sequences: int
+    #: Number of whole shuffled corpus items consumed to produce this chunk. The
+    #: caller advances its item cursor by this amount so the next chunk resumes at the
+    #: following item boundary (item-aligned resume).
+    n_items_consumed: int = 0
 
 
 class ActivationDataset(Dataset):
@@ -194,7 +238,66 @@ class ActivationDataset(Dataset):
 
 
 @torch.no_grad()
-def collect_activations(config: DataConfig) -> ActivationDataset | None:
+def compute_input_normalization(
+    dataset: "ActivationDataset",
+    n_layers: int,
+    d_model: int,
+    n_sequences: int = 256,
+    seed: int = 0,
+    eps: float = 1e-3,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Estimate per-layer, per-dimension mean/std of the encoder input.
+
+    Samples a deterministic subset of sequences and accumulates first/second
+    moments in float64 (heavy outliers otherwise destroy precision). Used to
+    standardize the residual-stream input before the encoder so the B-spline
+    grid operates in a well-conditioned coordinate system.
+
+    The computation is seeded and indexes the dataset directly (not via a
+    DistributedSampler), so every rank derives identical statistics without any
+    collective communication.
+
+    Args:
+        dataset: Activation dataset; ``dataset[i]["mlp_inputs"]`` must have shape
+            (n_layers, seq_len, d_model).
+        n_layers: Number of transformer layers.
+        d_model: Residual-stream dimension.
+        n_sequences: Number of sequences to sample for the estimate.
+        seed: Seed for the deterministic sample.
+        eps: Std floor; dims with std < eps get std=1 (no-op normalization).
+
+    Returns:
+        (mean, std), each of shape (n_layers, d_model), float32.
+    """
+    n = len(dataset)
+    if n == 0:
+        return (
+            torch.zeros(n_layers, d_model),
+            torch.ones(n_layers, d_model),
+        )
+    rng = np.random.default_rng(seed)
+    count = min(n_sequences, n)
+    idx = rng.choice(n, size=count, replace=False)
+
+    sums = torch.zeros(n_layers, d_model, dtype=torch.float64)
+    sqs = torch.zeros(n_layers, d_model, dtype=torch.float64)
+    n_pos = 0
+    for i in idx:
+        x = dataset[int(i)]["mlp_inputs"].to(torch.float64)  # (n_layers, seq, d_model)
+        x = x.reshape(n_layers, -1, d_model)
+        sums += x.sum(dim=1)
+        sqs += (x * x).sum(dim=1)
+        n_pos += x.shape[1]
+
+    mean = sums / n_pos
+    var = (sqs / n_pos - mean**2).clamp_min(0.0)
+    std = var.sqrt()
+    std = torch.where(std < eps, torch.ones_like(std), std)
+    return mean.float(), std.float()
+
+
+@torch.no_grad()
+def collect_activations(config: DataConfig) -> ActivationCollectResult:
     """Run a transformer on text data and collect MLP input/output activations.
 
     Uses TransformerLens HookedTransformer for hook-based activation extraction.
@@ -207,8 +310,8 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         config: Data collection configuration.
 
     Returns:
-        ActivationDataset with cached activations when ``load_after_collect`` is
-        True; otherwise ``None`` after files are written.
+        :class:`ActivationCollectResult` with optional in-RAM dataset when
+        ``load_after_collect`` is True and ``n_sequences`` written this call.
     """
     from transformer_lens import HookedTransformer
     from datasets import load_dataset
@@ -222,6 +325,12 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
     else:
         device = torch.device("cpu")
 
+    dtype = {
+        "float32": torch.float32,
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+    }[config.dtype]
+
     # Load model
     model = HookedTransformer.from_pretrained(
         config.model_name,
@@ -229,7 +338,9 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         fold_ln=False,
         center_writing_weights=False,
         center_unembed=False,
+        dtype=dtype,
     )
+    model.eval()
     n_layers = model.cfg.n_layers
     d_model = model.cfg.d_model
 
@@ -240,6 +351,18 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
     dataset = load_dataset(**load_kwargs)
 
     dataset = dataset.shuffle(seed=config.seed)
+
+    # Resume cursor. Prefer the item cursor (``skip_items``): dropping whole items
+    # via ``select`` costs nothing per skipped item (no tokenization), so each chunk
+    # is O(items_in_this_chunk) rather than re-tokenizing the entire consumed prefix.
+    # ``skip_sequences`` is the legacy window-level fallback, used only when no item
+    # cursor is supplied.
+    skip_items = max(0, int(config.skip_items))
+    if skip_items > 0:
+        skip_items = min(skip_items, len(dataset))
+        dataset = dataset.select(range(skip_items, len(dataset)))
+    skip_sequences = 0 if skip_items > 0 else max(0, int(config.skip_sequences))
+
     tokenizer = model.tokenizer
     assert tokenizer is not None
 
@@ -247,12 +370,20 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
     # all tokens, not just the first seq_len.  Codelion samples average ~1K tokens;
     # truncating to 128 would discard ~88% of the data.
     # Batches are formed on the fly to avoid holding all tokens in RAM at once.
-    n_sequences = config.n_tokens // config.seq_len
-    token_batches = []
-    current_batch = []
-    collected = 0
+    n_sequences_target = config.n_tokens // config.seq_len
+    skipped = 0
+    token_batches: list[torch.Tensor] = []
+    current_batch: list[torch.Tensor] = []
+    sequences_committed = 0
+    # Items consumed from the (already item-skipped) view. Reported back so the
+    # caller advances its item cursor to the next item boundary. We count the item
+    # whose windows reach the target as fully consumed (item-aligned resume): any of
+    # its trailing windows beyond the target are dropped, at most <1 item of corpus
+    # per chunk, which is negligible at multi-billion-token budgets.
+    items_consumed = 0
 
     for item in dataset:
+        items_consumed += 1
         tokens = tokenizer(
             item["text"],
             truncation=False,
@@ -260,18 +391,21 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         ).input_ids.squeeze(0)
         # Chunk into non-overlapping windows of seq_len
         for start in range(0, len(tokens) - config.seq_len + 1, config.seq_len):
+            if skipped < skip_sequences:
+                skipped += 1
+                continue
             current_batch.append(tokens[start : start + config.seq_len])
             if len(current_batch) == config.batch_size:
                 token_batches.append(torch.stack(current_batch))
                 current_batch = []
-                collected += config.batch_size
-            if collected >= n_sequences:
+                sequences_committed += config.batch_size
+            if sequences_committed >= n_sequences_target:
                 break
-        if collected >= n_sequences:
+        if sequences_committed >= n_sequences_target:
             break
 
     # Flush remaining partial batch
-    if current_batch and collected < n_sequences:
+    if current_batch and sequences_committed < n_sequences_target:
         token_batches.append(torch.stack(current_batch))
 
     n_sequences = sum(b.shape[0] for b in token_batches)
@@ -292,14 +426,78 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
     val_fraction = float(config.val_fraction)
     if not 0.0 <= val_fraction < 1.0:
         raise ValueError(f"val_fraction must be in [0, 1), got {val_fraction}")
-    n_val = max(1, int(n_sequences * val_fraction)) if val_fraction > 0 else 0
-    n_train = n_sequences - n_val
     rng = np.random.default_rng(config.seed)
     perm = rng.permutation(n_sequences)
+    n_val_target = max(1, int(n_sequences * val_fraction)) if val_fraction > 0 else 0
+    want_val = np.zeros(n_sequences, dtype=bool)
+    if n_val_target > 0:
+        want_val[perm[:n_val_target]] = True
+
     is_val = np.zeros(n_sequences, dtype=bool)
-    if n_val > 0:
-        is_val[perm[:n_val]] = True
-    # Per-global-index slot in the destination memmap.
+    is_train = np.zeros(n_sequences, dtype=bool)
+    new_val_hashes: list[bytes] = []
+    val_hash_path: str | None = None
+
+    if not config.dedup:
+        # Legacy behavior: every non-val sequence is train; no content filtering.
+        is_val = want_val.copy()
+        is_train = ~want_val
+    else:
+        import hashlib
+
+        # Exact per-window content fingerprint from the raw tokens (available before
+        # the model runs). token_batches rows are in global-index order.
+        seq_hashes: list[bytes] = []
+        for b in token_batches:
+            bt = b.cpu().numpy()
+            for row in range(bt.shape[0]):
+                seq_hashes.append(
+                    hashlib.blake2b(
+                        np.ascontiguousarray(bt[row]).tobytes(), digest_size=16
+                    ).digest()
+                )
+        assert len(seq_hashes) == n_sequences
+
+        val_hash_path = config.val_hashes_path or os.path.join(
+            config.val_save_dir or config.save_dir, "val_hashes.txt"
+        )
+        prior_val_hashes: set[bytes] = set()
+        if os.path.exists(val_hash_path):
+            with open(val_hash_path) as f:
+                prior_val_hashes = {bytes.fromhex(line.strip()) for line in f if line.strip()}
+
+        # Pass 1: dedupe val — keep the first occurrence of each distinct window not
+        # already reserved by a prior chunk.
+        seen_val: set[bytes] = set()
+        for g in range(n_sequences):
+            if want_val[g]:
+                h = seq_hashes[g]
+                if h in prior_val_hashes or h in seen_val:
+                    continue
+                seen_val.add(h)
+                is_val[g] = True
+        new_val_hashes = list(seen_val)
+        val_hashes = prior_val_hashes | seen_val
+
+        # Pass 2: train = non-val-designated windows whose content is NOT reserved
+        # for val (disjointness), optionally self-deduped.
+        seen_train: set[bytes] = set()
+        for g in range(n_sequences):
+            if want_val[g]:
+                continue
+            h = seq_hashes[g]
+            if h in val_hashes:
+                continue  # would leak a held-out window into train
+            if config.dedup_train:
+                if h in seen_train:
+                    continue
+                seen_train.add(h)
+            is_train[g] = True
+
+    n_val = int(is_val.sum())
+    n_train = int(is_train.sum())
+
+    # Per-global-index slot in the destination memmap (-1 = dropped, written nowhere).
     train_pos = np.full(n_sequences, -1, dtype=np.int64)
     val_pos = np.full(n_sequences, -1, dtype=np.int64)
     ti = vi = 0
@@ -307,10 +505,17 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         if is_val[g]:
             val_pos[g] = vi
             vi += 1
-        else:
+        elif is_train[g]:
             train_pos[g] = ti
             ti += 1
     assert ti == n_train and vi == n_val
+    if config.dedup:
+        print(
+            f"[collect/dedup] collected={n_sequences} -> train={n_train} val={n_val} "
+            f"dropped={n_sequences - n_train - n_val} (val-dups + train-leak); "
+            f"new_val_windows={len(new_val_hashes)}",
+            flush=True,
+        )
 
     # Write activations directly to memory-mapped numpy files (int16 = bfloat16 bits).
     # This eliminates the in-RAM pre-allocation that caused OOM for large models:
@@ -375,9 +580,10 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
                 assert val_in_mm is not None and val_out_mm is not None
                 val_in_mm[val_pos[g]] = mlp_in_np[i]
                 val_out_mm[val_pos[g]] = mlp_out_np[i]
-            else:
+            elif is_train[g]:
                 train_in_mm[train_pos[g]] = mlp_in_np[i]
                 train_out_mm[train_pos[g]] = mlp_out_np[i]
+            # else: dropped (val duplicate or train-leak) — written nowhere.
         global_idx += actual_bs
 
     # Flush mmap writes to disk before returning.
@@ -389,9 +595,34 @@ def collect_activations(config: DataConfig) -> ActivationDataset | None:
         val_out_mm.flush()
         del val_in_mm, val_out_mm
 
+    # Persist this chunk's new val window hashes so later chunks (which collect
+    # train-only, val_fraction=0) still exclude those held-out windows from train.
+    # Appended after the val data is safely flushed, so a crash never leaves
+    # reserved hashes without their val rows.
+    if config.dedup and val_hash_path is not None and new_val_hashes:
+        os.makedirs(os.path.dirname(val_hash_path) or ".", exist_ok=True)
+        with open(val_hash_path, "a") as f:
+            for h in new_val_hashes:
+                f.write(h.hex() + "\n")
+
+    del model
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
     if not config.load_after_collect:
-        return None
+        return ActivationCollectResult(
+            dataset=None,
+            n_sequences=n_sequences,
+            n_items_consumed=items_consumed,
+        )
 
     # Load the train split via the standard path. Callers that need val too
     # can call ActivationDataset.load(val_dir, split="val") explicitly.
-    return ActivationDataset.load(train_dir, split="train")
+    loaded = ActivationDataset.load(train_dir, split="train")
+    return ActivationCollectResult(
+        dataset=loaded,
+        n_sequences=n_sequences,
+        n_items_consumed=items_consumed,
+    )

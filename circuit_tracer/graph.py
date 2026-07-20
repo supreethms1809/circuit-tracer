@@ -255,7 +255,7 @@ def prune_graph(
     return PruneResult(node_mask, edge_mask, final_scores)
 
 
-def compute_graph_scores(graph: Graph) -> tuple[float, float]:
+def compute_graph_scores(graph: Graph, reconstruction_fve: float | None = None) -> tuple[float, float]:
     """Compute metrics for evaluating how well the graph captures the model's computation.
     This function calculates two complementary scores that measure how much of the model's
     computation flows through interpretable feature nodes versus reconstruction error nodes:
@@ -270,6 +270,8 @@ def compute_graph_scores(graph: Graph) -> tuple[float, float]:
     Args:
         graph: The computation graph containing nodes for features, errors, tokens, and logits,
                along with their connections and influence weights.
+        reconstruction_fve: Optional prompt-level fraction of variance explained (1 - NMSE).
+                            If provided, scales the replacement_score.
     Returns:
         tuple[float, float]: A tuple containing:
             - replacement_score: Fraction of token-to-logit influence through features (0-1)
@@ -301,6 +303,9 @@ def compute_graph_scores(graph: Graph) -> tuple[float, float]:
         replacement_score = torch.tensor(1.0, device=normalized_matrix.device)
     else:
         replacement_score = token_influence / denominator
+
+    if reconstruction_fve is not None:
+        replacement_score = replacement_score * max(0.0, reconstruction_fve)
 
     non_error_fractions = 1 - normalized_matrix[:, error_start:error_end].sum(dim=-1)
     output_influence = node_influence + logit_weights

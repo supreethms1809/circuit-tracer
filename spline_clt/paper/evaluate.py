@@ -266,7 +266,20 @@ def build_prompt_graph(
         batch_size=attribution_batch_size,
         verbose=True,
     )
-    graph_replacement_score, graph_completeness_score = compute_graph_scores(graph)
+    fve = None
+    if model is not None:
+        mlp_inputs = prompt_cache.mlp_inputs.to(model.device)
+        mlp_outputs = prompt_cache.mlp_outputs.to(model.device)
+        features = model.encode(mlp_inputs).to_sparse()
+        reconstruction = model.decode(features, input_acts=mlp_inputs)
+        diff_sq = ((reconstruction.float() - mlp_outputs.float()) ** 2).sum()
+        true_sq = (mlp_outputs.float() ** 2).sum().clamp_min(1e-8)
+        nmse = (diff_sq / true_sq).item()
+        fve = max(0.0, 1.0 - nmse)
+
+    graph_replacement_score, graph_completeness_score = compute_graph_scores(
+        graph, reconstruction_fve=fve
+    )
 
     graph_dir.mkdir(parents=True, exist_ok=True)
     graph_pt_path = graph_dir / f"{graph_slug}.pt"

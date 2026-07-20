@@ -110,8 +110,12 @@ def run_collect(args) -> None:
         save_dir=args.data_dir,
         device=args.device,
     )
-    dataset = collect_activations(cfg)
-    print(f"\n  Collected {len(dataset)} sequences → {args.data_dir}")
+    coll = collect_activations(cfg)
+    dataset = coll.dataset
+    if dataset is not None:
+        print(f"\n  Collected {len(dataset)} sequences → {args.data_dir}")
+    else:
+        print(f"\n  Collected {coll.n_sequences} sequences (mmap on disk) → {args.data_dir}")
     print(f"  [{_elapsed(t0)}]")
 
 

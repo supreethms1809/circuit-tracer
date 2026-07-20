@@ -71,8 +71,9 @@ class TestKANTranscoderShapes:
     def test_forward_shape(self, small_model):
         """Test full forward pass shape."""
         x = torch.randn(3, 8, 16)
-        out = small_model.forward(x)
-        assert out.shape == (3, 8, 16)
+        _, y_hat, dec_norms = small_model.forward(x)
+        assert y_hat.shape == (3, 8, 16)
+        assert len(dec_norms) == 3
 
 
 class TestCrossLayerDecoding:
@@ -121,6 +122,20 @@ class TestActivationFunction:
         density = (out > 0).float().mean()
         assert density < 1.0  # Not everything is active
 
+    def test_effective_threshold_is_positive(self, jumprelu_model):
+        """Effective JumpReLU gates stay strictly positive in log-parametrization."""
+        jumprelu_model.activation_function.threshold.data.fill_(-10.0)
+        eff = jumprelu_model.effective_threshold
+        assert eff.shape == (jumprelu_model.n_layers, jumprelu_model.d_transcoder)
+        assert (eff > 0).all()
+
+    def test_activations_nonnegative_under_extreme_log_threshold(self, jumprelu_model):
+        """Very negative log-thresholds must not admit negative feature activations."""
+        jumprelu_model.activation_function.threshold.data.fill_(-8.0)
+        x = torch.randn(3, 8, 16)
+        out = jumprelu_model.encode(x)
+        assert (out >= 0).all()
+
     def test_encode_without_activation(self, small_model):
         """Test encoding without activation function."""
         x = torch.randn(8, 16)
@@ -167,19 +182,19 @@ class TestSaveLoad:
     def test_save_and_load(self, jumprelu_model):
         """Test that save/load preserves model behavior."""
         x = torch.randn(3, 8, 16)
-        original_out = jumprelu_model.forward(x)
+        _, original_out, _ = jumprelu_model.forward(x)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             jumprelu_model.to_safetensors(tmpdir)
             loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
 
-            loaded_out = loaded.forward(x)
+            _, loaded_out, _ = loaded.forward(x)
             assert torch.allclose(original_out, loaded_out, atol=1e-5), (
                 f"Save/load mismatch: max diff = {(original_out - loaded_out).abs().max():.4e}"
             )
 
     def test_save_load_preserves_threshold(self, jumprelu_model):
-        """Test that JumpReLU thresholds are preserved."""
+        """Test that JumpReLU log-thresholds round-trip in memory."""
         from circuit_tracer.transcoder.activation_functions import JumpReLU
 
         original_threshold = jumprelu_model.activation_function.threshold.clone()
@@ -195,6 +210,36 @@ class TestSaveLoad:
                 atol=1e-6,
             )
 
+    def test_save_load_preserves_effective_threshold_on_disk(self, jumprelu_model):
+        """On-disk threshold_i must store literal effective θ, not log θ."""
+        from safetensors.torch import load_file
+
+        jumprelu_model.activation_function.threshold.data.uniform_(-2.0, 1.0)
+        expected = jumprelu_model.effective_threshold.clone()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            jumprelu_model.to_safetensors(tmpdir)
+            loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
+
+            on_disk = load_file(os.path.join(tmpdir, "encoder_0.safetensors"))["threshold_0"]
+            assert torch.allclose(on_disk, expected[0], atol=1e-6)
+            assert torch.allclose(loaded.effective_threshold, expected, atol=1e-6)
+            assert (loaded.effective_threshold > 0).all()
+
+    def test_legacy_negative_threshold_on_disk_loads_positive(self, jumprelu_model):
+        """Legacy checkpoints with θ < 0 on disk are clamped to a positive gate."""
+        from safetensors.torch import load_file, save_file
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            jumprelu_model.to_safetensors(tmpdir)
+            enc_path = os.path.join(tmpdir, "encoder_0.safetensors")
+            enc_data = dict(load_file(enc_path))
+            enc_data["threshold_0"] = torch.full_like(enc_data["threshold_0"], -2.2)
+            save_file(enc_data, enc_path)
+
+            loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
+            assert (loaded.effective_threshold > 0).all()
+
     def test_save_and_load_linear_encoder(self):
         """Test that linear encoder save/load round-trip preserves behavior."""
         model = KANCrossLayerTranscoder(
@@ -206,14 +251,14 @@ class TestSaveLoad:
             device=torch.device("cpu"),
         )
         x = torch.randn(2, 4, 8)
-        original_out = model.forward(x)
+        _, original_out, _ = model.forward(x)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             model.to_safetensors(tmpdir)
             loaded = load_spline_clt(tmpdir, device=torch.device("cpu"))
 
             assert loaded.encoder_type == "linear"
-            loaded_out = loaded.forward(x)
+            _, loaded_out, _ = loaded.forward(x)
             assert torch.allclose(original_out, loaded_out, atol=1e-5), (
                 f"Linear save/load mismatch: max diff = {(original_out - loaded_out).abs().max():.4e}"
             )
@@ -223,7 +268,7 @@ class TestGradientFlow:
     def test_end_to_end_gradient(self, small_model):
         """Test gradient flows through full encode-decode pipeline."""
         x = torch.randn(3, 8, 16, requires_grad=True)
-        out = small_model.forward(x)
+        _, out, _ = small_model.forward(x)
         loss = out.sum()
         loss.backward()
         assert x.grad is not None
@@ -232,7 +277,7 @@ class TestGradientFlow:
     def test_encoder_parameters_get_gradients(self, small_model):
         """Test that KAN encoder parameters receive gradients."""
         x = torch.randn(3, 8, 16)
-        out = small_model.forward(x)
+        _, out, _ = small_model.forward(x)
         loss = out.sum()
         loss.backward()
 
@@ -245,7 +290,7 @@ class TestGradientFlow:
     def test_decoder_parameters_get_gradients(self, small_model):
         """Test that decoder parameters receive gradients."""
         x = torch.randn(3, 8, 16)
-        out = small_model.forward(x)
+        _, out, _ = small_model.forward(x)
         loss = out.sum()
         loss.backward()
 
@@ -288,3 +333,42 @@ class TestLossComputation:
         assert final_loss < initial_loss, (
             f"Loss did not decrease: {initial_loss:.4f} → {final_loss:.4f}"
         )
+
+    def test_sparsity_loss_nonnegative_under_threshold_pressure(self, jumprelu_model):
+        """Sparsity penalty cannot invert when log-thresholds are pushed very low."""
+        from spline_clt.training.loss import compute_decoder_norms, sparsity_loss
+
+        jumprelu_model.activation_function.threshold.data.fill_(-6.0)
+        x = torch.randn(3, 8, 16)
+        activations = jumprelu_model.encode(x)
+        assert (activations >= 0).all()
+
+        dec_norms = compute_decoder_norms(jumprelu_model)
+        loss = sparsity_loss(activations, dec_norms, lambda_=0.05)
+        assert loss.item() >= 0.0
+
+    def test_total_loss_nonnegative_for_linear_jumprelu(self):
+        """Linear JumpReLU training loss components stay non-negative."""
+        from spline_clt.training.loss import total_loss
+
+        model = KANCrossLayerTranscoder(
+            n_layers=3,
+            d_transcoder=32,
+            d_model=16,
+            encoder_type="linear",
+            activation_function="jump_relu",
+            device=torch.device("cpu"),
+        )
+        x = torch.randn(3, 8, 16)
+        y = torch.randn(3, 8, 16)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+
+        for _ in range(30):
+            optimizer.zero_grad()
+            loss, metrics = total_loss(model, x, y, lambda_sparsity=0.05)
+            assert metrics["loss/sparsity"] >= 0.0
+            assert metrics["loss/reconstruction"] >= 0.0
+            assert metrics["loss/kan_regularization"] >= 0.0
+            assert metrics["loss/total"] >= 0.0
+            loss.backward()
+            optimizer.step()

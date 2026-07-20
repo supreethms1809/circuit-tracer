@@ -7,16 +7,18 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import time
 
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import torch
+import torch.distributed as dist
 
 from attribution.shapley import shapley_logit_attribution
 from eval.monosemanticity import collect_max_activating_examples
@@ -65,7 +67,13 @@ from spline_clt.paper.reporting import (
     write_tables_csv,
 )
 from spline_clt.training.data import ActivationDataset, DataConfig, collect_activations
-from spline_clt.training.train import TrainConfig, train
+from spline_clt.training.train import (
+    TrainConfig,
+    build_session,
+    close_session,
+    run_chunk,
+    train,
+)
 
 
 def _sanitize_name(value: str) -> str:
@@ -141,6 +149,13 @@ class PaperSuiteRunner:
     ):
         self.suite_path = Path(suite_path).resolve()
         self.config, self.resolved_config = load_suite_config(self.suite_path)
+        # Allow HPC jobs to redirect large paper_eval artifacts away from shared
+        # filesystems (e.g. into /cluster/.../gscratch).
+        output_override = os.environ.get("PAPER_OUTPUT_ROOT")
+        if output_override:
+            self.config.output_root = output_override
+            if isinstance(self.resolved_config, dict):
+                self.resolved_config["output_root"] = output_override
         self.repo_root = self._find_repo_root(self.suite_path.parent)
         self.suite_root = (self.repo_root / self.config.output_root / self.config.suite_name).resolve()
         self.datasets_root = self.suite_root / self.config.dataset.cache_dir
@@ -338,15 +353,47 @@ class PaperSuiteRunner:
         )
 
         if self._stage_enabled("collect_dataset"):
-            if self.worker_id == 0:
+            if self._dataset_uses_chunked_offline():
+                # Chunked-offline normally relies on per-chunk writes during
+                # training. But if every (variant, seed) for a given model is
+                # already trained, no chunks will be produced this run, and
+                # eval (which needs the val split) will fail. Detect that and
+                # run a one-off collection for those models.
+                eval_only_models = (
+                    self._models_needing_eval_only_collection(unique_model_names)
+                    if self._stage_enabled("evaluate")
+                    else []
+                )
+                if eval_only_models:
+                    if self.worker_id == 0:
+                        self._log(
+                            "Chunked offline + training already complete; "
+                            "collecting activations so eval has a val split: "
+                            f"{eval_only_models}"
+                        )
+                        for model_name in eval_only_models:
+                            self._banner(
+                                f"STAGE: Dataset collection (eval-only)  |  model={model_name}"
+                            )
+                            self._collect_dataset(model_name, eval_only=True)
+                    else:
+                        for model_name in eval_only_models:
+                            self._wait_for_dataset(model_name)
+                else:
+                    self._log(
+                        "Chunked offline collection — skipping global dataset stage "
+                        "(per-chunk mmap writes during training)."
+                    )
+            elif self.worker_id == 0:
                 for model_name in unique_model_names:
                     self._banner(f"STAGE: Dataset collection  |  model={model_name}")
                     self._collect_dataset(model_name)
             else:
-                # Defensive: dataset should already be ready (Phase 1 ran first),
-                # but poll briefly in case of NFS staleness.
-                for model_name in unique_model_names:
-                    self._wait_for_dataset(model_name)
+                if not self._dataset_uses_chunked_offline():
+                    # Defensive: dataset should already be ready (Phase 1 ran first),
+                    # but poll briefly in case of NFS staleness.
+                    for model_name in unique_model_names:
+                        self._wait_for_dataset(model_name)
 
         checkpoint_paths: dict[tuple[str, int], Path] = {}
 
@@ -361,6 +408,25 @@ class PaperSuiteRunner:
             else:
                 checkpoint_path = self._resolve_checkpoint_path(variant_name, variant, seed)
             checkpoint_paths[(variant_name, seed)] = checkpoint_path
+
+        # Training is distributed (FSDP needs every rank); evaluation, MACAG, and
+        # reporting are single-process (transformer_lens forward passes, graph
+        # building, file writes) with no collective ops — verified. Under torchrun
+        # they would otherwise run on every rank, which (a) crashes on non-zero ranks
+        # because the language model loads on cuda:local_rank while inputs land on
+        # cuda:0 (embed index device mismatch), and (b) races multiple ranks into the
+        # same report file writes (worker_id==0 is true on every torchrun rank).
+        # Only rank 0 runs them; other ranks return immediately. torchrun waits for
+        # rank 0 to finish, and rank 0 issues no collectives, so early exit is safe.
+        rank = int(os.environ.get("RANK", "0"))
+        if rank != 0:
+            return {
+                "suite_root": str(self.suite_root),
+                "worker_id": self.worker_id,
+                "num_workers": self.num_workers,
+                "aggregate_metrics_path": str(self.suite_root / "aggregate_metrics.json"),
+                "aggregate": {},
+            }
 
         for run_idx, (variant_name, variant, seed) in enumerate(variant_seed_pairs, 1):
             self._banner(
@@ -439,6 +505,28 @@ class PaperSuiteRunner:
             and (val_dir / "mlp_outputs_val.npy").exists()
         )
 
+    @staticmethod
+    def _npy_is_truncated(path: Path) -> bool:
+        """True if a .npy is sparse/partially written.
+
+        A crashed collection can leave a val ``.npy`` whose header declares the
+        full array size (so ``st_size`` reports the whole corpus) while only a
+        small prefix of windows was actually written; the unwritten tail reads
+        back as zeros. Such a file passes a plain existence check but poisons
+        reconstruction (target ``y=0`` -> cosine 0, ``relative_error`` explodes).
+        Compare bytes actually allocated on disk (``st_blocks`` is in 512-byte
+        units) against the declared size: a fully materialised, dense .npy has a
+        ratio near 1.0, while the corruption observed in the field was ~0.004.
+        """
+        try:
+            st = path.stat()
+        except OSError:
+            return True
+        if st.st_size <= 0:
+            return True
+        allocated_bytes = st.st_blocks * 512
+        return allocated_bytes < 0.9 * st.st_size
+
     def _load_train_val_datasets(
         self,
         *,
@@ -470,9 +558,17 @@ class PaperSuiteRunner:
         only. Without them, returns the whole legacy dataset (downstream
         eval samples a deterministic subset from it).
         """
-        if (val_dir / "mlp_inputs_val.npy").exists() and (
-            val_dir / "mlp_outputs_val.npy"
-        ).exists():
+        val_in = val_dir / "mlp_inputs_val.npy"
+        val_out = val_dir / "mlp_outputs_val.npy"
+        if val_in.exists() and val_out.exists():
+            if self._npy_is_truncated(val_in) or self._npy_is_truncated(val_out):
+                raise RuntimeError(
+                    f"Validation activations under {val_dir} are truncated/sparse "
+                    "(a crashed collection left mostly-zero rows). Refusing to "
+                    "evaluate reconstruction against zeros. Delete the val .npy "
+                    "files and re-run with the collect_dataset stage enabled to "
+                    "regenerate the hold-out."
+                )
             return ActivationDataset.load(str(val_dir), split="val")
         return ActivationDataset.load(str(train_dir))
 
@@ -510,14 +606,76 @@ class PaperSuiteRunner:
         ).exists()
         return has_split or has_torch or has_numpy
 
+    def _models_needing_eval_only_collection(self, model_names: list[str]) -> list[str]:
+        """Models whose (variant, seed) cells are all trained but whose val split is missing.
+
+        Used in chunked-offline mode: if no chunks will be produced this run
+        (because training is already complete) and eval needs the val split,
+        we must do a one-off collection.
+        """
+        needed: list[str] = []
+        for model_name in model_names:
+            variants_for_model = [
+                (vn, v)
+                for vn, v in self.config.model_variants.items()
+                if self._variant_model_name(v) == model_name
+            ]
+            if not variants_for_model:
+                continue
+            all_trained = all(
+                self._train_stage_complete(vn, v, seed)
+                for (vn, v) in variants_for_model
+                for seed in self.config.seeds
+            )
+            if not all_trained:
+                continue
+            # Evaluation only ever reads the VAL split (see _evaluate_variant_seed),
+            # which lives on persistent shared storage. The train cache lives on
+            # per-node /lscratch and is wiped between jobs, so requiring it here
+            # (via _dataset_stage_complete) would trigger a full n_tokens re-collection
+            # that overflows /lscratch and SIGBUSes. Only re-collect if VAL is missing.
+            if self._val_split_present(model_name):
+                continue
+            needed.append(model_name)
+        return needed
+
+    def _val_split_present(self, model_name: str) -> bool:
+        """True if the val split eval needs is already on disk AND fully written.
+
+        A truncated/sparse val (left by a crashed re-collection) is treated as
+        missing so a fresh, chunk-bounded collection regenerates it, rather than
+        letting eval silently score reconstruction against zero-filled rows.
+        """
+        val_dir = self._val_dataset_dir(model_name)
+        train_dir = self._dataset_dir(model_name)
+        val_in = val_dir / "mlp_inputs_val.npy"
+        val_out = val_dir / "mlp_outputs_val.npy"
+        has_val_split = val_in.exists() and val_out.exists()
+        if has_val_split and (
+            self._npy_is_truncated(val_in) or self._npy_is_truncated(val_out)
+        ):
+            self._log(
+                f"Val split for {model_name} at {val_dir} is truncated/sparse; "
+                "treating as missing and forcing re-collection."
+            )
+            has_val_split = False
+        # Legacy single-file layouts that _load_val_or_legacy can fall back to.
+        has_legacy = (
+            (train_dir / "mlp_inputs.npy").exists()
+            or (train_dir / "mlp_inputs.pt").exists()
+        )
+        return has_val_split or has_legacy
+
     def _train_stage_complete(self, variant_name: str, variant: ModelVariantConfig, seed: int) -> bool:
         if variant.checkpoint_path:
             return Path(variant.checkpoint_path).exists()
-        best_dir = self._best_checkpoint_dir(variant_name, variant, seed)
-        final_dir = self._final_checkpoint_dir(variant_name, variant, seed)
-        return (best_dir / "metadata.safetensors").exists() or (final_dir / "metadata.safetensors").exists()
+        # train_summary.json is written only at line 1064, after the full
+        # training loop returns. Intermediate _best/ and _final/ checkpoint
+        # dirs are written each chunk by the chunked-offline trainer for
+        # resume purposes — their presence does NOT mean training finished.
+        return (self._run_dir(variant_name, seed) / "train_summary.json").exists()
 
-    def _collect_dataset(self, model_name: str) -> dict[str, Any]:
+    def _collect_dataset(self, model_name: str, *, eval_only: bool = False) -> dict[str, Any]:
         dataset_dir = self._dataset_dir(model_name)
         summary_path = dataset_dir / "dataset_manifest.json"
         if self._dataset_stage_complete(model_name):
@@ -534,11 +692,34 @@ class PaperSuiteRunner:
             return summary
 
         val_dir = self._val_dataset_dir(model_name)
+
+        # Eval only needs the fixed val hold-out, which is materialised from the
+        # FIRST chunk of the corpus. Collecting the full n_tokens in one
+        # non-chunked pass would stage every token's activations on node-local
+        # /lscratch and SIGBUS (gpt2-small is ~18 KB/token, so 1B tokens far
+        # exceeds the disk). Cap to a single chunk so the collection reproduces
+        # training's chunk-0 val deterministically (same seed, skip_items=0) and
+        # fits on disk.
+        n_tokens = self.config.dataset.n_tokens
+        chunk_toks = self.config.dataset.collection_chunk_n_tokens
+        if eval_only and chunk_toks and chunk_toks > 0:
+            n_tokens = min(n_tokens, int(chunk_toks))
+            # A stale val_hashes.txt (from the original training chunk 0 or a
+            # crashed re-collection) marks exactly these chunk-0 windows as
+            # already reserved, so dedup would drop ALL of them and write an
+            # empty val. Clear it first, mirroring the training chunk-0 path, so
+            # this collection re-reserves the hold-out from scratch.
+            if self.config.dataset.dedup:
+                stale_hashes = val_dir / "val_hashes.txt"
+                if stale_hashes.exists():
+                    stale_hashes.unlink()
+
         self._log(
-            f"Collecting activations: n_tokens={self.config.dataset.n_tokens}, "
+            f"Collecting activations: n_tokens={n_tokens}, "
             f"seq_len={self.config.dataset.seq_len}, batch_size={self.config.dataset.batch_size}, "
             f"val_fraction={self.config.dataset.val_fraction} -> "
             f"train_dir={dataset_dir}, val_dir={val_dir}"
+            + (" (eval-only, capped to one chunk)" if eval_only else "")
         )
         dataset_dir.mkdir(parents=True, exist_ok=True)
         val_dir.mkdir(parents=True, exist_ok=True)
@@ -546,15 +727,19 @@ class PaperSuiteRunner:
             model_name=model_name,
             dataset_name=self.config.dataset.dataset_name,
             dataset_config=self.config.dataset.dataset_config,
-            n_tokens=self.config.dataset.n_tokens,
+            n_tokens=n_tokens,
             seq_len=self.config.dataset.seq_len,
             batch_size=self.config.dataset.batch_size,
             save_dir=str(dataset_dir),
             val_save_dir=str(val_dir),
             val_fraction=self.config.dataset.val_fraction,
             device=str(_device_from_name(self.config.dataset.device)),
+            dtype=self.config.dataset.dtype,
             seed=self.config.dataset.seed,
             load_after_collect=False,
+            dedup=self.config.dataset.dedup,
+            dedup_train=self.config.dataset.dedup_train,
+            val_hashes_path=str(val_dir / "val_hashes.txt"),
         )
         collect_activations(data_config)
         summary = {
@@ -587,6 +772,385 @@ class PaperSuiteRunner:
             return best_dir
         return final_dir
 
+    def _dataset_uses_chunked_offline(self) -> bool:
+        c = self.config.dataset.collection_chunk_n_tokens
+        return c is not None and c > 0
+
+    @staticmethod
+    def _chunk_exclusive_step_bounds(total_steps: int, n_chunks: int) -> list[int]:
+        """Exclusive upper bounds per chunk (chunk ci covers steps while step < bounds[ci])."""
+        bounds: list[int] = []
+        acc = 0
+        for ci in range(n_chunks):
+            lo = (total_steps * ci) // n_chunks
+            hi = (total_steps * (ci + 1)) // n_chunks
+            acc += hi - lo
+            bounds.append(acc)
+        assert acc == total_steps
+        return bounds
+
+    def _train_variant_seed_chunked_offline(
+        self,
+        variant_name: str,
+        variant: ModelVariantConfig,
+        seed: int,
+        checkpoint_dir: Path,
+        training,
+    ) -> bool:
+        """Run the chunked-offline training loop.
+
+        Returns True iff all chunks completed normally. Returns False if the
+        loop stopped early on a graceful SIGTERM shutdown (walltime/scancel),
+        so the caller can avoid marking training as complete and let the next
+        job resume from the last completed-chunk checkpoint.
+        """
+        chunk_toks = int(self.config.dataset.collection_chunk_n_tokens or 0)
+        total_tokens_budget = int(self.config.dataset.n_tokens)
+        n_chunks = max(1, math.ceil(total_tokens_budget / chunk_toks))
+        exclusive_bounds = self._chunk_exclusive_step_bounds(training.total_steps, n_chunks)
+
+        run_name = self._variant_run_name(variant_name, variant, seed)
+        ts_path = checkpoint_dir / f"{run_name}_training_state.pt"
+
+        cpu_resume: dict | None = None
+        skip_seq = 0
+        skip_items = 0
+        start_ci = 0
+        if ts_path.exists():
+            cpu_resume = torch.load(ts_path, map_location="cpu")
+            skip_seq = int(cpu_resume.get("corpus_skip_sequences", 0))
+            skip_items = int(cpu_resume.get("corpus_skip_items", 0))
+            start_ci = int(cpu_resume.get("chunk_index", 0))
+            # Collection now resumes by item cursor (skip_items), not by re-tokenizing
+            # the window prefix. A pre-migration checkpoint has consumed chunks but no
+            # item cursor; resuming it as-is would re-collect from item 0 and corrupt
+            # the run. Refuse and point at the one-time migration instead.
+            if start_ci > 0 and skip_items <= 0 and skip_seq > 0:
+                raise RuntimeError(
+                    f"Chunked resume for {run_name!r} has chunk_index={start_ci} and "
+                    f"corpus_skip_sequences={skip_seq} but no corpus_skip_items cursor. "
+                    "This checkpoint predates the item-cursor migration. Run it once, "
+                    "single-process:\n"
+                    "  python -m spline_clt.training.migrate_skip_cursor \\\n"
+                    f"    --state {ts_path} \\\n"
+                    "    --resolved-config <output_root>/<suite>/resolved_config.json\n"
+                    "then resubmit the training job."
+                )
+
+        model_name = self._variant_model_name(variant)
+        dataset_dir = self._dataset_dir(model_name)
+        val_dataset_dir = self._val_dataset_dir(model_name)
+        world_sz = int(os.environ.get("WORLD_SIZE", "1"))
+        rank = int(os.environ.get("RANK", "0"))
+
+        self._log(
+            f"Chunked offline: n_chunks={n_chunks}, tokens_per_chunk={chunk_toks}, "
+            f"budget_tokens={total_tokens_budget}, resume_chunk={start_ci}, "
+            f"corpus_skip_items={skip_items}, corpus_skip_sequences={skip_seq}"
+        )
+
+        # Build-once: the model + FSDP wrap + optimizers + wandb run are created
+        # a single time via build_session() and reused across chunks by run_chunk(),
+        # instead of being rebuilt every chunk (the source of the +12 GB/chunk GPU
+        # growth that saturated the card and thrashed the allocator).
+        session = None
+
+        for ci in range(start_ci, n_chunks):
+            tokens_this = min(chunk_toks, total_tokens_budget - ci * chunk_toks)
+            if tokens_this <= 0:
+                break
+
+            if world_sz > 1 and not dist.is_initialized():
+                backend = "nccl" if torch.cuda.is_available() else "gloo"
+                # Rank 0 may spend >10 min collecting a large activation chunk
+                # before other ranks reach the metadata broadcast.
+                dist.init_process_group(backend=backend, timeout=timedelta(hours=4))
+
+            # NCCL requires each rank to use its own GPU. Chunked collect runs this
+            # *before* train(), which normally calls torch.cuda.set_device(local_rank).
+            local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+            if world_sz > 1 and torch.cuda.is_available():
+                torch.cuda.set_device(local_rank)
+
+            # The train cache lives on node-LOCAL storage (e.g. /lscratch NVMe),
+            # so on a multi-node run every node needs its own replica of the
+            # chunk. Collection is fully deterministic given (seed, skip_items)
+            # — HF shuffle, window chunking, and the val permutation are all
+            # seeded — so each node's LOCAL_RANK==0 collects the same chunk into
+            # its own local dir in parallel (no network transfer). Only global
+            # rank 0 writes the shared val split and the shared val-hash file;
+            # other node leaders write their (identical, unused) val slice to a
+            # node-local throwaway dir. On a single node this reduces to the
+            # previous rank-0-only behavior.
+            is_node_leader = local_rank == 0
+            shared_val_hashes = val_dataset_dir / "val_hashes.txt"
+            leader_snapshot = Path(dataset_dir) / "val_hashes_snapshot.txt"
+
+            # Fresh run (ci==0): rank 0 clears a stale val-hash file from a prior
+            # run BEFORE any other node leader snapshots it, so nobody reads
+            # leftover reservations. Resumes (start_ci > 0) never hit ci==0, so
+            # the accumulated file is preserved.
+            if rank == 0 and ci == 0 and self.config.dataset.dedup:
+                if shared_val_hashes.exists():
+                    shared_val_hashes.unlink()
+            if world_sz > 1:
+                dist.barrier()
+
+            # Non-zero node leaders read prior val hashes from a local snapshot
+            # taken now — before global rank 0 can append this chunk's new
+            # hashes (that append happens at the END of rank 0's collection,
+            # which starts only after the barrier below). All leaders therefore
+            # see identical prior hashes and derive identical train/val masks,
+            # keeping the per-node train memmaps byte-identical.
+            if is_node_leader and rank != 0 and self.config.dataset.dedup:
+                Path(dataset_dir).mkdir(parents=True, exist_ok=True)
+                if shared_val_hashes.exists():
+                    shutil.copyfile(shared_val_hashes, leader_snapshot)
+                elif leader_snapshot.exists():
+                    leader_snapshot.unlink()
+            if world_sz > 1:
+                dist.barrier()
+
+            if rank == 0:
+                chunk_val_save_dir = val_dataset_dir
+                chunk_val_hashes_path = shared_val_hashes
+            else:
+                chunk_val_save_dir = Path(dataset_dir) / "_val_node_local"
+                chunk_val_hashes_path = leader_snapshot
+
+            n_seq_chunk = 0
+            n_items_chunk = 0
+            if is_node_leader:
+                data_config = DataConfig(
+                    model_name=model_name,
+                    dataset_name=self.config.dataset.dataset_name,
+                    dataset_config=self.config.dataset.dataset_config,
+                    n_tokens=tokens_this,
+                    seq_len=self.config.dataset.seq_len,
+                    batch_size=self.config.dataset.batch_size,
+                    save_dir=str(dataset_dir),
+                    val_save_dir=str(chunk_val_save_dir),
+                    # Materialise the fixed validation split ONCE, on the first chunk
+                    # of a fresh run; every later chunk collects train-only
+                    # (val_fraction=0) so it never re-opens or overwrites the val
+                    # memmaps. The per-sequence split already makes the chunk-0 val
+                    # sequences disjoint from chunk-0 train, and later chunks draw
+                    # from later corpus items, so the frozen val stays a clean
+                    # hold-out used identically by every chunk's val_eval and by the
+                    # eval stage. Resumes (start_ci > 0) skip straight to the reuse
+                    # branch and read the val written by the original chunk 0.
+                    val_fraction=(
+                        self.config.dataset.val_fraction if ci == 0 else 0.0
+                    ),
+                    device=str(_device_from_name(self.config.dataset.device)),
+                    dtype=self.config.dataset.dtype,
+                    seed=self.config.dataset.seed,
+                    load_after_collect=False,
+                    skip_items=skip_items,
+                    # Dedupe the val holdout and keep train disjoint from it by
+                    # token-window content. Val hashes persist in the (stable) val
+                    # dir so later chunks (val_fraction=0) still exclude held-out
+                    # windows from train.
+                    dedup=self.config.dataset.dedup,
+                    dedup_train=self.config.dataset.dedup_train,
+                    val_hashes_path=str(chunk_val_hashes_path),
+                )
+                _val_mode = (
+                    f"collect fixed val ({self.config.dataset.val_fraction:.0%})"
+                    if ci == 0
+                    else "reuse fixed val from chunk 1"
+                )
+                self._log(
+                    f"Chunk {ci + 1}/{n_chunks} (rank {rank}, node leader): "
+                    f"collect n_tokens={tokens_this}, skip_items={skip_items}, {_val_mode}"
+                )
+                coll = collect_activations(data_config)
+                n_seq_chunk = coll.n_sequences
+                n_items_chunk = coll.n_items_consumed
+
+            if world_sz > 1:
+                if torch.cuda.is_available():
+                    dev = torch.device("cuda", local_rank)
+                else:
+                    dev = torch.device("cpu")
+                buf = torch.tensor(
+                    [n_seq_chunk, n_items_chunk], dtype=torch.long, device=dev
+                )
+                # Rank 0 is authoritative for the corpus cursors. Every node
+                # leader must have consumed the same item count (collection is
+                # deterministic) — verified via the train-length check below.
+                dist.broadcast(buf, src=0)
+                n_seq_chunk = int(buf[0].item())
+                n_items_chunk = int(buf[1].item())
+                dist.barrier()
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+
+            train_dataset, val_dataset = self._load_train_val_datasets(
+                train_dir=dataset_dir,
+                val_dir=val_dataset_dir,
+            )
+
+            if world_sz > 1:
+                # Guard against stale/desynced node-local caches: every rank must
+                # see the same number of train sequences for this chunk, otherwise
+                # the DistributedSampler shards diverge and collectives hang (or,
+                # worse, some nodes silently train on a leftover chunk from a
+                # previous job on that node's local disk).
+                n_local = len(train_dataset)
+                len_buf = torch.tensor([n_local], dtype=torch.long, device=dev)
+                dist.broadcast(len_buf, src=0)
+                n_ref = int(len_buf.item())
+                if n_local != n_ref:
+                    raise RuntimeError(
+                        f"Rank {rank}: node-local train cache at {dataset_dir} has "
+                        f"{n_local} sequences for chunk {ci + 1}/{n_chunks}, but rank 0 "
+                        f"collected {n_ref}. The node-local activation cache is stale or "
+                        "was not collected — wipe the local cache dir on every node "
+                        "(e.g. rm -rf /lscratch/*) and resubmit."
+                    )
+
+            chunk_stop = exclusive_bounds[ci]
+            chunk_floor = exclusive_bounds[ci - 1] if ci > 0 else 0
+
+            if session is None:
+                # Build the (single) per-job session on the first chunk. The
+                # TrainConfig is created once; per-chunk fields below are updated
+                # in place on session.config each chunk.
+                train_config = TrainConfig(
+                    n_layers=training.n_layers,
+                    d_model=training.d_model,
+                    d_transcoder=training.d_transcoder,
+                    encoder_type=training.encoder_type,
+                    grid_size=training.grid_size,
+                    spline_order=training.spline_order,
+                    learning_rate=training.learning_rate,
+                    optimizer=training.optimizer,
+                    warmup_steps=training.warmup_steps,
+                    total_steps=training.total_steps,
+                    batch_size=training.batch_size,
+                    lambda_sparsity=training.lambda_sparsity,
+                    lambda_kan_reg=training.lambda_kan_reg,
+                    recon_normalization=training.recon_normalization,
+                    sparsity_normalization=training.sparsity_normalization,
+                    recon_layer_energy_beta=training.recon_layer_energy_beta,
+                    c_sparsity=training.c_sparsity,
+                    grad_clip=training.grad_clip,
+                    log_every=training.log_every,
+                    eval_every=training.eval_every,
+                    save_every=training.save_every,
+                    keep_last_checkpoints=training.keep_last_checkpoints,
+                    checkpoint_dir=str(checkpoint_dir),
+                    run_name=run_name,
+                    update_grid_every=training.update_grid_every,
+                    update_grid_from=training.update_grid_from,
+                    reset_optimizer_every=training.reset_optimizer_every,
+                    use_fsdp=training.use_fsdp,
+                    fsdp_cpu_offload=training.fsdp_cpu_offload,
+                    data_dir=str(dataset_dir),
+                    val_data_dir=str(val_dataset_dir),
+                    device=str(_device_from_name(training.device or self.config.dataset.device)),
+                    dtype=training.dtype,
+                    seed=seed,
+                    val_fraction=training.val_fraction,
+                    num_workers=training.num_workers,
+                    pin_memory=training.pin_memory,
+                    prefetch_factor=training.prefetch_factor,
+                    persistent_workers=training.persistent_workers,
+                    dataloader_max_host_gib=training.dataloader_max_host_gib,
+                    tf32=training.tf32,
+                    log_dir=str(checkpoint_dir.parent),
+                    wandb_project=training.wandb_project or self.config.wandb.project,
+                    wandb_entity=training.wandb_entity or self.config.wandb.entity,
+                    wandb_mode=training.wandb_mode if training.wandb_project else self.config.wandb.mode,
+                    wandb_run_name=f"{self.config.suite_name}/{variant_name}_seed{seed}",
+                    resume_training_if_exists=True,
+                    chunk_stop_step=chunk_stop,
+                    chunk_resume_step_floor=chunk_floor,
+                    corpus_skip_sequences=skip_seq,
+                    corpus_skip_items=skip_items,
+                    training_chunk_index=ci,
+                )
+                session = build_session(
+                    train_config,
+                    resume_payload=cpu_resume,
+                    norm_dataset=train_dataset,
+                )
+            else:
+                # Reuse the persistent model/optimizers/wandb; only the per-chunk
+                # bounds + bookkeeping change.
+                session.config.chunk_stop_step = chunk_stop
+                session.config.chunk_resume_step_floor = chunk_floor
+                session.config.corpus_skip_sequences = skip_seq
+                session.config.corpus_skip_items = skip_items
+                session.config.training_chunk_index = ci
+
+            self._log(
+                f"Chunk {ci + 1}/{n_chunks}: train global steps [{chunk_floor}, {chunk_stop}) "
+                f"→ {chunk_stop - chunk_floor} optimizer steps "
+                f"(LR schedule uses global step counter out of total_steps={training.total_steps})"
+            )
+            cpu_resume, shutdown = run_chunk(session, train_dataset, val_dataset)
+            del train_dataset, val_dataset
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                if rank == 0:
+                    # With build-once this reserved figure should stay FLAT across
+                    # chunks (the old per-chunk rebuild grew it ~12 GB/chunk).
+                    self._log(
+                        f"Chunk {ci + 1}/{n_chunks} cleanup: GPU "
+                        f"allocated={torch.cuda.memory_allocated() / 1e9:.1f} GB, "
+                        f"reserved={torch.cuda.memory_reserved() / 1e9:.1f} GB"
+                    )
+
+            # Graceful shutdown: run_chunk() caught SIGTERM (walltime/scancel) and
+            # stopped mid-chunk without writing a partial training_state. Stop the
+            # chunk loop WITHOUT advancing chunk_index/corpus_skip_sequences so the
+            # next job re-runs this chunk cleanly from the last completed checkpoint.
+            if shutdown:
+                if rank == 0:
+                    self._log(
+                        f"Chunk {ci + 1}/{n_chunks}: graceful shutdown (SIGTERM) — "
+                        "stopping chunk loop; resuming from last completed-chunk "
+                        "checkpoint on the next job."
+                    )
+                if world_sz > 1:
+                    dist.barrier()
+                # Tear down the session and report incomplete so the caller does
+                # NOT write train_summary.json — the next job resumes this chunk.
+                if session is not None:
+                    close_session(session)
+                return False
+
+            skip_seq += n_seq_chunk
+            skip_items += n_items_chunk
+            if cpu_resume is not None:
+                cpu_resume["corpus_skip_sequences"] = skip_seq
+                cpu_resume["corpus_skip_items"] = skip_items
+                cpu_resume["chunk_index"] = ci + 1
+            if rank == 0:
+                if cpu_resume is not None:
+                    torch.save(cpu_resume, ts_path)
+                elif ts_path.exists():
+                    pkg = torch.load(ts_path, map_location="cpu")
+                    pkg["corpus_skip_sequences"] = skip_seq
+                    pkg["corpus_skip_items"] = skip_items
+                    pkg["chunk_index"] = ci + 1
+                    torch.save(pkg, ts_path)
+            if world_sz > 1:
+                dist.barrier()
+
+        # Tear down the single per-job session once all chunks are done.
+        if session is not None:
+            close_session(session)
+        return True
+
     def _train_variant_seed(
         self,
         variant_name: str,
@@ -616,79 +1180,126 @@ class PaperSuiteRunner:
             return Path(payload["checkpoint_path"])
 
         training = variant.training
+        chunked_offline = self._dataset_uses_chunked_offline()
         self._log(
             f"Training {variant_name} (seed={seed}): "
             f"encoder={training.encoder_type}, d_transcoder={training.d_transcoder}, "
             f"steps={training.total_steps}, batch_size={training.batch_size}, "
             f"num_workers={training.num_workers}, pin_memory={training.pin_memory}, "
             f"dtype={training.dtype}, "
-            f"dataset_name={self.config.dataset.dataset_name}"
+            f"dataset_name={self.config.dataset.dataset_name}, "
+            f"chunked_offline={chunked_offline}, "
+            f"use_fsdp={training.use_fsdp}, fsdp_cpu_offload={training.fsdp_cpu_offload}"
         )
-        dataset_dir = self._dataset_dir(self._variant_model_name(variant))
-        val_dataset_dir = self._val_dataset_dir(self._variant_model_name(variant))
-        self._log(
-            "Loading activation datasets in streaming mode (mmap, no RAM copy): "
-            f"train={dataset_dir}, val={val_dataset_dir}"
-        )
-        train_dataset, val_dataset = self._load_train_val_datasets(
-            train_dir=dataset_dir,
-            val_dir=val_dataset_dir,
-        )
+
+        if chunked_offline:
+            train_dataset = None
+            val_dataset = None
+            self._log(
+                "Chunked offline collection — per-chunk mmap writes with optimizer checkpoints."
+            )
+        else:
+            dataset_dir = self._dataset_dir(self._variant_model_name(variant))
+            val_dataset_dir = self._val_dataset_dir(self._variant_model_name(variant))
+            self._log(
+                "Loading activation datasets in streaming mode (mmap, no RAM copy): "
+                f"train={dataset_dir}, val={val_dataset_dir}"
+            )
+            train_dataset, val_dataset = self._load_train_val_datasets(
+                train_dir=dataset_dir,
+                val_dir=val_dataset_dir,
+            )
 
         checkpoint_dir = run_dir / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        training = variant.training
-        train_config = TrainConfig(
-            n_layers=training.n_layers,
-            d_model=training.d_model,
-            d_transcoder=training.d_transcoder,
-            encoder_type=training.encoder_type,
-            grid_size=training.grid_size,
-            spline_order=training.spline_order,
-            learning_rate=training.learning_rate,
-            warmup_steps=training.warmup_steps,
-            total_steps=training.total_steps,
-            batch_size=training.batch_size,
-            lambda_sparsity=training.lambda_sparsity,
-            c_sparsity=training.c_sparsity,
-            grad_clip=training.grad_clip,
-            log_every=training.log_every,
-            eval_every=training.eval_every,
-            save_every=training.save_every,
-            checkpoint_dir=str(checkpoint_dir),
-            run_name=self._variant_run_name(variant_name, variant, seed),
-            update_grid_every=training.update_grid_every,
-            update_grid_from=training.update_grid_from,
-            reset_optimizer_every=training.reset_optimizer_every,
-            data_dir=str(dataset_dir),
-            val_data_dir=str(val_dataset_dir),
-            device=str(_device_from_name(training.device or self.config.dataset.device)),
-            dtype=training.dtype,
-            seed=seed,
-            val_fraction=training.val_fraction,
-            num_workers=training.num_workers,
-            pin_memory=training.pin_memory,
-            prefetch_factor=training.prefetch_factor,
-            persistent_workers=training.persistent_workers,
-            log_dir=str(run_dir),
-            wandb_project=training.wandb_project or self.config.wandb.project,
-            wandb_entity=training.wandb_entity or self.config.wandb.entity,
-            wandb_mode=training.wandb_mode if training.wandb_project else self.config.wandb.mode,
-            wandb_run_name=f"{self.config.suite_name}/{variant_name}_seed{seed}",
-        )
+        _dataset_dir = self._dataset_dir(self._variant_model_name(variant))
+        _val_dataset_dir = self._val_dataset_dir(self._variant_model_name(variant))
 
-        train(train_config, dataset=train_dataset, val_dataset=val_dataset)
+        training_completed = True
+        if chunked_offline:
+            training_completed = self._train_variant_seed_chunked_offline(
+                variant_name, variant, seed, checkpoint_dir, training
+            )
+        else:
+            train_config = TrainConfig(
+                n_layers=training.n_layers,
+                d_model=training.d_model,
+                d_transcoder=training.d_transcoder,
+                encoder_type=training.encoder_type,
+                grid_size=training.grid_size,
+                spline_order=training.spline_order,
+                learning_rate=training.learning_rate,
+                optimizer=training.optimizer,
+                warmup_steps=training.warmup_steps,
+                total_steps=training.total_steps,
+                batch_size=training.batch_size,
+                lambda_sparsity=training.lambda_sparsity,
+                lambda_kan_reg=training.lambda_kan_reg,
+                recon_normalization=training.recon_normalization,
+                sparsity_normalization=training.sparsity_normalization,
+                recon_layer_energy_beta=training.recon_layer_energy_beta,
+                c_sparsity=training.c_sparsity,
+                grad_clip=training.grad_clip,
+                log_every=training.log_every,
+                eval_every=training.eval_every,
+                save_every=training.save_every,
+                keep_last_checkpoints=training.keep_last_checkpoints,
+                checkpoint_dir=str(checkpoint_dir),
+                run_name=self._variant_run_name(variant_name, variant, seed),
+                update_grid_every=training.update_grid_every,
+                update_grid_from=training.update_grid_from,
+                reset_optimizer_every=training.reset_optimizer_every,
+                use_fsdp=training.use_fsdp,
+                fsdp_cpu_offload=training.fsdp_cpu_offload,
+                data_dir=str(_dataset_dir),
+                val_data_dir=str(_val_dataset_dir),
+                device=str(_device_from_name(training.device or self.config.dataset.device)),
+                dtype=training.dtype,
+                seed=seed,
+                val_fraction=training.val_fraction,
+                num_workers=training.num_workers,
+                pin_memory=training.pin_memory,
+                prefetch_factor=training.prefetch_factor,
+                persistent_workers=training.persistent_workers,
+                dataloader_max_host_gib=training.dataloader_max_host_gib,
+                tf32=training.tf32,
+                log_dir=str(run_dir),
+                wandb_project=training.wandb_project or self.config.wandb.project,
+                wandb_entity=training.wandb_entity or self.config.wandb.entity,
+                wandb_mode=training.wandb_mode if training.wandb_project else self.config.wandb.mode,
+                wandb_run_name=f"{self.config.suite_name}/{variant_name}_seed{seed}",
+                resume_training_if_exists=training.resume_training_if_exists,
+                chunk_stop_step=None,
+                corpus_skip_sequences=0,
+                training_chunk_index=0,
+            )
+            train(train_config, dataset=train_dataset, val_dataset=val_dataset)
         checkpoint_path = self._resolve_checkpoint_path(variant_name, variant, seed)
-        payload = {
-            "status": "completed",
-            "variant_name": variant_name,
-            "seed": seed,
-            "checkpoint_path": str(checkpoint_path),
-            "checkpoint_dir": str(checkpoint_dir),
-            "created_at": _utc_now(),
-        }
-        write_json(summary_path, payload)
-        self._write_run_manifest(run_dir, variant_name, variant, seed, str(checkpoint_path))
+        if not training_completed:
+            # Graceful SIGTERM (walltime/scancel) stopped chunked training early.
+            # Do NOT write train_summary.json — otherwise _train_stage_complete
+            # would treat this partially-trained run as finished and the next job
+            # would skip training entirely. Leaving the summary absent lets the
+            # next job resume from the last completed-chunk checkpoint.
+            self._log(
+                f"Training interrupted (graceful shutdown) for {variant_name} "
+                f"seed={seed}; not writing train_summary.json so the next job resumes."
+            )
+            return checkpoint_path
+        # Under torchrun both ranks execute here. Only rank 0 writes files to
+        # avoid a simultaneous-write race (content is identical but the OS
+        # interleave can corrupt JSON). Non-rank-0 ranks just return the path.
+        if int(os.environ.get("RANK", "0")) == 0:
+            payload = {
+                "status": "completed",
+                "variant_name": variant_name,
+                "seed": seed,
+                "checkpoint_path": str(checkpoint_path),
+                "checkpoint_dir": str(checkpoint_dir),
+                "created_at": _utc_now(),
+            }
+            write_json(summary_path, payload)
+            self._write_run_manifest(run_dir, variant_name, variant, seed, str(checkpoint_path))
         return checkpoint_path
 
     def _write_run_manifest(

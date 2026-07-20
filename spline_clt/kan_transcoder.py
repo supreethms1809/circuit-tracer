@@ -11,6 +11,7 @@ This module mirrors the interface of circuit_tracer.transcoder.CrossLayerTransco
 so it can be used as a drop-in replacement in the attribution pipeline.
 """
 
+import math
 import os
 
 import numpy as np
@@ -18,7 +19,7 @@ import torch
 import torch.nn as nn
 from safetensors.torch import save_file, load_file
 
-from circuit_tracer.transcoder.activation_functions import JumpReLU
+from circuit_tracer.transcoder.activation_functions import JumpReLU, jumprelu
 from spline_clt.kan_encoder import KANEncoder
 from spline_clt.linear_encoder import LinearEncoder
 
@@ -61,6 +62,7 @@ class KANCrossLayerTranscoder(nn.Module):
         feature_input_hook: str = "hook_resid_mid",
         feature_output_hook: str = "hook_mlp_out",
         scan: str | list[str] | None = None,
+        threshold_init: float = 0.001,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
     ):
@@ -107,6 +109,23 @@ class KANCrossLayerTranscoder(nn.Module):
             ])
             self.encoders.to(device=device, dtype=dtype)
 
+        # Per-layer input normalization (standardization) statistics.
+        # Raw GPT-2 residual-stream activations have wildly different per-layer
+        # scales and heavy outliers (e.g. std ~10 with abs-max in the thousands).
+        # Feeding them raw makes the B-spline grid_range=[-1, 1] meaningless and
+        # lets the adaptive grid get stretched by outliers, collapsing spline
+        # resolution where the data actually lives. We standardize the encoder
+        # input per layer/dimension before the encoder so the spline operates in
+        # a well-conditioned coordinate system. Buffers default to a no-op
+        # (mean=0, std=1) so untrained models and legacy checkpoints behave
+        # exactly as before; ``set_input_normalization`` populates them from data.
+        self.register_buffer(
+            "enc_input_mean", torch.zeros(n_layers, d_model, device=device, dtype=dtype)
+        )
+        self.register_buffer(
+            "enc_input_std", torch.ones(n_layers, d_model, device=device, dtype=dtype)
+        )
+
         # Encoder biases (applied after KAN forward, before activation)
         self.b_enc = nn.Parameter(
             torch.zeros(n_layers, d_transcoder, device=device, dtype=dtype)
@@ -119,8 +138,31 @@ class KANCrossLayerTranscoder(nn.Module):
 
         # Activation function
         if activation_function == "jump_relu":
+            # LOG-SPACE, NON-NEGATIVE JumpReLU threshold. The module's `.threshold`
+            # parameter stores log θ; the effective gate is θ = exp(log θ) > 0,
+            # applied in apply_activation_function(). This guarantees the gate
+            # x > θ passes only x > 0, so post-JumpReLU features are ≥ 0 and the
+            # sparsity penalty λ·Σ tanh(c·‖W_dec‖·a) can never invert to a reward.
+            #
+            # An UNCONSTRAINED threshold (the old parametrization) could drift < 0:
+            # once it did, negative pre-activations passed the gate as negative
+            # activations, flipped the sparsity term negative, and drove total loss
+            # below zero — a self-reinforcing collapse (linear arms hit 14–32% of
+            # features with θ < 0). exp() bounds θ > 0 by construction; as the
+            # optimizer pushes log θ → −∞ the feature asymptotes to a plain ReLU
+            # (θ → 0⁺) instead of inverting. threshold_init stays the *effective*
+            # init (stored as its log); it must be > 0.
+            #
+            # WARNING: never call self.activation_function.forward()/(...) — the
+            # stock JumpReLU.forward gates on the raw stored value, which is now
+            # log θ. Only apply_activation_function() (which exponentiates) is safe.
             self.activation_function = JumpReLU(
-                torch.zeros(n_layers, 1, d_transcoder, device=device, dtype=dtype)
+                torch.full(
+                    (n_layers, 1, d_transcoder),
+                    math.log(float(threshold_init)),
+                    device=device,
+                    dtype=dtype,
+                )
             )
         elif activation_function == "relu":
             self.activation_function = nn.functional.relu
@@ -177,6 +219,53 @@ class KANCrossLayerTranscoder(nn.Module):
     def dtype(self) -> torch.dtype:
         return self.b_enc.dtype
 
+    @property
+    def effective_threshold(self) -> torch.Tensor:
+        """Non-negative JumpReLU gates ``θ = exp(log θ)``.
+
+        The ``JumpReLU.threshold`` parameter stores log-thresholds in memory.
+        On-disk ``threshold_{i}`` tensors are the literal effective values (see
+        ``to_safetensors`` / ``load_spline_clt``). Shape: ``(n_layers, d_transcoder)``.
+        """
+        if not isinstance(self.activation_function, JumpReLU):
+            raise AttributeError(
+                "effective_threshold is only defined for jump_relu activation"
+            )
+        return self.activation_function.threshold.squeeze(1).exp()
+
+    def _normalize_input(self, x: torch.Tensor, layer_id: int) -> torch.Tensor:
+        """Standardize a single layer's encoder input by stored mean/std.
+
+        Computed in float32 (then cast back) so large per-dim means/outliers do
+        not lose precision under bfloat16. With the default buffers (mean=0,
+        std=1) this is an exact no-op.
+
+        Args:
+            x: Input tensor of shape (..., d_model).
+            layer_id: Which layer's statistics to use.
+        """
+        mean = self.enc_input_mean[layer_id].float()
+        std = self.enc_input_std[layer_id].float()
+        return ((x.float() - mean) / std).to(x.dtype)
+
+    @torch.no_grad()
+    def set_input_normalization(
+        self, mean: torch.Tensor, std: torch.Tensor, eps: float = 1e-3
+    ) -> None:
+        """Populate the per-layer encoder-input normalization buffers.
+
+        Args:
+            mean: Per-layer per-dim means, shape (n_layers, d_model).
+            std: Per-layer per-dim standard deviations, shape (n_layers, d_model).
+                Values below ``eps`` are replaced by 1.0 to avoid amplifying
+                (near-)constant dimensions.
+        """
+        mean = mean.to(self.enc_input_mean.device, self.enc_input_mean.dtype)
+        std = std.to(self.enc_input_std.device, self.enc_input_std.dtype)
+        std = torch.where(std < eps, torch.ones_like(std), std)
+        self.enc_input_mean.copy_(mean)
+        self.enc_input_std.copy_(std)
+
     def apply_activation_function(
         self, layer_id: int, features: torch.Tensor
     ) -> torch.Tensor:
@@ -190,8 +279,15 @@ class KANCrossLayerTranscoder(nn.Module):
             Activated features (same shape).
         """
         if isinstance(self.activation_function, JumpReLU):
-            mask = features > self.activation_function.threshold[layer_id]
-            return features * mask
+            # `.threshold` holds LOG-thresholds; the effective gate is
+            # θ = exp(log θ) > 0, so activations are non-negative and the sparsity
+            # penalty cannot invert (see __init__). The custom jumprelu autograd
+            # function gives θ its surrogate gradient, which flows back through
+            # exp() to the log-parameter. .clone() breaks FSDP's flat-param view
+            # chain; .exp() is a differentiable forward op preserving that flow.
+            log_threshold = self.activation_function.threshold[layer_id].squeeze(0).clone()
+            threshold = log_threshold.exp()
+            return jumprelu.apply(features, threshold, self.activation_function.bandwidth)
         else:
             return self.activation_function(features)
 
@@ -208,7 +304,14 @@ class KANCrossLayerTranscoder(nn.Module):
         Returns:
             Feature activations of shape (..., d_transcoder).
         """
-        features = self.encoders[layer_id](x) + self.b_enc[layer_id]
+        # Under FSDP, parameters are backed by a flat sharded buffer. index_select
+        # + squeeze returns a view (ViewBackward0) of that buffer; FSDP modifies
+        # the buffer in-place during reshard, which trips autograd's view-inplace
+        # guard. .clone() breaks the view chain so the backward graph holds a
+        # self-contained tensor, not a view of the FSDP flat param.
+        x = self._normalize_input(x, layer_id)
+        bias = self.b_enc[layer_id].clone()
+        features = self.encoders[layer_id](x) + bias
 
         if not apply_activation_function:
             return features
@@ -252,6 +355,10 @@ class KANCrossLayerTranscoder(nn.Module):
         encoder_vectors = []
 
         for layer_id in range(self.n_layers):
+            # Encoder vectors are computed against the *normalized* input (the
+            # space the encoder actually sees). x_norm is reused for the
+            # Jacobian below; encode_layer re-normalizes internally.
+            x_norm = self._normalize_input(x[layer_id], layer_id)
             layer_features = self.encode_layer(x[layer_id], layer_id)
             layer_features[zero_positions] = 0
 
@@ -263,13 +370,19 @@ class KANCrossLayerTranscoder(nn.Module):
                 active_mask = sparse_layer
                 try:
                     enc_vecs = self.encoders[layer_id].get_encoder_vectors_fast(
-                        x[layer_id], active_mask
+                        x_norm, active_mask
                     )
                 except RuntimeError:
                     enc_vecs = self.encoders[layer_id].get_encoder_vectors(
-                        x[layer_id], active_mask
+                        x_norm, active_mask
                     )
-                encoder_vectors.append(enc_vecs)
+                # Chain rule: the encoder acts on x_norm = (x_raw - mean)/std, so
+                # d(feature)/d(x_raw) = d(feature)/d(x_norm) * (1/std). Rescale so
+                # the returned directions live in raw residual-stream coordinates
+                # (what the attribution pipeline expects). For the linear encoder
+                # this turns W_enc rows into the equivalent raw-space direction.
+                inv_std = (1.0 / self.enc_input_std[layer_id]).to(enc_vecs.dtype)
+                encoder_vectors.append(enc_vecs * inv_std)
 
         sparse_features = torch.stack(sparse_layers).coalesce()
 
@@ -487,23 +600,73 @@ class KANCrossLayerTranscoder(nn.Module):
             return inputs @ self.W_skip[layer_id]
         raise ValueError("Transcoder has no skip connection")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Full forward pass: encode → decode.
+    def forward(
+        self, x_in: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
+        """FSDP-compatible forward: encode + decode_dense + decoder norms.
 
-        Args:
-            x: Input tensor of shape (n_layers, batch, d_model).
+        FSDP only unshards flat parameters during module.forward() hook calls.
+        Calling encode() or decode_dense() directly bypasses these hooks and
+        sees sharded/flat params. This method exists so model_for_train(x_in)
+        triggers FSDP's unshard/reshard cycle with all FSDP-managed parameter
+        accesses (b_enc, W_dec, threshold) inside the guarded window.
+
+        Uses decode_dense (not the sparse decode path) to avoid OOM early in
+        training when JumpReLU threshold is near zero and all features are active.
+        KAN encoder spline weights are in ignored_modules (never FSDP-sharded)
+        and are handled separately in compute_losses().
 
         Returns:
-            Reconstructed MLP outputs of shape (n_layers, batch, d_model).
+            activations: (n_layers, n_pos, d_transcoder)
+            y_hat:       (n_layers, n_pos, d_model)
+            dec_norms:   list of (d_transcoder,) tensors, one per source layer
         """
-        features = self.encode(x).to_sparse()
-        decoded = self.decode(features)
+        activations = self.encode(x_in)
+        y_hat = self.decode_dense(activations, input_acts=x_in)
+        dec_norms = [
+            self.W_dec[l].norm(dim=-1).max(dim=-1).values.detach()
+            for l in range(self.n_layers)
+        ]
+        return activations, y_hat, dec_norms
 
-        if self.W_skip is not None:
-            skip = x @ self.W_skip
-            decoded = decoded + skip
+    @torch.no_grad()
+    def spline_contribution_fraction(
+        self, x: torch.Tensor, max_pos: int | None = 512
+    ) -> float:
+        """Diagnostic: mean over layers of ||spline_output|| / ||encoder_output||.
 
-        return decoded
+        Measures how much the B-spline path moves the encoder pre-activation
+        relative to the linear/SiLU base path. ~0 means the KAN is behaving like
+        its linear base (the nonlinearity is unused — the thesis-critical failure
+        mode); larger means the spline is doing real work. Computed on the
+        normalized input (the space the encoder sees), pre-bias/pre-activation.
+
+        Returns NaN for the linear encoder (no spline path). Subsamples positions
+        to ``max_pos`` so it is cheap enough to call at every log step.
+
+        Args:
+            x: Input of shape (n_layers, n_pos, d_model).
+            max_pos: Cap on positions used for the estimate (None = all).
+        """
+        if self.encoder_type != "kan":
+            return float("nan")
+        import torch.nn.functional as F
+
+        fracs: list[float] = []
+        for layer_id in range(self.n_layers):
+            xb = self._normalize_input(x[layer_id], layer_id).float()
+            if max_pos is not None and xb.shape[0] > max_pos:
+                xb = xb[:max_pos]
+            kl = self.encoders[layer_id].kan_linear
+            base = F.linear(kl.base_activation(xb), kl.base_weight)
+            spline = F.linear(
+                kl.b_splines(xb).view(xb.size(0), -1),
+                kl.scaled_spline_weight.view(kl.out_features, -1),
+            )
+            denom = (base + spline).norm()
+            if denom > 0:
+                fracs.append((spline.norm() / denom).item())
+        return float(sum(fracs) / len(fracs)) if fracs else float("nan")
 
     def compute_attribution_components(
         self, inputs: torch.Tensor, zero_positions: slice = slice(0, 1)
@@ -572,10 +735,17 @@ class KANCrossLayerTranscoder(nn.Module):
 
             enc_dict[f"b_enc_{i}"] = self.b_enc[i].cpu()
             enc_dict[f"b_dec_{i}"] = self.b_dec[i].cpu()
+            enc_dict[f"enc_input_mean_{i}"] = self.enc_input_mean[i].cpu()
+            enc_dict[f"enc_input_std_{i}"] = self.enc_input_std[i].cpu()
 
             if has_threshold:
+                # `.threshold` holds log θ in memory; persist the *effective*
+                # θ = exp(log θ) so the on-disk `threshold_{i}` stays the literal
+                # non-negative gate value (format-compatible with the standard-CLT
+                # convention and with any downstream inspection). load_spline_clt
+                # takes log() to restore the in-memory log-parametrization.
                 enc_dict[f"threshold_{i}"] = (
-                    self.activation_function.threshold[i].squeeze(0).cpu()
+                    self.activation_function.threshold[i].squeeze(0).exp().cpu()
                 )
 
             save_file(enc_dict, os.path.join(save_path, f"encoder_{i}.safetensors"))
@@ -684,9 +854,20 @@ def load_spline_clt(
         instance.b_enc.data[i] = enc_data[f"b_enc_{i}"].to(dtype=dtype)
         instance.b_dec.data[i] = enc_data[f"b_dec_{i}"].to(dtype=dtype)
 
+        # Input-normalization buffers were added later; default (mean=0, std=1)
+        # leaves pre-normalization checkpoints behaving exactly as before.
+        if f"enc_input_mean_{i}" in enc_data:
+            instance.enc_input_mean.data[i] = enc_data[f"enc_input_mean_{i}"].to(dtype=dtype)
+        if f"enc_input_std_{i}" in enc_data:
+            instance.enc_input_std.data[i] = enc_data[f"enc_input_std_{i}"].to(dtype=dtype)
+
         if has_threshold:
+            # On disk `threshold_{i}` is the literal effective θ ≥ 0; the module
+            # stores log θ (see to_safetensors / __init__). clamp_min guards
+            # against log(0) from any degenerate/legacy θ == 0 (fresh runs never
+            # write 0, since θ = exp(·) > 0).
             instance.activation_function.threshold.data[i] = (
-                enc_data[f"threshold_{i}"].unsqueeze(0).to(dtype=dtype)
+                enc_data[f"threshold_{i}"].clamp_min(1e-12).log().unsqueeze(0).to(dtype=dtype)
             )
 
         # Load decoder
