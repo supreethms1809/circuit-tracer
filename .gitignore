@@ -192,9 +192,20 @@ demos/*.html
 
 # Experiment data and local workspaces
 data/
+# Re-include MACAG benchmark prompt manifests (directory negation must precede
+# the contents negation or git cannot re-include under the excluded dir).
+!macag/data/
+!macag/data/**
 experiments/data/
 experiments/spline_sae_tabular/
 exercise_local/
+
+# External checkouts fetched via external/setup_mib.sh, not vendored
+external/
+
+# Local experiment output / temp re-eval dumps, not source
+circuits/
+.rerun_eval_tmp/
 
 # Claude Code
 .claude/

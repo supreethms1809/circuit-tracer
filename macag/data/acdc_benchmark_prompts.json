@@ -1,0 +1,282 @@
+{
+    "benchmarks_info": {
+        "description": "Synthetic prompt datasets matching the distributions and schemas used in 'Towards Automated Circuit Discovery for Mechanistic Interpretability' (ACDC) for tasks like IOI, Greater-Than, and Docstring Completion.",
+        "usage": "Use clean_prompt for forward pass, corrupted_prompt for activation patching/intervention, and evaluate logit difference between correct_token and incorrect_token."
+    },
+    "tasks": {
+        "indirect_object_identification": [
+            {
+                "id": "ioi_01",
+                "template": "S1-IO-S1",
+                "clean_prompt": "When John and Mary went to the store, John gave a drink to",
+                "corrupted_prompt": "When John and David went to the store, John gave a drink to",
+                "correct_token": " Mary",
+                "incorrect_token": " John",
+                "metadata": {
+                    "S1": "John",
+                    "IO": "Mary",
+                    "S2_corrupted": "David",
+                    "obj": "drink",
+                    "place": "store"
+                }
+            },
+            {
+                "id": "ioi_02",
+                "template": "S1-IO-S1",
+                "clean_prompt": "Then, Alice and Bob had a long conversation. Alice decided to give a book to",
+                "corrupted_prompt": "Then, Alice and Charlie had a long conversation. Alice decided to give a book to",
+                "correct_token": " Bob",
+                "incorrect_token": " Alice",
+                "metadata": {
+                    "S1": "Alice",
+                    "IO": "Bob",
+                    "S2_corrupted": "Charlie",
+                    "obj": "book",
+                    "place": "conversation"
+                }
+            },
+            {
+                "id": "ioi_03",
+                "template": "IO-S1-S1",
+                "clean_prompt": "While Emily and James were working in the garden, James handed a tool to",
+                "corrupted_prompt": "While Emily and Kevin were working in the garden, Kevin handed a tool to",
+                "correct_token": " Emily",
+                "incorrect_token": " James",
+                "metadata": {
+                    "S1": "James",
+                    "IO": "Emily",
+                    "S2_corrupted": "Kevin",
+                    "obj": "tool"
+                }
+            },
+            {
+                "id": "ioi_04",
+                "template": "S1-IO-S1",
+                "clean_prompt": "After Robert and Sarah arrived at the restaurant, Robert passed the menu to",
+                "corrupted_prompt": "After Robert and Megan arrived at the restaurant, Robert passed the menu to",
+                "correct_token": " Sarah",
+                "incorrect_token": " Robert",
+                "metadata": {
+                    "S1": "Robert",
+                    "IO": "Sarah",
+                    "S2_corrupted": "Megan",
+                    "obj": "menu"
+                }
+            },
+            {
+                "id": "ioi_05",
+                "template": "S1-IO-S1",
+                "clean_prompt": "When Michael and Jessica found the keys in the kitchen, Michael gave them to",
+                "corrupted_prompt": "When Michael and Rachel found the keys in the kitchen, Michael gave them to",
+                "correct_token": " Jessica",
+                "incorrect_token": " Michael",
+                "metadata": {
+                    "S1": "Michael",
+                    "IO": "Jessica",
+                    "S2_corrupted": "Rachel",
+                    "obj": "keys"
+                }
+            },
+            {
+                "id": "ioi_06",
+                "template": "S1-IO-S1",
+                "clean_prompt": "Although William and Thomas agreed on the terms, William handed the contract to",
+                "corrupted_prompt": "Although William and Brian agreed on the terms, William handed the contract to",
+                "correct_token": " Thomas",
+                "incorrect_token": " William",
+                "metadata": {
+                    "S1": "William",
+                    "IO": "Thomas",
+                    "S2_corrupted": "Brian",
+                    "obj": "contract"
+                }
+            },
+            {
+                "id": "ioi_07",
+                "template": "S1-IO-S1",
+                "clean_prompt": "Since David and Sophia wanted to play tennis, David threw the ball to",
+                "corrupted_prompt": "Since David and Emma wanted to play tennis, David threw the ball to",
+                "correct_token": " Sophia",
+                "incorrect_token": " David",
+                "metadata": {
+                    "S1": "David",
+                    "IO": "Sophia",
+                    "S2_corrupted": "Emma",
+                    "obj": "ball"
+                }
+            },
+            {
+                "id": "ioi_08",
+                "template": "S1-IO-S1",
+                "clean_prompt": "When Joseph and Olivia visited the museum, Joseph gave the ticket to",
+                "corrupted_prompt": "When Joseph and Chloe visited the museum, Joseph gave the ticket to",
+                "correct_token": " Olivia",
+                "incorrect_token": " Joseph",
+                "metadata": {
+                    "S1": "Joseph",
+                    "IO": "Olivia",
+                    "S2_corrupted": "Chloe",
+                    "obj": "ticket"
+                }
+            },
+            {
+                "id": "ioi_09",
+                "template": "S1-IO-S1",
+                "clean_prompt": "As Daniel and Isabella walked into the office, Daniel handed the laptop to",
+                "corrupted_prompt": "As Daniel and Lily walked into the office, Daniel handed the laptop to",
+                "correct_token": " Isabella",
+                "incorrect_token": " Daniel",
+                "metadata": {
+                    "S1": "Daniel",
+                    "IO": "Isabella",
+                    "S2_corrupted": "Lily",
+                    "obj": "laptop"
+                }
+            },
+            {
+                "id": "ioi_10",
+                "template": "S1-IO-S1",
+                "clean_prompt": "Before Matthew and Elizabeth left the house, Matthew handed the bag to",
+                "corrupted_prompt": "Before Matthew and Grace left the house, Matthew handed the bag to",
+                "correct_token": " Elizabeth",
+                "incorrect_token": " Matthew",
+                "metadata": {
+                    "S1": "Matthew",
+                    "IO": "Elizabeth",
+                    "S2_corrupted": "Grace",
+                    "obj": "bag"
+                }
+            }
+        ],
+        "greater_than": [
+            {
+                "id": "gt_01",
+                "clean_prompt": "The war lasted from the year 1741 to the year 17",
+                "corrupted_prompt": "The war lasted from the year 1701 to the year 17",
+                "correct_token": "42",
+                "incorrect_token": "40",
+                "metadata": {
+                    "century": 1700,
+                    "start_year": 41,
+                    "min_valid_token": 42
+                }
+            },
+            {
+                "id": "gt_02",
+                "clean_prompt": "The construction spanned from the year 1855 to the year 18",
+                "corrupted_prompt": "The construction spanned from the year 1805 to the year 18",
+                "correct_token": "56",
+                "incorrect_token": "54",
+                "metadata": {
+                    "century": 1800,
+                    "start_year": 55,
+                    "min_valid_token": 56
+                }
+            },
+            {
+                "id": "gt_03",
+                "clean_prompt": "The dynasty ruled from the year 1420 to the year 14",
+                "corrupted_prompt": "The dynasty ruled from the year 1402 to the year 14",
+                "correct_token": "25",
+                "incorrect_token": "18",
+                "metadata": {
+                    "century": 1400,
+                    "start_year": 20,
+                    "min_valid_token": 21
+                }
+            },
+            {
+                "id": "gt_04",
+                "clean_prompt": "The pandemic lasted from the year 1915 to the year 19",
+                "corrupted_prompt": "The pandemic lasted from the year 1901 to the year 19",
+                "correct_token": "16",
+                "incorrect_token": "12",
+                "metadata": {
+                    "century": 1900,
+                    "start_year": 15,
+                    "min_valid_token": 16
+                }
+            },
+            {
+                "id": "gt_05",
+                "clean_prompt": "The treaty was active from the year 1662 to the year 16",
+                "corrupted_prompt": "The treaty was active from the year 1602 to the year 16",
+                "correct_token": "70",
+                "incorrect_token": "55",
+                "metadata": {
+                    "century": 1600,
+                    "start_year": 62,
+                    "min_valid_token": 63
+                }
+            },
+            {
+                "id": "gt_06",
+                "clean_prompt": "The conflict dragged on from the year 1533 to the year 15",
+                "corrupted_prompt": "The conflict dragged on from the year 1503 to the year 15",
+                "correct_token": "45",
+                "incorrect_token": "31",
+                "metadata": {
+                    "century": 1500,
+                    "start_year": 33,
+                    "min_valid_token": 34
+                }
+            },
+            {
+                "id": "gt_07",
+                "clean_prompt": "The project ran from the year 1982 to the year 19",
+                "corrupted_prompt": "The project ran from the year 1902 to the year 19",
+                "correct_token": "85",
+                "incorrect_token": "79",
+                "metadata": {
+                    "century": 1900,
+                    "start_year": 82,
+                    "min_valid_token": 83
+                }
+            },
+            {
+                "id": "gt_08",
+                "clean_prompt": "The exploration continued from the year 1774 to the year 17",
+                "corrupted_prompt": "The exploration continued from the year 1704 to the year 17",
+                "correct_token": "75",
+                "incorrect_token": "72",
+                "metadata": {
+                    "century": 1700,
+                    "start_year": 74,
+                    "min_valid_token": 75
+                }
+            }
+        ],
+        "docstring_completion": [
+            {
+                "id": "docstring_01",
+                "clean_prompt": "def calculate_mass(density, volume):\n    \"\"\"Calculate the total mass.\n\n    Args:\n        density: The density of the substance.\n        volume:",
+                "corrupted_prompt": "def calculate_mass(density, volume):\n    \"\"\"Calculate the total mass.\n\n    Args:\n        weight: The density of the substance.\n        volume:",
+                "correct_token": " The",
+                "incorrect_token": " density",
+                "metadata": {
+                    "task": "param_description_completion"
+                }
+            },
+            {
+                "id": "docstring_02",
+                "clean_prompt": "def render_frame(scene, camera, light):\n    \"\"\"Render the 3D scene grid.\n\n    Args:\n        scene: The target geometry layout.\n        camera: The viewport configuration.\n        light:",
+                "corrupted_prompt": "def render_frame(scene, camera, light):\n    \"\"\"Render the 3D scene grid.\n\n    Args:\n        scene: The target geometry layout.\n        shadow: The viewport configuration.\n        light:",
+                "correct_token": " The",
+                "incorrect_token": " camera",
+                "metadata": {
+                    "task": "param_description_completion"
+                }
+            },
+            {
+                "id": "docstring_03",
+                "clean_prompt": "def process_transaction(account, amount, currency):\n    \"\"\"Execute the financial transfer.\n\n    Args:\n        account: The target identifier.\n        amount: The quantity of units.\n        currency:",
+                "corrupted_prompt": "def process_transaction(account, amount, currency):\n    \"\"\"Execute the financial transfer.\n\n    Args:\n        account: The target identifier.\n        amount: The quantity of units.\n        token:",
+                "correct_token": " The",
+                "incorrect_token": " amount",
+                "metadata": {
+                    "task": "param_description_completion"
+                }
+            }
+        ]
+    }
+}

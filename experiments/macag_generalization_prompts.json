@@ -1,0 +1,16 @@
+{
+  "model": "google/gemma-2-2b",
+  "transcoder_set": "mntss/clt-gemma-2-2b-426k",
+  "template": "Fact: The capital of the state containing {CITY} is",
+  "note": "Generalization sweep for the two-hop (city -> state -> capital) circuit. target = capital (correct second hop), foil = state (the Dallas->Texas shortcut). Same template keeps prefix token positions aligned; multi-token city names shift only the end-anchored positions, which the analyzer reads via reverse position.",
+  "prompts": [
+    {"slug": "dallas-austin",        "city": "Dallas",       "target": " Austin",      "foil": " Texas"},
+    {"slug": "houston-austin",       "city": "Houston",      "target": " Austin",      "foil": " Texas"},
+    {"slug": "chicago-springfield",  "city": "Chicago",      "target": " Springfield", "foil": " Illinois"},
+    {"slug": "miami-tallahassee",    "city": "Miami",        "target": " Tallahassee", "foil": " Florida"},
+    {"slug": "detroit-lansing",      "city": "Detroit",      "target": " Lansing",     "foil": " Michigan"},
+    {"slug": "portland-salem",       "city": "Portland",     "target": " Salem",       "foil": " Oregon"},
+    {"slug": "cleveland-columbus",   "city": "Cleveland",    "target": " Columbus",    "foil": " Ohio"},
+    {"slug": "philadelphia-harrisburg","city": "Philadelphia","target": " Harrisburg", "foil": " Pennsylvania"}
+  ]
+}

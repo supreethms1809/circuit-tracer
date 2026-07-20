@@ -87,7 +87,8 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
 ├── docs/
 │   └── paper-evaluation.md              # How to run paper-eval and read outputs
 ├── macag/
-│   ├── cli/                            # run_macag, annotate_graph, suggest_supernodes
+│   ├── cli/                            # run_macag, run_baselines, annotate_graph, suggest_supernodes
+│   ├── baselines/                      # Phase-2 baseline selectors (influence, EAP, Shapley/Banzhaf-gold, ACDC, bruteforce)
 │   ├── factories/                      # ReplacementModel-backed MACAG scorer builders
 │   ├── games/                          # Game 1 / Game 2 solvers
 │   ├── graph.py                        # circuit-tracer graph wrapper
@@ -105,17 +106,17 @@ circuit-tracer/                          # fork of safety-research/circuit-trace
     ├── test_paper_reporting.py          # Suite aggregation/reporting
     ├── test_paper_runner.py             # Paper runner dry-run + smoke
     ├── test_replacement_model_alignment.py  # BOS / intervention alignment regressions
-    └── test_macag_annotate_graph.py     # MACAG annotation schema compatibility
+    ├── test_macag_annotate_graph.py     # MACAG annotation schema compatibility
+    └── test_macag_baselines.py          # Baseline selectors + run_baselines harness (B2.0-B2.4, B3.2)
 ```
 
 ## Conference Runner
 
-The canonical NeurIPS interface is now `paper-eval`. It is intentionally narrow:
-- `--suite`
-- `--dry-run`
-- `--validate-only`
+The canonical NeurIPS interface is now `paper-eval` (`spline_clt/paper_eval.py`). Required: `--suite`. Common: `--dry-run`, `--validate-only`. Operational extras: `--re-evaluate` (drop eval/MACAG artifacts, keep checkpoints), `--worker-id` / `--num-workers`, `--stages` to intersect with the suite’s enabled stages.
 
-All conference runs are defined by JSON config under `experiments/paper_configs/` and merged with OmegaConf defaults. Do not manually override seeds, hyperparameters, or stages from the CLI during the final campaign.
+All conference runs are defined by JSON config under `experiments/paper_configs/` and merged with OmegaConf defaults. For the **final campaign**, do not replace suite-chosen seeds or hyperparameters with ad hoc CLI overrides; use `--stages` / worker sharding only for infrastructure.
+
+Metric equations and methodology comparisons live in `docs/metric_definitions.md` and `docs/methodology_comparison.md`.
 
 ### Runnable Paper Suites
 - `experiments/paper_configs/suites/neurips_core_gpt2.json`
@@ -161,6 +162,8 @@ graph back for the existing `circuit_tracer` frontend.
 
 ### MACAG Code Map
 - `macag/cli/run_macag.py`: main CLI for Game 1 (`game1`) and Game 2 (`game2`)
+- `macag/cli/run_baselines.py`: head-to-head baseline harness (roadmap B2.0) — runs every selector on the same candidates + oracle, emits per-k evidence/scores, per-method oracle costs, precision@k/Jaccard vs Shapley-gold, faithfulness AUC, and Spearman linearity diagnostics
+- `macag/baselines/`: baseline selectors over the same coalitional v(S) — `influence.py` (B2.1 top-k influence), `shapley_select.py` (B2.2 MC Shapley + Banzhaf over the MACAG oracle; NOT a wrapper of `attribution/shapley.py`), `eap.py` (B2.3 graph-derived EAP node scores), `acdc_prune.py` (B2.4 ported top-down τ-pruning), `bruteforce.py` (B3.2 exact best size-k subset / greedy optimality gap)
 - `macag/cli/annotate_graph.py`: merges MACAG outputs back into a graph JSON for UI inspection
 - `macag/cli/suggest_supernodes.py`: auto-generates candidate supernodes from graph metrics
 - `macag/factories/replacement_model.py`: bridge from MACAG scoring into `circuit_tracer.ReplacementModel`
@@ -198,6 +201,10 @@ graph back for the existing `circuit_tracer` frontend.
 - ReplacementModel intervention buffers now use the same BOS-prepended tokenization path as graph/prompt evaluation, fixing prompt-length mismatches in MACAG.
 - MACAG annotation now tolerates both legacy Game 1 evidence lists and dict-form evidence payloads.
 - Paper aggregation now exposes explicit retained error-node metrics instead of hiding them behind circuit graphs only.
+- MACAG `connected` constraint no longer routes connectivity through logit/embedding hub nodes (it was vacuous before: every pruned graph is one weak component through the logits). Error nodes remain valid intermediates.
+- Game 1 `raw_relative` stop now compares λ-free faithfulness gains, not λ-penalized utility gains, so the sparsity penalty cannot distort the eps-relative test.
+- Empty ablation universes (candidate/graph node-ID mismatches) now raise instead of silently degenerating to `empty == all`; `score_remove` is intersected with the universe, symmetric with `score_keep_only`.
+- Solver oracle stats are per-solve (reset at solver entry); Game 2 reports `best_iteration` (0 = initial empty allocation won); subgraphs serialize in sorted order; `CircuitGraph.from_dict` prefers `node_id` over `id` to match the intervention loader.
 
 ### Operational Notes
 - `macag/cache` and `macag/output` are runtime artifacts, not source code.
@@ -279,7 +286,8 @@ conda run -n ct pytest \
     tests/test_paper_reporting.py \
     tests/test_paper_runner.py \
     tests/test_replacement_model_alignment.py \
-    tests/test_macag_annotate_graph.py -q
+    tests/test_macag_annotate_graph.py \
+    tests/test_macag_baselines.py -q
 
 # Run core Spline-CLT tests
 conda run -n ct pytest tests/test_kan_encoder.py tests/test_kan_transcoder.py \

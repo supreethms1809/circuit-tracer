@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Callable, Sequence
 
-from macag.graph import CircuitGraph, NodeId
+from macag.graph import CircuitGraph, NodeId, grow_connected_frontier
 from macag.scoring import ScoringOracle, TargetId
 from macag.utils.metrics import (
     FaithfulnessMetrics,
@@ -41,24 +41,46 @@ def prefilter_candidates(
     alpha: float,
     lam: float,
     top_k: int,
+    connected: bool = False,
+    progress: bool = True,
+    log_every: int = 50,
 ) -> list[NodeId]:
-    """Rank candidates by singleton gain and keep the top-k."""
+    """Rank candidates by singleton gain and keep the top-k.
+
+    The ranking is always computed so the output is deterministic regardless of
+    `top_k` (L3). When `connected` is set, the retained pool is grown as a
+    connected frontier instead of a raw rank truncation so the connected greedy is
+    not handed a disconnected pool (L2).
+    """
     if top_k <= 0:
         return []
-    if top_k >= len(candidates):
-        return list(candidates)
 
     ranking: list[tuple[float, NodeId]] = []
-    for node in candidates:
+    iterator: Sequence[NodeId] | Any = candidates
+    if progress and tqdm is not None:
+        iterator = tqdm(
+            candidates,
+            desc="Game1 prefilter",
+            leave=True,
+        )
+
+    for idx, node in enumerate(iterator, start=1):
         if not graph.has_node(node):
             continue
         singleton = {node}
         metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=singleton, alpha=alpha)
         utility = game1_utility(metrics.faithfulness_delta, size=1, lam=lam)
         ranking.append((utility, node))
+        if progress and tqdm is None and log_every > 0 and idx % log_every == 0:
+            LOGGER.info("Game1 prefilter evaluated %d/%d candidates", idx, len(candidates))
 
     ranking.sort(key=lambda item: (-item[0], _sort_key(item[1])))
-    return [node for _, node in ranking[:top_k]]
+    ranked_nodes = [node for _, node in ranking]
+    if top_k >= len(ranked_nodes):
+        return ranked_nodes
+    if connected:
+        return grow_connected_frontier(graph, ranked_nodes, top_k)
+    return ranked_nodes[:top_k]
 
 
 @dataclass
@@ -70,6 +92,7 @@ class EvidenceSetResult:
     selected_order: list[NodeId]
     iterations: int
     candidate_count: int
+    total_candidates: int
     params: dict[str, Any]
     oracle_calls: int
     cache_hits: int
@@ -86,6 +109,7 @@ def solve_game1(
     lam: float = 0.01,
     budget: int | None = None,
     faithfulness_eps: float | None = None,
+    stop_metric: str = "normalized",
     prefilter_top_k: int | None = None,
     prefilter_fn: CandidatePrefilter | None = None,
     connected: bool = False,
@@ -93,7 +117,24 @@ def solve_game1(
     progress: bool = True,
     log_every: int = 50,
 ) -> EvidenceSetResult:
-    """Greedy hill-climb solver for Game 1."""
+    """Greedy hill-climb solver for Game 1.
+
+    `stop_metric` controls how `faithfulness_eps` is interpreted:
+      * "normalized" (default): stop when faithfulness_delta_normalized >= 1 - eps.
+        This divides by recoverable_range (all - empty), which is the correct
+        error-floor-aware target with frozen attention but goes DEGENERATE when
+        the range collapses toward zero/negative (e.g. unfrozen attention),
+        producing spurious early/late stops.
+      * "raw_relative": denominator-free diminishing-returns stop. Stop before
+        adding a node whose marginal raw faithfulness gain (the alpha-mixed
+        faithfulness_delta increase, EXCLUDING the lam size penalty) is
+        < eps * (the first feature's faithfulness gain). Stable regardless of the
+        error floor, so it is the correct choice when recoverable_range is
+        unreliable (unfrozen attention). Selection itself still maximizes the
+        lam-penalized utility; only the stop test is penalty-free.
+    """
+    if stop_metric not in ("normalized", "raw_relative"):
+        raise ValueError("stop_metric must be 'normalized' or 'raw_relative'.")
     if not 0.0 <= alpha <= 1.0:
         raise ValueError("alpha must be in [0, 1].")
     if lam < 0.0:
@@ -103,8 +144,15 @@ def solve_game1(
     if min_gain < 0.0:
         raise ValueError("min_gain must be non-negative.")
 
+    # Per-solve stats: without this, reusing one oracle across several solves
+    # (Game 1 + Game 2 on the same scorer, notebooks) reports cumulative counts.
+    oracle.reset_stats()
+
     candidate_pool = dedupe_preserve_order(candidates if candidates is not None else graph.nodes())
     candidate_pool = [node for node in candidate_pool if graph.has_node(node)]
+    # Full candidate count before any prefilter, so reported sparsity reflects the
+    # true graph rather than the (possibly much smaller) prefiltered pool (I4).
+    total_candidates = len(candidate_pool)
     if progress:
         LOGGER.info(
             "Game1 start: candidates=%d budget=%s alpha=%.3f lambda=%.4f",
@@ -121,7 +169,16 @@ def solve_game1(
             )
         else:
             candidate_pool = prefilter_candidates(
-                graph, oracle, target, candidate_pool, alpha, lam, prefilter_top_k
+                graph,
+                oracle,
+                target,
+                candidate_pool,
+                alpha,
+                lam,
+                prefilter_top_k,
+                connected,
+                progress=progress,
+                log_every=log_every,
             )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
@@ -140,14 +197,19 @@ def solve_game1(
     selected: set[NodeId] = set()
     selected_order: list[NodeId] = []
     iterations = 0
+    # Raw marginal faithfulness_delta gain (lam-free) of the first added node;
+    # the raw_relative stop is defined on faithfulness gains, NOT utility gains,
+    # so lam does not distort the eps-relative test.
+    first_faith_gain: float | None = None
 
     while True:
         if budget is not None and len(selected) >= budget:
             break
 
-        current_utility, _ = evaluate(selected)
+        current_utility, current_metrics = evaluate(selected)
         best_node: NodeId | None = None
         best_gain = min_gain
+        best_faith_gain = 0.0
 
         iterator: Sequence[NodeId] | Any = candidate_pool
         if progress and tqdm is not None:
@@ -162,15 +224,17 @@ def solve_game1(
                 continue
             trial = set(selected)
             trial.add(node)
-            if connected and len(trial) > 1 and not graph.is_weakly_connected(trial):
+            if connected and len(trial) > 1 and not graph.connected_through(trial):
                 continue
-            trial_utility, _ = evaluate(trial)
+            trial_utility, trial_metrics = evaluate(trial)
             gain = trial_utility - current_utility
             if gain > best_gain:
                 best_gain = gain
                 best_node = node
+                best_faith_gain = trial_metrics.faithfulness_delta - current_metrics.faithfulness_delta
             elif gain == best_gain and best_node is not None and _sort_key(node) < _sort_key(best_node):
                 best_node = node
+                best_faith_gain = trial_metrics.faithfulness_delta - current_metrics.faithfulness_delta
             if progress and tqdm is None and log_every > 0 and idx % log_every == 0:
                 LOGGER.info("Game1 evaluated %d/%d candidates", idx, len(candidate_pool))
 
@@ -179,17 +243,49 @@ def solve_game1(
                 LOGGER.info("Game1 no improving candidate found (|E|=%d)", len(selected))
             break
 
+        # Denominator-free diminishing-returns stop (before adding): the best
+        # available feature contributes less than `eps` of the top feature's raw
+        # marginal faithfulness gain. Uses lam-free faithfulness deltas so the
+        # sparsity penalty cannot distort the eps-relative test; stable when
+        # recoverable_range is unreliable.
+        if (
+            faithfulness_eps is not None
+            and stop_metric == "raw_relative"
+            and first_faith_gain is not None
+            and first_faith_gain > 0.0
+            and best_faith_gain < faithfulness_eps * first_faith_gain
+        ):
+            if progress:
+                LOGGER.info(
+                    "Game1 raw_relative stop: best_faith_gain=%.6f < eps*first_faith_gain=%.6f (|E|=%d)",
+                    best_faith_gain,
+                    faithfulness_eps * first_faith_gain,
+                    len(selected),
+                )
+            break
+
         selected.add(best_node)
         selected_order.append(best_node)
         iterations += 1
+        if first_faith_gain is None:
+            first_faith_gain = best_faith_gain
         if progress:
             LOGGER.info("Game1 added node=%s gain=%.6f |E|=%d", best_node, best_gain, len(selected))
 
-        if faithfulness_eps is not None:
+        if faithfulness_eps is not None and stop_metric == "normalized":
             _, metrics = evaluate(selected)
-            if (metrics.all_score - metrics.keep_only_score) <= faithfulness_eps:
+            # Stop on the SAME alpha-mixed objective the solver optimizes, in its
+            # normalized (error-floor-aware) form (C2). faithfulness_delta_normalized
+            # is in [0, 1]; reaching >= 1 - eps means the evidence recovers all but
+            # `eps` of the achievable faithfulness. The previous condition tested only
+            # the raw sufficiency gap, which is inconsistent when alpha != 1.
+            if metrics.faithfulness_delta_normalized >= 1.0 - faithfulness_eps:
                 if progress:
-                    LOGGER.info("Game1 reached faithfulness_eps=%.6f", faithfulness_eps)
+                    LOGGER.info(
+                        "Game1 reached faithfulness_eps=%.6f (normalized delta=%.6f)",
+                        faithfulness_eps,
+                        metrics.faithfulness_delta_normalized,
+                    )
                 break
 
     final_utility, final_metrics = evaluate(selected)
@@ -209,11 +305,13 @@ def solve_game1(
         selected_order=selected_order,
         iterations=iterations,
         candidate_count=len(candidate_pool),
+        total_candidates=total_candidates,
         params={
             "alpha": alpha,
             "lambda": lam,
             "budget": budget,
             "faithfulness_eps": faithfulness_eps,
+            "stop_metric": stop_metric,
             "prefilter_top_k": prefilter_top_k,
             "connected": connected,
             "min_gain": min_gain,
@@ -221,5 +319,5 @@ def solve_game1(
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],
         cache_size=stats["cache_size"],
-        sparsity=sparsity(selected_size=len(selected), total_size=max(1, len(candidate_pool))),
+        sparsity=sparsity(selected_size=len(selected), total_size=max(1, total_candidates)),
     )

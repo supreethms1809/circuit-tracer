@@ -1,0 +1,196 @@
+{
+  "benchmarks_info": {
+    "description": "Nonlinear-boundary stress prompts for the Spline-CLT hypothesis. Each task is constructed so the FOIL is the linear shortcut (a token literally present in the prompt, or the other word-sense / truth-value), while the CORRECT token requires applying a nonlinear operator (negation/opposite, context-gated sense selection, boolean interaction, or a close-in-embedding-space discrimination). A linear encoder keyed on 'token X is present' is biased toward the foil; recovering the correct minimal faithful set should be where a KAN encoder earns its parameters.",
+    "usage": "Same schema as acdc_benchmark_prompts.json. Use clean_prompt for the forward pass; score first-token logit gap between correct_token and incorrect_token. correct_token / incorrect_token first tokens differ (the greater_than degeneracy is avoided)."
+  },
+  "tasks": {
+    "negation_polarity": [
+      {
+        "id": "neg_01",
+        "template": "opposite-of-X",
+        "clean_prompt": "The opposite of hot is",
+        "corrupted_prompt": "The synonym of hot is",
+        "correct_token": " cold",
+        "incorrect_token": " hot",
+        "metadata": {"operator": "opposite", "X": "hot", "shortcut": "echo X"}
+      },
+      {
+        "id": "neg_02",
+        "template": "opposite-of-X",
+        "clean_prompt": "The opposite of big is",
+        "corrupted_prompt": "The synonym of big is",
+        "correct_token": " small",
+        "incorrect_token": " big",
+        "metadata": {"operator": "opposite", "X": "big", "shortcut": "echo X"}
+      },
+      {
+        "id": "neg_03",
+        "template": "opposite-of-X",
+        "clean_prompt": "The opposite of up is",
+        "corrupted_prompt": "The synonym of up is",
+        "correct_token": " down",
+        "incorrect_token": " up",
+        "metadata": {"operator": "opposite", "X": "up", "shortcut": "echo X"}
+      },
+      {
+        "id": "neg_04",
+        "template": "not-X-it-is",
+        "clean_prompt": "The water is not cold, it is",
+        "corrupted_prompt": "The water is very cold, it is",
+        "correct_token": " hot",
+        "incorrect_token": " cold",
+        "metadata": {"operator": "negation-gate", "X": "cold", "shortcut": "echo X"}
+      },
+      {
+        "id": "neg_05",
+        "template": "not-X-it-is",
+        "clean_prompt": "The review was not good, it was",
+        "corrupted_prompt": "The review was really good, it was",
+        "correct_token": " bad",
+        "incorrect_token": " good",
+        "metadata": {"operator": "negation-gate", "X": "good", "shortcut": "echo X"}
+      }
+    ],
+    "context_polysemy": [
+      {
+        "id": "poly_01",
+        "template": "ambiguous-word-context-gated",
+        "clean_prompt": "I went to the bank to withdraw some",
+        "corrupted_prompt": "I went to the bank to catch some",
+        "correct_token": " money",
+        "incorrect_token": " water",
+        "metadata": {"word": "bank", "sense": "financial", "shortcut": "other-sense associate"}
+      },
+      {
+        "id": "poly_02",
+        "template": "ambiguous-word-context-gated",
+        "clean_prompt": "We sat on the grassy bank of the",
+        "corrupted_prompt": "We opened an account at the bank of the",
+        "correct_token": " river",
+        "incorrect_token": " money",
+        "metadata": {"word": "bank", "sense": "geographic", "shortcut": "other-sense associate"}
+      },
+      {
+        "id": "poly_03",
+        "template": "ambiguous-word-context-gated",
+        "clean_prompt": "The baseball player swung the bat and hit the",
+        "corrupted_prompt": "The dark cave was full of every kind of bat and",
+        "correct_token": " ball",
+        "incorrect_token": " cave",
+        "metadata": {"word": "bat", "sense": "sports", "shortcut": "other-sense associate"}
+      },
+      {
+        "id": "poly_04",
+        "template": "ambiguous-word-context-gated",
+        "clean_prompt": "At dusk the bat flew out of the dark",
+        "corrupted_prompt": "At the plate the bat connected with the",
+        "correct_token": " cave",
+        "incorrect_token": " ball",
+        "metadata": {"word": "bat", "sense": "animal", "shortcut": "other-sense associate"}
+      },
+      {
+        "id": "poly_05",
+        "template": "ambiguous-word-context-gated",
+        "clean_prompt": "In early spring the garden filled with blooming",
+        "corrupted_prompt": "The clock broke when we wound its tiny",
+        "correct_token": " flowers",
+        "incorrect_token": " water",
+        "metadata": {"word": "spring", "sense": "season", "shortcut": "other-sense associate"}
+      }
+    ],
+    "boolean_logic": [
+      {
+        "id": "bool_01",
+        "template": "AND",
+        "clean_prompt": "In logic, true and false is",
+        "corrupted_prompt": "In logic, true and true is",
+        "correct_token": " false",
+        "incorrect_token": " true",
+        "metadata": {"op": "and", "a": "true", "b": "false", "shortcut": "echo first operand"}
+      },
+      {
+        "id": "bool_02",
+        "template": "AND",
+        "clean_prompt": "In logic, false and true is",
+        "corrupted_prompt": "In logic, true and true is",
+        "correct_token": " false",
+        "incorrect_token": " true",
+        "metadata": {"op": "and", "a": "false", "b": "true", "shortcut": "echo second operand"}
+      },
+      {
+        "id": "bool_03",
+        "template": "OR",
+        "clean_prompt": "In logic, false or true is",
+        "corrupted_prompt": "In logic, false or false is",
+        "correct_token": " true",
+        "incorrect_token": " false",
+        "metadata": {"op": "or", "a": "false", "b": "true", "shortcut": "echo first operand"}
+      },
+      {
+        "id": "bool_04",
+        "template": "OR",
+        "clean_prompt": "In logic, true or false is",
+        "corrupted_prompt": "In logic, false or false is",
+        "correct_token": " true",
+        "incorrect_token": " false",
+        "metadata": {"op": "or", "a": "true", "b": "false", "shortcut": "echo second operand"}
+      },
+      {
+        "id": "bool_05",
+        "template": "AND",
+        "clean_prompt": "In logic, false and false is",
+        "corrupted_prompt": "In logic, true and false is",
+        "correct_token": " false",
+        "incorrect_token": " true",
+        "metadata": {"op": "and", "a": "false", "b": "false", "shortcut": "operator confusion"}
+      }
+    ],
+    "hard_semantic_foil": [
+      {
+        "id": "sem_01",
+        "template": "co-hyponym-completion",
+        "clean_prompt": "Roses are red, violets are",
+        "corrupted_prompt": "Roses are red, roses are",
+        "correct_token": " blue",
+        "incorrect_token": " red",
+        "metadata": {"category": "color", "foil": "sibling color in prompt"}
+      },
+      {
+        "id": "sem_02",
+        "template": "co-hyponym-completion",
+        "clean_prompt": "The grass is green and the clear sky is",
+        "corrupted_prompt": "The grass is green and the leaf is",
+        "correct_token": " blue",
+        "incorrect_token": " green",
+        "metadata": {"category": "color", "foil": "sibling color in prompt"}
+      },
+      {
+        "id": "sem_03",
+        "template": "co-hyponym-completion",
+        "clean_prompt": "She owns a cat, but she always wanted a",
+        "corrupted_prompt": "She owns a cat, and she loves her",
+        "correct_token": " dog",
+        "incorrect_token": " cat",
+        "metadata": {"category": "pet", "foil": "sibling pet in prompt"}
+      },
+      {
+        "id": "sem_04",
+        "template": "co-hyponym-completion",
+        "clean_prompt": "For breakfast he skipped the tea and instead drank",
+        "corrupted_prompt": "For breakfast he poured a warm cup of",
+        "correct_token": " coffee",
+        "incorrect_token": " tea",
+        "metadata": {"category": "drink", "foil": "sibling drink in prompt"}
+      },
+      {
+        "id": "sem_05",
+        "template": "co-hyponym-completion",
+        "clean_prompt": "He turned left at the corner instead of going",
+        "corrupted_prompt": "He turned left at the corner and kept going",
+        "correct_token": " right",
+        "incorrect_token": " left",
+        "metadata": {"category": "direction", "foil": "sibling direction in prompt"}
+      }
+    ]
+  }
+}

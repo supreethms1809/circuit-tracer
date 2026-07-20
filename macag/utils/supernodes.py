@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
+import logging
+import math
 from typing import Any, Iterable, Sequence
 
 from macag.graph import CircuitGraph, NodeId
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _to_float(value: Any) -> float | None:
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return None
+    # NaN is truthy and poisons salience sums and sort keys; treat as missing.
+    if math.isnan(parsed):
+        return None
+    return parsed
 
 
 def _normalize_feature_types(feature_types: Sequence[str] | None) -> set[str] | None:
@@ -206,12 +214,22 @@ def propose_supernodes(
     )
 
     groups: list[list[NodeId]] = []
+    dropped_below_min = 0
     for component in components:
         split_components = _split_component_by_ctx(graph, component) if split_by_ctx else [component]
         for split_component in split_components:
             for chunk in _chunk_group(split_component, scores=scores, max_group_size=max_group_size):
                 if len(chunk) >= min_group_size:
                     groups.append(chunk)
+                else:
+                    dropped_below_min += len(chunk)
+    if dropped_below_min:
+        LOGGER.info(
+            "propose_supernodes dropped %d salient node(s) in groups smaller than "
+            "min_group_size=%d (component fragments / chunk tails)",
+            dropped_below_min,
+            min_group_size,
+        )
 
     if not groups and len(selected_nodes) >= min_group_size:
         fallback = selected_nodes[:max_group_size]
