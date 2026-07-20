@@ -122,17 +122,16 @@ class TestShapleyAttribution:
         if len(result["shapley_values"]) > 0:
             assert torch.isfinite(result["shapley_values"]).all()
 
-    def test_feature_target_returns_matrix(self, small_kan_model):
-        """target='feature' and small n_active should return feature_shapley matrix."""
+    def test_feature_target_raises_not_implemented(self, small_kan_model):
+        """target='feature' is deliberately unimplemented: the old path read
+        prev_acts directly, never changed under source ablations, and silently
+        returned zeros. It must raise instead of returning garbage."""
         x = torch.randn(2, 4, 8)
-        result = shapley_attribution(
-            small_kan_model, x, target="feature",
-            n_samples=4, max_features=16, antithetic=False,
-        )
-        if "feature_shapley" in result:
-            n_active = len(result["active_features"])
-            assert result["feature_shapley"].shape == (n_active, n_active)
-            assert torch.isfinite(result["feature_shapley"]).all()
+        with pytest.raises(NotImplementedError, match="Feature-to-feature Shapley"):
+            shapley_attribution(
+                small_kan_model, x, target="feature",
+                n_samples=4, max_features=16, antithetic=False,
+            )
 
 
 class TestShapleyLogitAttribution:
