@@ -1,10 +1,11 @@
-"""B2.4 — ACDC ported to the CLT node set: top-down threshold pruning.
+"""Ported ACDC node τ-prune (stable method id: ``acdc``, alias ``acdc_ported``).
 
-ACDC (Conmy et al., 2023) prunes a circuit from the output backwards, removing
-a component whenever its removal changes the metric by less than a threshold
-tau. The port keeps the selection RULE but applies it to the same candidate
-node set and the same coalitional v(S) the games use, isolating search
-direction (prune-down vs grow-up) from everything else (macag.md §A.1).
+Keeps Conmy et al. 2023's selection *rule* (top-down; drop if Δmetric < τ) but
+applies it to CLT feature nodes under MACAG coalitional ``v`` (zero-ablation),
+not native edges with corrupted patching / KL(G‖H). For the native-component
+track see ``macag.baselines.acdc_native`` (``acdc_native``).
+
+Naming map: ``macag/docs/baseline_method_map.md``.
 """
 
 from __future__ import annotations
@@ -160,15 +161,21 @@ def acdc_target_size(
     seed_results: Sequence[ACDCPruneResult] | None = None,
     progress: bool = False,
 ) -> ACDCPruneResult:
-    """Bisect tau until the pruned set has (as close as possible to) ``target_k`` nodes.
+    """Find a tau whose pruned set is as close as possible to ``target_k`` nodes.
 
-    Larger tau prunes more, so kept-size is (weakly, not strictly) decreasing in
-    tau — pruning one node changes downstream degradations, and integer sizes
-    plateau, so an exact ``target_k`` may be unreachable. Every evaluated result
-    is tracked and the best by ``(abs(size - target_k), -value)`` is returned —
-    nearest achievable size, ties broken by higher coalition value — with
-    ``params["exact"]`` recording whether the target was hit. The shared oracle
-    cache makes repeated sweeps cheap (full-set and single-removal scores recur).
+    Kept size is **not** monotone in tau under path-dependent pruning, so this
+    does not bisect. It evaluates:
+    1. any provided ``seed_results`` (e.g. the fixed tau sweep),
+    2. a keep-biased run at tau=0,
+    3. every unique degradation observed on those runs (the critical thresholds
+       where a prune decision can flip),
+    4. optional ``tau_lo`` / ``tau_hi`` endpoints,
+    5. up to ``max_iters`` additional midpoints between neighboring evaluated
+       taus that still miss ``target_k``, ranked by distance to the target size.
+
+    Returns the best result by ``(abs(size - target_k), -value)`` — nearest
+    achievable size, ties broken by higher coalition value — with
+    ``params["exact"]`` recording whether the target was hit.
     """
     if target_k < 1:
         raise ValueError("target_k must be >= 1.")
@@ -184,52 +191,71 @@ def acdc_target_size(
     def rank(result: ACDCPruneResult) -> tuple[int, float]:
         return (abs(len(result.kept) - target_k), -result.value)
 
-    # Seed the bracket from a keep-everything-biased run: its observed
-    # degradations bound the taus at which pruning decisions can change.
-    seed = run(0.0)
-    evaluated: dict[float, ACDCPruneResult] = {0.0: seed}
-    # Prune-path sizes are not monotone in tau (cascades), so the bisection can
-    # jump across a size and never revisit it. Seeding with already-computed
-    # results (e.g. the tau sweep run_baselines performs anyway) lets the
-    # nearest-size ranking consider them for free.
+    evaluated: dict[float, ACDCPruneResult] = {}
     for prior in seed_results or ():
         evaluated.setdefault(float(prior.tau), prior)
-    degradations = [d["degradation"] for d in seed.decisions] or [0.0]
-    lo = tau_lo if tau_lo is not None else min(min(degradations) - 1.0, 0.0)
-    hi = tau_hi if tau_hi is not None else max(degradations) + 1.0
-    for tau in (lo, hi):
-        if tau not in evaluated:
-            evaluated[tau] = run(tau)
+    if 0.0 not in evaluated:
+        evaluated[0.0] = run(0.0)
 
-    iters = 0
+    # Critical thresholds are the degradations observed on evaluated paths —
+    # pruning decisions flip when tau crosses a node's degradation.
+    pending: list[float] = []
+    if tau_lo is not None:
+        pending.append(float(tau_lo))
+    if tau_hi is not None:
+        pending.append(float(tau_hi))
+    for result in list(evaluated.values()):
+        for decision in result.decisions:
+            pending.append(float(decision["degradation"]))
+            # Slightly above the degradation so the "pruned = degradation < tau"
+            # branch flips for that node on a re-run.
+            pending.append(float(decision["degradation"]) + 1e-9)
+
+    extra_runs = 0
+    while pending and extra_runs < max_iters:
+        tau = pending.pop(0)
+        if any(abs(tau - seen) <= 1e-15 for seen in evaluated):
+            continue
+        evaluated[tau] = run(tau)
+        extra_runs += 1
+        for decision in evaluated[tau].decisions:
+            deg = float(decision["degradation"])
+            for candidate_tau in (deg, deg + 1e-9):
+                if all(abs(candidate_tau - seen) > 1e-15 for seen in evaluated):
+                    pending.append(candidate_tau)
+
+    # If still missing exact size, probe midpoints between neighboring taus.
+    if all(len(result.kept) != target_k for result in evaluated.values()):
+        ordered_taus = sorted(evaluated)
+        for left, right in zip(ordered_taus, ordered_taus[1:]):
+            if extra_runs >= max_iters:
+                break
+            if right - left <= 1e-12:
+                continue
+            mid = (left + right) / 2.0
+            if any(abs(mid - seen) <= 1e-15 for seen in evaluated):
+                continue
+            evaluated[mid] = run(mid)
+            extra_runs += 1
+            if len(evaluated[mid].kept) == target_k:
+                break
+
     best = min(evaluated.values(), key=rank)
-    while iters < max_iters and len(best.kept) != target_k and hi - lo > 1e-12:
-        mid = (lo + hi) / 2.0
-        # A midpoint can coincide with an already-evaluated tau (e.g. the 0.0
-        # seed when lo/hi are symmetric); reuse its result to narrow the
-        # bracket rather than bailing — only fresh runs count toward max_iters.
-        result = evaluated.get(mid)
-        if result is None:
-            result = evaluated[mid] = run(mid)
-            iters += 1
-        if len(result.kept) > target_k:
-            lo = mid  # keeping too many -> prune harder
-        else:
-            hi = mid  # at/below target -> prune softer
-        best = min(evaluated.values(), key=rank)
-
     achieved = len(best.kept)
     best.params = dict(
         best.params,
         target_k=target_k,
         achieved_k=achieved,
-        bisection_iters=iters,
+        bisection_iters=extra_runs,  # kept key name for JSON compatibility
+        search_evals=len(evaluated),
         exact=achieved == target_k,
     )
     if achieved != target_k:
         LOGGER.warning(
-            "acdc_target_size: target_k=%d unreachable; returning nearest size %d (tau=%.4g)",
+            "acdc_target_size: target_k=%d unreachable among %d evaluated taus; "
+            "returning nearest size %d (tau=%.4g)",
             target_k,
+            len(evaluated),
             achieved,
             best.tau,
         )

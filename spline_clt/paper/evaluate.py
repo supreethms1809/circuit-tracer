@@ -373,21 +373,50 @@ def summarize_graph_json(graph_json_path: Path) -> dict[str, Any]:
 
 
 def load_ranked_feature_nodes(graph_json_path: Path, top_k: int) -> list[str]:
-    """Return the top-k graph feature node IDs ranked by influence."""
+    """Return the top-k graph feature node IDs ranked by influence magnitude.
+
+    Prefers ``influence_raw`` (larger = stronger). Legacy graphs that only store
+    cumulative coverage in ``influence`` are ranked ascending so the strongest
+    contributors come first.
+    """
+    from macag.baselines.influence import _looks_like_cumulative_coverage, influence_magnitude
+
     payload = json.loads(graph_json_path.read_text())
     nodes = payload.get("nodes", [])
     feature_nodes = [
         node for node in nodes
         if node.get("feature_type") == "cross layer transcoder" and node.get("node_id")
     ]
-    feature_nodes.sort(
-        key=lambda node: (
-            -(float(node.get("influence") or 0.0)),
-            -(float(node.get("activation") or 0.0)),
-            str(node["node_id"]),
-        )
-    )
-    return [str(node["node_id"]) for node in feature_nodes[:top_k]]
+    scored: list[tuple[str, float, str]] = []
+    for node in feature_nodes:
+        magnitude, source = influence_magnitude(node)
+        if magnitude is None:
+            magnitude = 0.0
+            source = "missing"
+        scored.append((str(node["node_id"]), float(magnitude), source))
+
+    used_raw = any(source == "influence_raw" for _, _, source in scored)
+    values = [mag for _, mag, source in scored if source != "missing"]
+    invert = (not used_raw) and _looks_like_cumulative_coverage(values)
+
+    def sort_key(item: tuple[str, float, str]) -> tuple[float, float, str]:
+        node_id, mag, _source = item
+        # Secondary key: activation when present on the original node dict.
+        return ((mag if invert else -mag), 0.0, node_id)
+
+    # Attach activation as secondary sort when available.
+    activation_by_id = {
+        str(node["node_id"]): float(node.get("activation") or 0.0)
+        for node in feature_nodes
+        if node.get("node_id")
+    }
+
+    def sort_key_with_act(item: tuple[str, float, str]) -> tuple[float, float, str]:
+        node_id, mag, _source = item
+        return ((mag if invert else -mag), -activation_by_id.get(node_id, 0.0), node_id)
+
+    scored.sort(key=sort_key_with_act)
+    return [node_id for node_id, _, _ in scored[:top_k]]
 
 
 def build_logit_gap_direction(

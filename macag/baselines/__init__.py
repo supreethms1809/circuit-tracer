@@ -1,16 +1,18 @@
 """Baseline selectors for the MACAG head-to-head evaluation (roadmap Phase 2).
 
-Every baseline ranks or selects feature nodes under (an approximation of) the
-same coalitional value function v(S) used by the games (macag.md §3.0), and is
-scored through the same ScoringOracle, so only the selection rule differs:
+Legacy IDs ``eap`` / ``acdc`` are stable (do not rename — historical JSON).
+Explicit aliases and paper-faithful methods are documented in
+``macag/docs/baseline_method_map.md``.
 
-- influence.py       (B2.1) top-k by the graph's own `influence` metric
-- shapley_select.py  (B2.2) Monte-Carlo Shapley/Banzhaf over the MACAG oracle
-- eap.py             (B2.3) EAP / attribution-patching node scores from graph edges
-- acdc_prune.py      (B2.4) ported ACDC top-down threshold pruning
-- bruteforce.py      (B3.2) exact best size-k subset, for the greedy optimality gap
+- influence.py       top-k by graph ``influence``
+- eap.py             graph path-effect (alias: eap_graph) — NOT Syed EAP
+- eap_syed.py        Syed/Nanda attribution patching on CLT feature nodes
+- shapley_select.py  Monte-Carlo Shapley/Banzhaf over the MACAG oracle
+- acdc_prune.py      ported ACDC node τ-prune (alias: acdc_ported)
+- acdc_native.py     same τ-prune rule on native heads/MLPs
+- bruteforce.py      exact best size-k subset
 
-The head-to-head harness is `python -m macag.cli.run_baselines`.
+The head-to-head harness is ``python -m macag.cli.run_baselines``.
 """
 
 from macag.baselines.common import (
@@ -23,6 +25,7 @@ from macag.baselines.common import (
 )
 from macag.baselines.influence import select_top_influence
 from macag.baselines.eap import compute_eap_node_scores, select_top_eap
+from macag.baselines.eap_syed import compute_syed_eap_node_scores, select_top_eap_syed
 from macag.baselines.shapley_select import (
     ShapleyEstimate,
     estimate_banzhaf,
@@ -30,6 +33,10 @@ from macag.baselines.shapley_select import (
     select_top_shapley,
 )
 from macag.baselines.acdc_prune import ACDCPruneResult, acdc_prune, acdc_tau_sweep
+from macag.baselines.acdc_native import (
+    build_native_component_oracle,
+    run_acdc_native,
+)
 from macag.baselines.bruteforce import BruteForceResult, best_subset_bruteforce
 
 __all__ = [
@@ -42,6 +49,8 @@ __all__ = [
     "select_top_influence",
     "compute_eap_node_scores",
     "select_top_eap",
+    "compute_syed_eap_node_scores",
+    "select_top_eap_syed",
     "ShapleyEstimate",
     "estimate_shapley",
     "estimate_banzhaf",
@@ -49,6 +58,8 @@ __all__ = [
     "ACDCPruneResult",
     "acdc_prune",
     "acdc_tau_sweep",
+    "build_native_component_oracle",
+    "run_acdc_native",
     "BruteForceResult",
     "best_subset_bruteforce",
 ]

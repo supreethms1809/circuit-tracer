@@ -46,6 +46,8 @@ def best_subset_bruteforce(
     pool = sorted(dedupe_preserve_order(candidates), key=str)
     if k <= 0 or k > len(pool):
         raise ValueError(f"k must be in [1, {len(pool)}], got {k}.")
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("alpha must be in [0, 1].")
     total = comb(len(pool), k)
     if total > max_evaluations:
         raise ValueError(

@@ -32,6 +32,8 @@ class Node(BaseModel):
     jsNodeId: str
     clerp: str = ""
     influence: float | None = None
+    # Raw magnitude used by selectors / top-k; `influence` stays cumulative for the UI.
+    influence_raw: float | None = None
     activation: float | None = None
 
     def __init__(self, **data):
@@ -40,7 +42,7 @@ class Node(BaseModel):
         super().__init__(**data)
 
     @classmethod
-    def feature_node(cls, layer, pos, feat_idx, influence=None, activation=None):
+    def feature_node(cls, layer, pos, feat_idx, influence=None, activation=None, influence_raw=None):
         """Create a feature node."""
 
         def cantor_pairing(x, y):
@@ -55,11 +57,12 @@ class Node(BaseModel):
             feature_type="cross layer transcoder",
             jsNodeId=f"{layer}_{feat_idx}-{reverse_ctx_idx}",
             influence=influence,
+            influence_raw=influence_raw,
             activation=activation,
         )
 
     @classmethod
-    def error_node(cls, layer, pos, influence=None):
+    def error_node(cls, layer, pos, influence=None, influence_raw=None):
         """Create an error node."""
         reverse_ctx_idx = 0
         return cls(
@@ -70,10 +73,11 @@ class Node(BaseModel):
             feature_type="mlp reconstruction error",
             jsNodeId=f"{layer}_{pos}-{reverse_ctx_idx}",
             influence=influence,
+            influence_raw=influence_raw,
         )
 
     @classmethod
-    def token_node(cls, pos, vocab_idx, influence=None):
+    def token_node(cls, pos, vocab_idx, influence=None, influence_raw=None):
         """Create a token node."""
         return cls(
             node_id=f"E_{vocab_idx}_{pos}",
@@ -83,6 +87,7 @@ class Node(BaseModel):
             feature_type="embedding",
             jsNodeId=f"E_{vocab_idx}-{pos}",
             influence=influence,
+            influence_raw=influence_raw,
         )
 
     @classmethod

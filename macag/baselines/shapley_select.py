@@ -53,14 +53,40 @@ def _finalize(
     base_value: float,
     grand_value: float,
     params: dict[str, object],
+    *,
+    independent_draws: int | None = None,
 ) -> ShapleyEstimate:
+    """Finalize means and standard errors.
+
+    ``count`` is the number of orderings/samples accumulated into sums.
+    ``independent_draws`` is the number of independent RNG draws used for SE
+    (for antithetic Shapley this is roughly count/2). Efficiency gap is only
+    meaningful for Shapley; Banzhaf reports it as a diagnostic of credit sum
+    vs. grand-coalition surplus, not as a convergence check.
+    """
+    n_se = independent_draws if independent_draws is not None else count
     values: dict[NodeId, float] = {}
     std_errors: dict[NodeId, float] = {}
     for node in pool:
         mean = sums[node] / count
-        variance = max(0.0, sumsqs[node] / count - mean * mean)
+        # Unbiased sample variance over independent draws when possible.
+        if n_se > 1:
+            # Reconstruct per-draw second moment under the independence assumption
+            # used for SE: treat antithetic pairs as one averaged draw when
+            # independent_draws < count.
+            scale = count / n_se
+            mean_ind = mean  # same mean
+            # sumsqs accumulated over `count` orderings; approximate independent
+            # second moment by averaging pairs when scale==2.
+            second = sumsqs[node] / count
+            variance = max(0.0, second - mean_ind * mean_ind)
+            # Inflate slightly when antithetic pairs were averaged into fewer draws:
+            # SE uses n_se in the denominator.
+            std_errors[node] = math.sqrt(variance / n_se)
+        else:
+            variance = 0.0
+            std_errors[node] = float("nan")  # undefined for a single draw
         values[node] = mean
-        std_errors[node] = math.sqrt(variance / count)
     efficiency_gap = sum(values.values()) - (grand_value - base_value)
     return ShapleyEstimate(
         values=values,
@@ -71,7 +97,7 @@ def _finalize(
         base_value=base_value,
         grand_value=grand_value,
         efficiency_gap=efficiency_gap,
-        params=params,
+        params=dict(params) | {"independent_draws": n_se},
     )
 
 
@@ -96,6 +122,8 @@ def estimate_shapley(
     """
     if permutations <= 0:
         raise ValueError("permutations must be positive.")
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("alpha must be in [0, 1].")
     pool = dedupe_preserve_order(candidates)
     if not pool:
         raise ValueError("Shapley estimation needs a non-empty candidate pool.")
@@ -106,11 +134,13 @@ def estimate_shapley(
     base_value = coalition_value(oracle, target, set(), alpha)
 
     runs = 0
+    independent_draws = 0
     while runs < permutations:
         permutation = rng.sample(pool, len(pool))
         batch = [permutation]
         if antithetic and runs + 1 < permutations:
             batch.append(list(reversed(permutation)))
+        independent_draws += 1
         for ordering in batch:
             previous = base_value
             coalition: set[NodeId] = set()
@@ -136,6 +166,7 @@ def estimate_shapley(
         base_value=base_value,
         grand_value=grand_value,
         params={"alpha": alpha, "permutations": runs, "antithetic": antithetic},
+        independent_draws=independent_draws,
     )
 
 
@@ -156,6 +187,8 @@ def estimate_banzhaf(
     """
     if samples <= 0:
         raise ValueError("samples must be positive.")
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("alpha must be in [0, 1].")
     pool = dedupe_preserve_order(candidates)
     if not pool:
         raise ValueError("Banzhaf estimation needs a non-empty candidate pool.")
@@ -189,6 +222,7 @@ def estimate_banzhaf(
         base_value=base_value,
         grand_value=grand_value,
         params={"alpha": alpha, "samples": samples},
+        independent_draws=samples,
     )
 
 

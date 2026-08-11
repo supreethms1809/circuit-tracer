@@ -12,13 +12,11 @@ and ``<root>/summary.csv`` (for the ``pref`` target-preferred filter, joined on
 - win/loss/tie counts, and
 - the Shapley-vs-Game-1 oracle-cost ratio with a bootstrap CI.
 
-Faithfulness comparisons use the budget-matched column (``faith_budget_*``),
-falling back to the method's own-k faithfulness (``faith_*``) when the method
-stopped before the budget (Game 1's early stop selects nothing further, so its
-final-set faithfulness IS its value at the budget). ACDC rows are included but
-its mean selected size is reported alongside — pre budget-matching (roadmap
-Phase 3 ``matched_k``) its k is not comparable and its p-values should be read
-with that caveat.
+Faithfulness comparisons use the budget-matched column (``faith_budget_*``)
+only — rows missing an at-budget value are dropped rather than silently
+compared at unequal set sizes. Prompt is the resampling unit: when the same
+prompt appears under multiple CLTs, bootstrap/Wilcoxon average within prompt
+first so CLT×prompt rows are not treated as independent.
 
 Outputs a markdown report and a long-format CSV next to the input root.
 """
@@ -78,24 +76,51 @@ def load_rows(root: Path) -> list[dict[str, Any]]:
 
 def metric_value(row: dict[str, Any], family: str, method: str) -> Optional[float]:
     if family == "faith_budget":
-        at_budget = _to_float(row.get(f"faith_budget_{method}"))
-        return at_budget if at_budget is not None else _to_float(row.get(f"faith_{method}"))
+        # Equal-k only: do not fall back to own-k (unequal sizes).
+        return _to_float(row.get(f"faith_budget_{method}"))
     return _to_float(row.get(f"{family}_{method}"))
+
+
+def _prompt_key(row: dict[str, Any]) -> str:
+    """Resampling unit: prefer slug (prompt id), fall back to slug|task."""
+    slug = str(row.get("slug") or "").strip()
+    if slug:
+        return slug
+    return f"{row.get('task', '')}|{row.get('clt', '')}"
+
+
+def collapse_to_prompts(
+    rows: Sequence[dict[str, Any]], family: str, method: str
+) -> list[float]:
+    """Average metric within prompt across CLTs, then return one value per prompt."""
+    by_prompt: dict[str, list[float]] = {}
+    for row in rows:
+        value = metric_value(row, family, method)
+        if value is None:
+            continue
+        by_prompt.setdefault(_prompt_key(row), []).append(value)
+    return [float(np.mean(vals)) for vals in by_prompt.values()]
 
 
 def paired_values(
     rows: Sequence[dict[str, Any]], family: str, method: str
 ) -> tuple[list[float], list[float]]:
-    """Aligned (game1, method) value pairs, dropping rows where either is missing."""
-    g1_vals: list[float] = []
-    m_vals: list[float] = []
+    """Aligned (game1, method) pairs after collapsing to the prompt unit."""
+    g1_by: dict[str, list[float]] = {}
+    m_by: dict[str, list[float]] = {}
     for row in rows:
+        key = _prompt_key(row)
         g1 = metric_value(row, family, "game1")
         other = metric_value(row, family, method)
-        if g1 is None or other is None:
-            continue
-        g1_vals.append(g1)
-        m_vals.append(other)
+        if g1 is not None:
+            g1_by.setdefault(key, []).append(g1)
+        if other is not None:
+            m_by.setdefault(key, []).append(other)
+    g1_vals: list[float] = []
+    m_vals: list[float] = []
+    for key in sorted(set(g1_by) & set(m_by)):
+        g1_vals.append(float(np.mean(g1_by[key])))
+        m_vals.append(float(np.mean(m_by[key])))
     return g1_vals, m_vals
 
 
@@ -151,12 +176,21 @@ def method_table(
     """One record per method (game1 first) for a metric family over ``rows``."""
     records: list[dict[str, Any]] = []
 
-    g1_all = [v for v in (metric_value(r, family, "game1") for r in rows) if v is not None]
+    g1_all = collapse_to_prompts(rows, family, "game1")
     mean, lo, hi = _mean_ci(g1_all, samples, confidence, seed)
+    k_by_prompt: dict[str, list[float]] = {}
+    for row in rows:
+        k_val = _to_float(row.get("k_game1"))
+        if k_val is not None:
+            k_by_prompt.setdefault(_prompt_key(row), []).append(k_val)
+    mean_k = (
+        float(np.mean([float(np.mean(v)) for v in k_by_prompt.values()]))
+        if k_by_prompt
+        else float("nan")
+    )
     records.append(
         {"method": "game1", "n": len(g1_all), "mean": mean, "lo": lo, "hi": hi,
-         "mean_k": float(np.mean([v for v in (_to_float(r.get("k_game1")) for r in rows) if v]))
-         if rows else float("nan")}
+         "mean_k": mean_k}
     )
 
     raw_p: dict[str, float] = {}
@@ -165,7 +199,13 @@ def method_table(
         g1_vals, m_vals = paired_values(rows, family, method)
         deltas = [g - m for g, m in zip(g1_vals, m_vals)]
         mean, lo, hi = _mean_ci(m_vals, samples, confidence, seed)
-        ks = [v for v in (_to_float(r.get(f"k_{method}")) for r in rows) if v]
+        ks_by: dict[str, list[float]] = {}
+        for row in rows:
+            k_val = _to_float(row.get(f"k_{method}"))
+            if k_val is not None:
+                # Include explicit zeros (empty selections).
+                ks_by.setdefault(_prompt_key(row), []).append(k_val)
+        ks = [float(np.mean(v)) for v in ks_by.values()]
         rec: dict[str, Any] = {
             "method": method,
             "n": len(m_vals),

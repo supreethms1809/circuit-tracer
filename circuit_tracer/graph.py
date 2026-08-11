@@ -175,7 +175,8 @@ def find_threshold(scores: torch.Tensor, threshold: float):
 class PruneResult(NamedTuple):
     node_mask: torch.Tensor  # Boolean tensor indicating which nodes to keep
     edge_mask: torch.Tensor  # Boolean tensor indicating which edges to keep
-    cumulative_scores: torch.Tensor  # Tensor of cumulative influence scores for each node
+    cumulative_scores: torch.Tensor  # Cumulative coverage when ranked by raw influence
+    node_influence: torch.Tensor  # Raw per-node influence magnitudes (larger = stronger)
 
 
 def prune_graph(
@@ -189,10 +190,11 @@ def prune_graph(
         edge_threshold: Keep edges that contribute to this fraction of total influence
 
     Returns:
-        Tuple containing:
+        PruneResult containing:
         - node_mask: Boolean tensor indicating which nodes to keep
         - edge_mask: Boolean tensor indicating which edges to keep
-        - cumulative_scores: Tensor of cumulative influence scores for each node
+        - cumulative_scores: Cumulative coverage scores (frontend prune slider)
+        - node_influence: Raw influence magnitudes for ranking / selection
     """
 
     if node_threshold > 1.0 or node_threshold < 0.0:
@@ -246,13 +248,17 @@ def prune_graph(
         # Ensure feature nodes have incoming edges
         node_mask[:n_features] &= edge_mask[:n_features].any(1)
 
-    # Calculate cumulative influence scores
+    # Cumulative coverage for the frontend prune slider: strongest node gets the
+    # smallest cumulative value, weakest retained nodes approach 1.0. Ranking /
+    # top-k selection MUST use raw node_influence (or influence_raw in JSON), not
+    # these cumulative values sorted descending.
     sorted_scores, sorted_indices = torch.sort(node_influence, descending=True)
-    cumulative_scores = torch.cumsum(sorted_scores, dim=0) / torch.sum(sorted_scores)
+    total = torch.sum(sorted_scores).clamp(min=1e-12)
+    cumulative_scores = torch.cumsum(sorted_scores, dim=0) / total
     final_scores = torch.zeros_like(node_influence)
     final_scores[sorted_indices] = cumulative_scores
 
-    return PruneResult(node_mask, edge_mask, final_scores)
+    return PruneResult(node_mask, edge_mask, final_scores, node_influence)
 
 
 def compute_graph_scores(graph: Graph, reconstruction_fve: float | None = None) -> tuple[float, float]:

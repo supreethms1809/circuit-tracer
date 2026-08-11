@@ -36,8 +36,21 @@ def node_salience(
     activation_weight: float = 0.2,
     token_prob_weight: float = 0.0,
 ) -> float:
-    """Compute a deterministic salience score from available node metrics."""
-    influence = _to_float(metadata.get("influence")) or 0.0
+    """Compute a deterministic salience score from available node metrics.
+
+    Prefers ``influence_raw`` (larger = stronger). Legacy cumulative ``influence``
+    values in (0, 1] are converted to a descending magnitude via ``1 - influence``
+    so weak coverage nodes are not treated as more salient.
+    """
+    from macag.baselines.influence import _looks_like_cumulative_coverage, influence_magnitude
+
+    magnitude, source = influence_magnitude(metadata)
+    if magnitude is None:
+        influence = 0.0
+    elif source == "influence" and _looks_like_cumulative_coverage([magnitude]):
+        influence = 1.0 - magnitude
+    else:
+        influence = magnitude
     activation = _to_float(metadata.get("activation")) or 0.0
     token_prob = _to_float(metadata.get("token_prob")) or 0.0
     return (
@@ -57,19 +70,41 @@ def rank_nodes_by_salience(
     token_prob_weight: float = 0.0,
 ) -> list[tuple[NodeId, float]]:
     """Return nodes ranked by salience descending."""
+    from macag.baselines.influence import _looks_like_cumulative_coverage, influence_magnitude
+
     allowed_feature_types = _normalize_feature_types(feature_types)
-    ranked: list[tuple[NodeId, float]] = []
+    candidates: list[tuple[NodeId, dict[str, Any]]] = []
+    legacy_values: list[float] = []
     for node in graph.nodes():
         metadata = graph.metadata(node)
         if allowed_feature_types is not None:
             feature_type = str(metadata.get("feature_type", "")).strip().lower()
             if feature_type not in allowed_feature_types:
                 continue
-        score = node_salience(
-            metadata=metadata,
-            influence_weight=influence_weight,
-            activation_weight=activation_weight,
-            token_prob_weight=token_prob_weight,
+        candidates.append((node, metadata))
+        magnitude, source = influence_magnitude(metadata)
+        if magnitude is not None and source == "influence":
+            legacy_values.append(magnitude)
+
+    invert_legacy = _looks_like_cumulative_coverage(legacy_values) and not any(
+        influence_magnitude(meta)[1] == "influence_raw" for _, meta in candidates
+    )
+
+    ranked: list[tuple[NodeId, float]] = []
+    for node, metadata in candidates:
+        magnitude, source = influence_magnitude(metadata)
+        if magnitude is None:
+            influence = 0.0
+        elif invert_legacy and source == "influence":
+            influence = 1.0 - magnitude
+        else:
+            influence = magnitude
+        activation = _to_float(metadata.get("activation")) or 0.0
+        token_prob = _to_float(metadata.get("token_prob")) or 0.0
+        score = (
+            influence_weight * abs(influence)
+            + activation_weight * abs(activation)
+            + token_prob_weight * abs(token_prob)
         )
         if score < min_salience:
             continue

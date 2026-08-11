@@ -413,7 +413,11 @@ def test_run_baselines_harness_end_to_end(tmp_path) -> None:
     assert comparison["agreement_vs_shapley"]["influence"]["2"]["precision_at_k"] == pytest.approx(1.0)
     assert comparison["spearman"]["eap|influence"] == pytest.approx(1.0)
     assert comparison["spearman"]["eap|game1_marginal_gain"] == pytest.approx(1.0)
-    assert comparison["auc_raw_faithfulness"]["game1"] == pytest.approx((6.0 + 10.0 + 11.0) / 3.0)
+    # Trapezoidal AUC on k=0..3 with values 0,6,10,11 → 21.5 / 3.
+    assert comparison["auc_raw_faithfulness"]["game1"] == pytest.approx(21.5 / 3.0)
+    assert comparison["auc_definition"].startswith("trapezoidal")
+    assert "0" in comparison["faithfulness_at_k"]["game1"]
+    assert acdc["selection_stats"]["oracle_calls"] > 0
 
 
 def test_run_baselines_game1_connected_default(tmp_path) -> None:
@@ -463,7 +467,11 @@ def test_run_baselines_game1_connected_default(tmp_path) -> None:
     # greedy stops at the seed node despite budget=2.
     assert game1["ranking"] == ["a"]
     assert game1["extras"]["stopped_early"] is True
-    assert list(game1["results"].keys()) == ["1"]
+    assert set(game1["results"].keys()) == {"0", "1"}
+    # Carry-forward puts the size-1 faithfulness onto budget k=2 in the comparison.
+    assert payload["comparison"]["faithfulness_at_k"]["game1"]["2"] == pytest.approx(
+        game1["results"]["1"]["scores"]["faithfulness"]
+    )
 
 
 def test_merge_baselines_deferred_shapley(tmp_path) -> None:
@@ -524,3 +532,282 @@ def test_run_baselines_rejects_unknown_method(tmp_path) -> None:
                 "--output-json", str(tmp_path / "out.json"),
             ]
         )
+
+
+def test_method_aliases_resolve_without_renaming_legacy_ids(tmp_path) -> None:
+    """eap_graph / acdc_ported resolve to eap / acdc so old JSON keys stay stable."""
+    from macag.cli.run_baselines import METHOD_ALIASES, _parse_methods
+
+    assert METHOD_ALIASES["eap_graph"] == "eap"
+    assert METHOD_ALIASES["acdc_ported"] == "acdc"
+    assert METHOD_ALIASES["eap_ap"] == "eap_syed"
+    assert _parse_methods("influence,eap_graph,acdc_ported") == ["influence", "eap", "acdc"]
+    # Dedup after aliasing
+    assert _parse_methods("eap,eap_graph") == ["eap"]
+
+
+def test_syed_eap_formula_on_fake_replacement_model() -> None:
+    """(a_corr - a_clean) * dL/da_clean ranks the larger |Δa·grad| feature first."""
+    import torch
+
+    from macag.baselines.eap_syed import select_top_eap_syed
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self._call = 0
+            self.training = False
+
+        def ensure_tokenized(self, prompt: str):
+            return torch.arange(3, dtype=torch.long)
+
+        def eval(self):
+            return self
+
+        def train(self):
+            return self
+
+        def zero_grad(self, set_to_none: bool = False):
+            return None
+
+        def get_activations(self, tokens, sparse: bool = False):
+            self._call += 1
+            acts = torch.zeros(1, 3, 2)
+            if self._call == 1:  # clean
+                acts[0, 0, 0] = 1.0
+                acts[0, 0, 1] = 0.0
+            else:  # corrupt
+                acts[0, 0, 0] = 3.0
+                acts[0, 0, 1] = 4.0
+            return torch.zeros(1, 3, 5), acts
+
+        def feature_intervention(
+            self, tokens, interventions, freeze_attention=True, return_activations=False
+        ):
+            # L = 2*a0 + 5*a1 so grads are 2 and 5
+            acc = None
+            for _layer, _pos, feat, value in interventions:
+                weight = 2.0 if int(feat) == 0 else 5.0
+                term = weight * value
+                acc = term if acc is None else acc + term
+            logits = torch.zeros(1, 3, 5)
+            logits = logits.clone()
+            logits[0, -1, 0] = acc
+            return logits, None
+
+    result = select_top_eap_syed(
+        _FakeModel(),
+        prompt="clean",
+        corrupted_prompt="corrupt",
+        node_to_intervention={"f0": (0, 0, 0), "f1": (0, 0, 1)},
+        candidates=["f0", "f1"],
+        target_logit_idx=0,
+        foil_logit_idx=None,
+        use_absolute=True,
+    )
+    # Δa0=2, grad=2 → 4; Δa1=4, grad=5 → 20
+    assert result.ranking == ["f1", "f0"]
+    assert result.scores["f1"] == pytest.approx(20.0)
+    assert result.scores["f0"] == pytest.approx(4.0)
+    assert result.params.get("grad_path") == "leaf_feature_intervention"
+
+
+def test_syed_eap_leaf_path_rejects_detached_logits() -> None:
+    """Mirrors ReplacementModel.feature_intervention (@torch.no_grad) failure mode."""
+    import torch
+
+    from macag.baselines.eap_syed import compute_syed_eap_node_scores
+
+    class _DetachedModel:
+        training = False
+
+        def ensure_tokenized(self, prompt: str):
+            return torch.arange(2, dtype=torch.long)
+
+        def eval(self):
+            return self
+
+        def train(self):
+            return self
+
+        def get_activations(self, tokens, sparse: bool = False):
+            return torch.zeros(1, 2, 5), torch.zeros(1, 2, 1)
+
+        def feature_intervention(
+            self, tokens, interventions, freeze_attention=True, return_activations=False
+        ):
+            return torch.zeros(1, 2, 5), None  # no grad_fn
+
+    with pytest.raises(RuntimeError, match="without grad_fn"):
+        compute_syed_eap_node_scores(
+            _DetachedModel(),
+            prompt="a",
+            corrupted_prompt="b",
+            node_to_intervention={"f0": (0, 0, 0)},
+            candidates=["f0"],
+            target_logit_idx=0,
+        )
+
+
+def test_syed_eap_decoder_contract_single_and_cross_layer() -> None:
+    import torch
+
+    from macag.baselines.eap_syed import _decoder_grad_contract
+
+    class _Transcoders:
+        def __init__(self, W: torch.Tensor) -> None:
+            self._W = W
+
+        def _get_decoder_vectors(self, layer_id, feat_ids):
+            return self._W
+
+    class _Model:
+        def __init__(self, W: torch.Tensor) -> None:
+            self.transcoders = _Transcoders(W)
+
+    # Single-layer: W·g = 1*3 + 2*4 = 11
+    resid = torch.tensor([[[3.0, 4.0, 5.0]]])  # (1, 1, 3)
+    single = _Model(torch.tensor([[1.0, 2.0, 0.0]]))
+    assert _decoder_grad_contract(
+        single, layer=0, pos=0, feat=0, resid_grads=resid
+    ) == pytest.approx(11.0)
+
+    # Cross-layer writes to layer and layer+1
+    resid2 = torch.tensor(
+        [
+            [[1.0, 0.0, 0.0]],
+            [[0.0, 1.0, 0.0]],
+        ]
+    )
+    cross = _Model(torch.tensor([[[2.0, 0.0, 0.0], [0.0, 3.0, 0.0]]]))  # [1, 2, 3]
+    assert _decoder_grad_contract(
+        cross, layer=0, pos=0, feat=0, resid_grads=resid2
+    ) == pytest.approx(2.0 * 1.0 + 3.0 * 1.0)
+
+
+def test_native_component_graph_orders_top_down() -> None:
+    from macag.baselines.acdc_native import build_native_component_graph
+    from macag.baselines.acdc_prune import _topdown_order
+
+    graph = build_native_component_graph(n_layers=2, n_heads=2)
+    ordered = _topdown_order(graph, ["a0.h0", "a1.h0", "m0", "m1"])
+    # Highest layer first
+    assert ordered[0] in ("a1.h0", "m1")
+    assert ordered[-1] in ("a0.h0", "m0")
+
+
+# ----------------------------------------------------------- audit regressions
+def test_influence_prefers_raw_over_reversed_cumulative() -> None:
+    """Exported cumulative coverage ranks weakest-first if sorted descending."""
+    graph = CircuitGraph(
+        nodes=["a", "b", "c"],
+        node_metadata={
+            # True raw influences 6,4,1 → cumulative 6/11, 10/11, 1.0
+            "a": {"influence": 6 / 11, "influence_raw": 6.0},
+            "b": {"influence": 10 / 11, "influence_raw": 4.0},
+            "c": {"influence": 1.0, "influence_raw": 1.0},
+        },
+    )
+    assert select_top_influence(graph, ["a", "b", "c"]).ranking == ["a", "b", "c"]
+
+
+def test_influence_legacy_cumulative_sorted_ascending() -> None:
+    graph = CircuitGraph(
+        nodes=["a", "b", "c"],
+        node_metadata={
+            "a": {"influence": 6 / 11},
+            "b": {"influence": 10 / 11},
+            "c": {"influence": 1.0},
+        },
+    )
+    result = select_top_influence(graph, ["a", "b", "c"])
+    assert result.ranking == ["a", "b", "c"]
+    assert result.extras["legacy_cumulative_inverted"] is True
+
+
+def test_acdc_target_size_finds_nonmonotone_exact_k() -> None:
+    """Path-dependent prune where exact k=1 exists outside a tau=0 bisection bracket."""
+
+    class TableBackend:
+        def __init__(self) -> None:
+            self.table = {
+                frozenset(): 0.0,
+                frozenset({"a"}): 12.0,
+                frozenset({"b"}): 1.0,
+                frozenset({"c"}): -20.0,
+                frozenset({"a", "b"}): 29.0,
+                frozenset({"a", "c"}): 26.0,
+                frozenset({"b", "c"}): 20.0,
+                frozenset({"a", "b", "c"}): 25.0,
+            }
+            self.universe = {"a", "b", "c"}
+
+        def score_all(self, target: str) -> float:
+            return self.table[frozenset(self.universe)]
+
+        def score_empty(self, target: str) -> float:
+            return self.table[frozenset()]
+
+        def score_keep_only(self, nodes: set[str], target: str) -> float:
+            return self.table[frozenset(nodes)]
+
+        def score_remove(self, nodes: set[str], target: str) -> float:
+            return self.table[frozenset(self.universe - set(nodes))]
+
+    oracle = ScoringOracle(backend=TableBackend(), cache_enabled=True)
+    graph = CircuitGraph(nodes=["a", "b", "c"])
+    assert set(
+        acdc_prune(graph, oracle, "y", ["a", "b", "c"], tau=20, alpha=1.0, order="given").kept
+    ) == {"b"}
+    matched = acdc_target_size(
+        graph, oracle, "y", ["a", "b", "c"], target_k=1, alpha=1.0, order="given"
+    )
+    assert matched.params["exact"] is True
+    assert matched.params["achieved_k"] == 1
+    assert len(matched.kept) == 1
+
+
+def test_merge_baselines_rejects_candidate_mismatch(tmp_path) -> None:
+    from macag.cli.merge_baselines import merge_payloads
+
+    main = {
+        "input_id": "p1",
+        "target": "y",
+        "params": {"budget": 2, "alpha": 0.5, "lambda": 0.01, "methods": []},
+        "candidates": ["a", "b"],
+        "methods": {},
+        "comparison": {},
+    }
+    extra = {
+        "input_id": "p1",
+        "target": "y",
+        "params": {"budget": 2, "alpha": 0.5, "lambda": 0.01, "methods": []},
+        "candidates": ["a", "b", "c"],
+        "methods": {},
+        "comparison": {},
+    }
+    with pytest.raises(ValueError, match="candidates"):
+        merge_payloads(main, extra)
+
+
+def test_kl_rescore_prefers_matched_k() -> None:
+    from macag.kl_rescore import _acdc_evidence_for_budget
+
+    entry = {
+        "matched_k": {
+            "evidence": ["a", "b"],
+            "achieved_k": 2,
+            "exact": True,
+            "scores": {"faithfulness": 10.0},
+        },
+        "best_by_size": {
+            "8": {"evidence": ["a", "b", "c", "d"], "scores": {"faithfulness": 99.0}},
+            "193": {
+                "evidence": [f"n{i}" for i in range(193)],
+                "scores": {"faithfulness": 100.0},
+            },
+        },
+    }
+    evidence, faith, meta = _acdc_evidence_for_budget(entry, budget=8)
+    assert evidence == ["a", "b"]
+    assert faith == pytest.approx(10.0)
+    assert meta["source"] == "matched_k"

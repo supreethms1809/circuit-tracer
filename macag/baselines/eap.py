@@ -1,12 +1,11 @@
-"""B2.3 — EAP / attribution-patching node scores derived from graph edges.
+"""Graph path-effect baseline (stable method id: ``eap``, alias ``eap_graph``).
 
-The attribution graph's edge weights ARE first-order gradient-times-activation
-scores, so a node's EAP importance for the output is its total signed path
-effect on the target logit (minus the foil logit when one is given). This is
-the "cheap variant" sanctioned by macag.md B2.3: derive the node score directly
-from the graph instead of re-running backward passes through the model. Zero
-oracle calls — the whole point of the comparison is that MACAG pays real
-interventions where EAP pays one local-linear read-off.
+NOT Syed/Nanda attribution patching. This cheap variant sums signed path
+effects on the exported attribution-graph link weights (Jacobi / influence-
+family). For the paper formula ``(a_corr − a_clean)·∇L`` see
+``macag.baselines.eap_syed`` (method id ``eap_syed``).
+
+Naming map: ``macag/docs/baseline_method_map.md``.
 """
 
 from __future__ import annotations

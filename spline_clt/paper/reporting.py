@@ -704,15 +704,28 @@ def aggregate_suite_records(records: Sequence[dict[str, Any]], config: SuiteConf
         baseline_size = baseline_family["evidence_size"]["mean"]
         primary_faithfulness = primary_family["faithfulness"]["mean"]
         baseline_faithfulness = baseline_family["faithfulness"]["mean"]
-        if (
+        # Pareto win: strictly better on one axis and not worse on the other.
+        size_better = (
             math.isfinite(primary_size)
             and math.isfinite(baseline_size)
             and primary_size < baseline_size
-        ) or (
+        )
+        size_not_worse = (
+            math.isfinite(primary_size)
+            and math.isfinite(baseline_size)
+            and primary_size <= baseline_size
+        )
+        faith_better = (
             math.isfinite(primary_faithfulness)
             and math.isfinite(baseline_faithfulness)
             and primary_faithfulness > baseline_faithfulness
-        ):
+        )
+        faith_not_worse = (
+            math.isfinite(primary_faithfulness)
+            and math.isfinite(baseline_faithfulness)
+            and primary_faithfulness >= baseline_faithfulness
+        )
+        if (size_better and faith_not_worse) or (faith_better and size_not_worse):
             macag_family_wins += 1
 
     inclusion_gate = {

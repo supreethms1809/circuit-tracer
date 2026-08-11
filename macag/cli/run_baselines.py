@@ -29,9 +29,10 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from macag.baselines.acdc_prune import acdc_target_size, acdc_tau_sweep
+from macag.baselines.acdc_native import run_acdc_native
 from macag.baselines.bruteforce import best_subset_bruteforce
 from macag.baselines.common import (
     SelectionResult,
@@ -40,6 +41,7 @@ from macag.baselines.common import (
     spearman_rank_correlation,
 )
 from macag.baselines.eap import select_top_eap
+from macag.baselines.eap_syed import select_top_eap_syed
 from macag.baselines.influence import select_top_influence
 from macag.baselines.shapley_select import select_top_shapley
 from macag.cli.run_macag import _build_oracle, _load_candidates, _load_json, _sort_nodes
@@ -55,20 +57,43 @@ from macag.utils.metrics import (
 
 LOGGER = logging.getLogger(__name__)
 
-KNOWN_METHODS = ("influence", "eap", "shapley", "banzhaf", "game1", "acdc")
+# Canonical IDs. Aliases resolve before dispatch so historical JSON keys
+# (`eap`, `acdc`) stay stable — see macag/docs/baseline_method_map.md.
+METHOD_ALIASES: dict[str, str] = {
+    "eap_graph": "eap",
+    "acdc_ported": "acdc",
+    "eap_ap": "eap_syed",
+    "attribution_patching": "eap_syed",
+}
+CANONICAL_METHODS = (
+    "influence",
+    "eap",
+    "eap_syed",
+    "shapley",
+    "banzhaf",
+    "game1",
+    "acdc",
+    "acdc_native",
+)
+KNOWN_METHODS = CANONICAL_METHODS + tuple(METHOD_ALIASES.keys())
 DEFAULT_METHODS = "influence,eap,shapley,game1,acdc"
 DEFAULT_ACDC_TAUS = "0.001,0.01,0.05,0.1,0.2,0.5"
 _FEATURE_NODE_TYPE = "cross layer transcoder"
 
 
+def _canonicalize_method(name: str) -> str:
+    return METHOD_ALIASES.get(name, name)
+
+
 def _parse_methods(spec: str) -> list[str]:
-    methods = [method.strip().lower() for method in spec.split(",") if method.strip()]
-    unknown = [method for method in methods if method not in KNOWN_METHODS]
+    raw = [method.strip().lower() for method in spec.split(",") if method.strip()]
+    unknown = [method for method in raw if method not in KNOWN_METHODS]
     if unknown:
         raise ValueError(f"Unknown method(s) {unknown}; choose from {KNOWN_METHODS}.")
-    if not methods:
+    if not raw:
         raise ValueError("Provide at least one method.")
-    return dedupe_preserve_order(methods)  # type: ignore[arg-type]
+    # Resolve aliases, preserve first-seen canonical order.
+    return dedupe_preserve_order([_canonicalize_method(method) for method in raw])  # type: ignore[arg-type]
 
 
 def _parse_float_list(spec: str) -> list[float]:
@@ -77,6 +102,85 @@ def _parse_float_list(spec: str) -> list[float]:
 
 def _parse_int_list(spec: str) -> list[int]:
     return [int(part) for part in spec.split(",") if part.strip()]
+
+
+def _oracle_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if getattr(args, "oracle_kwargs_json", None):
+        kwargs.update(json.loads(args.oracle_kwargs_json))
+    if getattr(args, "oracle_kwargs_file", None):
+        kwargs.update(_load_json(args.oracle_kwargs_file))
+    return kwargs
+
+
+def _replacement_backend(oracle: ScoringOracle) -> Any:
+    backend = getattr(oracle, "backend", None)
+    if backend is None or not hasattr(backend, "model") or not hasattr(backend, "node_to_intervention"):
+        raise ValueError(
+            "eap_syed requires a ReplacementModelInterventionScorer backend "
+            "(--oracle-factory with a real ReplacementModel)."
+        )
+    return backend
+
+
+def _resolve_corrupted_prompt(args: argparse.Namespace) -> str:
+    if getattr(args, "eap_corrupted_prompt", None):
+        return str(args.eap_corrupted_prompt)
+    kwargs = _oracle_kwargs(args)
+    corrupted = kwargs.get("corrupted_prompt")
+    if corrupted:
+        return str(corrupted)
+    raise ValueError(
+        "eap_syed needs a corrupted prompt: pass --eap-corrupted-prompt or set "
+        "corrupted_prompt in --oracle-kwargs-file."
+    )
+
+
+def _resolve_eap_logit_matches(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    """Resolve graph-EAP target/foil clerp substrings from CLI or oracle kwargs.
+
+    Explicit ``--eap-target-match`` / ``--eap-foil-match`` win. Otherwise derive
+    token strings from ``target_token_by_label`` + ``foil_by_target`` so EAP
+    optimizes the same target–foil gap as the evaluation oracle, not merely the
+    graph's top predicted logit (``is_target_logit``).
+    """
+    target_match = getattr(args, "eap_target_match", None)
+    foil_match = getattr(args, "eap_foil_match", None)
+    if target_match is not None and foil_match is not None:
+        return target_match, foil_match
+
+    kwargs = _oracle_kwargs(args)
+    token_by_label = kwargs.get("target_token_by_label") or {}
+    foil_by_target = kwargs.get("foil_by_target") or {}
+    if not isinstance(token_by_label, Mapping):
+        token_by_label = {}
+    if not isinstance(foil_by_target, Mapping):
+        foil_by_target = {}
+
+    if target_match is None:
+        token = token_by_label.get(args.target)
+        if token is not None and str(token).strip():
+            target_match = str(token).strip()
+
+    if foil_match is None:
+        foil_label = foil_by_target.get(args.target)
+        if foil_label is not None:
+            foil_token = token_by_label.get(foil_label)
+            if foil_token is not None and str(foil_token).strip():
+                foil_match = str(foil_token).strip()
+
+    return target_match, foil_match
+
+
+def _load_native_hooked_transformer(model_name: str, model_kwargs: Mapping[str, Any] | None) -> Any:
+    """Load a HookedTransformer for acdc_native (separate from the CLT ReplacementModel)."""
+    from transformer_lens import HookedTransformer
+
+    kwargs = dict(model_kwargs or {})
+    # TransformerLens uses `dtype` / `device` in from_pretrained.
+    model = HookedTransformer.from_pretrained(model_name, **kwargs)
+    model.cfg.use_attn_result = True
+    return model
 
 
 def _default_candidates(graph: CircuitGraph) -> list[NodeId]:
@@ -133,11 +237,34 @@ def _run_selection(
     if method == "influence":
         result = select_top_influence(graph, candidates, use_absolute=not args.influence_signed)
     elif method == "eap":
+        target_match, foil_match = _resolve_eap_logit_matches(args)
         result = select_top_eap(
             payload,
             candidates,
-            target_match=args.eap_target_match,
-            foil_match=args.eap_foil_match,
+            target_match=target_match,
+            foil_match=foil_match,
+            use_absolute=not args.eap_signed,
+        )
+    elif method == "eap_syed":
+        backend = _replacement_backend(oracle)
+        kwargs = _oracle_kwargs(args)
+        foil_map = getattr(backend, "foil_by_target", None) or {}
+        foil_label = foil_map.get(target)
+        target_logit = int(backend.target_to_logit_idx[target])
+        foil_logit = (
+            int(backend.target_to_logit_idx[foil_label])
+            if foil_label is not None and foil_label in backend.target_to_logit_idx
+            else None
+        )
+        result = select_top_eap_syed(
+            backend.model,
+            prompt=str(kwargs.get("prompt") or backend.prompt),
+            corrupted_prompt=_resolve_corrupted_prompt(args),
+            node_to_intervention=backend.node_to_intervention,
+            candidates=candidates,
+            target_logit_idx=target_logit,
+            foil_logit_idx=foil_logit,
+            freeze_attention=bool(getattr(backend, "freeze_attention", True)),
             use_absolute=not args.eap_signed,
         )
     elif method in ("shapley", "banzhaf"):
@@ -196,9 +323,20 @@ def _evaluate_prefixes(
     alpha: float,
     lam: float,
 ) -> dict[int, dict[str, Any]]:
-    """Score each k-prefix of a ranking with the games' FaithfulnessMetrics."""
+    """Score each k-prefix of a ranking with the games' FaithfulnessMetrics.
+
+    Always includes k=0 (empty evidence) so early-stop / empty selections remain
+    visible in comparisons instead of disappearing from the method table.
+    """
     results: dict[int, dict[str, Any]] = {}
-    for k in range(1, min(budget, len(ranking)) + 1):
+    empty_metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=set(), alpha=alpha)
+    results[0] = {
+        "evidence": [],
+        "scores": metrics_to_dict(empty_metrics)
+        | {"utility": game1_utility(empty_metrics.faithfulness_delta, size=0, lam=lam)},
+    }
+    max_k = min(budget, len(ranking))
+    for k in range(1, max_k + 1):
         evidence = set(ranking[:k])
         metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=evidence, alpha=alpha)
         results[k] = {
@@ -207,6 +345,43 @@ def _evaluate_prefixes(
             | {"utility": game1_utility(metrics.faithfulness_delta, size=k, lam=lam)},
         }
     return results
+
+
+def _faithfulness_curve_on_budget(
+    per_k_raw: Mapping[str, float],
+    budget: int,
+) -> dict[str, float]:
+    """Carry-forward curve on the common domain k=0..budget.
+
+    Early-stopping methods keep their last realized faithfulness for larger k
+    (the selected set does not grow). Missing everything yields an empty map.
+    """
+    if not per_k_raw and budget < 0:
+        return {}
+    realized = {int(k): float(v) for k, v in per_k_raw.items()}
+    if 0 not in realized:
+        realized[0] = 0.0
+    curve: dict[str, float] = {}
+    last = realized.get(0, 0.0)
+    for k in range(0, budget + 1):
+        if k in realized:
+            last = realized[k]
+        curve[str(k)] = last
+    return curve
+
+
+def _trapezoidal_auc(curve: Mapping[str, float]) -> float:
+    """Trapezoidal AUC over integer k keys, normalized by the k-span."""
+    if not curve:
+        return 0.0
+    ks = sorted(int(k) for k in curve)
+    if len(ks) == 1:
+        return float(curve[str(ks[0])])
+    area = 0.0
+    for left, right in zip(ks, ks[1:]):
+        area += 0.5 * (float(curve[str(left)]) + float(curve[str(right)])) * (right - left)
+    span = ks[-1] - ks[0]
+    return area / span if span > 0 else float(curve[str(ks[0])])
 
 
 def _comparison_block(
@@ -218,19 +393,18 @@ def _comparison_block(
     faithfulness_at_k: dict[str, dict[str, float]] = {}
     auc_raw: dict[str, float] = {}
     for method, entry in methods.items():
-        per_k = {
+        per_k_raw = {
             str(k): payload["scores"]["faithfulness"] for k, payload in entry["results"].items()
         }
-        faithfulness_at_k[method] = per_k
-        if per_k:
-            # Mean over k = 1..budget with missing sizes treated as the last
-            # available prefix would overstate early-stopping methods; average
-            # only over realized sizes and report the count.
-            auc_raw[method] = sum(per_k.values()) / len(per_k)
+        curve = _faithfulness_curve_on_budget(per_k_raw, budget)
+        faithfulness_at_k[method] = curve
+        if curve:
+            auc_raw[method] = _trapezoidal_auc(curve)
 
     comparison: dict[str, Any] = {
         "faithfulness_at_k": faithfulness_at_k,
         "auc_raw_faithfulness": auc_raw,
+        "auc_definition": "trapezoidal_mean_over_k_0_to_budget_with_carry_forward",
     }
 
     gold = selections.get("shapley") or selections.get("banzhaf")
@@ -355,12 +529,28 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--eap-target-match",
         default=None,
-        help="Case-insensitive clerp substring selecting the target logit seed "
-        "(default: the graph's is_target_logit flag).",
+        help="Case-insensitive clerp substring selecting the target logit seed. "
+        "Default: token from oracle kwargs target_token_by_label[target], else "
+        "the graph's is_target_logit flag.",
     )
-    parser.add_argument("--eap-foil-match", default=None, help="Clerp substring selecting a -1 foil logit seed.")
+    parser.add_argument(
+        "--eap-foil-match",
+        default=None,
+        help="Clerp substring selecting a -1 foil logit seed. Default: foil token "
+        "from oracle kwargs (foil_by_target + target_token_by_label).",
+    )
     parser.add_argument("--eap-signed", action="store_true", help="Rank by signed EAP score instead of |score|.")
+    parser.add_argument(
+        "--eap-corrupted-prompt",
+        default=None,
+        help="Corrupted prompt for eap_syed (overrides corrupted_prompt in oracle kwargs).",
+    )
     parser.add_argument("--influence-signed", action="store_true", help="Rank by signed influence instead of |influence|.")
+    parser.add_argument(
+        "--native-model-name",
+        default=None,
+        help="Optional HookedTransformer name for acdc_native (default: model_name from oracle kwargs).",
+    )
 
     parser.add_argument(
         "--bruteforce-k",
@@ -387,6 +577,8 @@ def main(argv: list[str] | None = None) -> int:
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
+    if not 0.0 <= args.alpha <= 1.0:
+        raise ValueError("--alpha must be in [0, 1].")
     if args.budget < 1:
         raise ValueError("--budget must be >= 1.")
     methods = _parse_methods(args.methods)
@@ -404,12 +596,14 @@ def main(argv: list[str] | None = None) -> int:
     selections: dict[str, SelectionResult] = {}
     method_outputs: dict[str, dict[str, Any]] = {}
     acdc_output: dict[str, Any] | None = None
+    acdc_native_output: dict[str, Any] | None = None
+    acdc_sweep_results = None
 
     for method in methods:
         if method == "acdc":
             oracle.clear_cache()
             oracle.reset_stats()
-            sweep = acdc_tau_sweep(
+            acdc_sweep_results = acdc_tau_sweep(
                 graph,
                 oracle,
                 args.target,
@@ -419,12 +613,7 @@ def main(argv: list[str] | None = None) -> int:
                 order=args.acdc_order,
                 progress=args.progress,
             )
-            stats = oracle.cache_stats()
             acdc_output = {
-                "selection_stats": {
-                    "oracle_calls": stats["oracle_calls"],
-                    "cache_hits": stats["cache_hits"],
-                },
                 "sweep": [
                     {
                         "tau": result.tau,
@@ -433,12 +622,80 @@ def main(argv: list[str] | None = None) -> int:
                         "value": result.value,
                         "removed_order": [str(node) for node in result.removed_order],
                     }
-                    for result in sweep
+                    for result in acdc_sweep_results
                 ],
+            }
+            if args.acdc_target_k is not None:
+                target_k = args.budget if args.acdc_target_k == -1 else args.acdc_target_k
+                matched = acdc_target_size(
+                    graph,
+                    oracle,
+                    args.target,
+                    candidates,
+                    target_k=target_k,
+                    alpha=args.alpha,
+                    order=args.acdc_order,
+                    seed_results=acdc_sweep_results,
+                    progress=args.progress,
+                )
+                acdc_output["_matched_pending"] = matched
+            stats = oracle.cache_stats()
+            acdc_output["selection_stats"] = {
+                "oracle_calls": stats["oracle_calls"],
+                "cache_hits": stats["cache_hits"],
             }
             continue
 
+        if method == "acdc_native":
+            kwargs = _oracle_kwargs(args)
+            model_name = args.native_model_name or kwargs.get("model_name")
+            if not model_name:
+                raise ValueError(
+                    "acdc_native needs --native-model-name or model_name in oracle kwargs."
+                )
+            prompt = kwargs.get("prompt")
+            if not prompt:
+                raise ValueError("acdc_native needs prompt in oracle kwargs.")
+            target_map = kwargs.get("target_to_logit_idx")
+            if target_map is None and hasattr(oracle.backend, "target_to_logit_idx"):
+                target_map = dict(oracle.backend.target_to_logit_idx)
+            if not target_map:
+                raise ValueError(
+                    "acdc_native needs target_to_logit_idx (oracle kwargs or ReplacementModel backend)."
+                )
+            foil_map = kwargs.get("foil_by_target")
+            if foil_map is None and hasattr(oracle.backend, "foil_by_target"):
+                foil_map = getattr(oracle.backend, "foil_by_target", None)
+            native_model = _load_native_hooked_transformer(
+                str(model_name), kwargs.get("model_kwargs")
+            )
+            target_k = None
+            if args.acdc_target_k is not None:
+                target_k = args.budget if args.acdc_target_k == -1 else args.acdc_target_k
+            acdc_native_output = run_acdc_native(
+                native_model,
+                prompt=str(prompt),
+                target=args.target,
+                target_to_logit_idx=target_map,
+                taus=_parse_float_list(args.acdc_taus),
+                alpha=args.alpha,
+                order=args.acdc_order,
+                score_kind=str(kwargs.get("score_kind", "logit_gap")),
+                foil_by_target=foil_map,
+                target_k=target_k,
+                progress=args.progress,
+            )
+            continue
+
         selection, stats = _run_selection(method, args, graph, payload, oracle, args.target, candidates)
+        if method == "eap_syed":
+            # Attribution patching bypasses ScoringOracle; record model work explicitly.
+            stats = {
+                **stats,
+                "model_forwards": 3,  # clean acts, corrupted acts, intervention forward
+                "model_backwards": 1,
+                "oracle_calls_note": "eap_syed uses ReplacementModel directly; oracle_calls stay 0",
+            }
         selections[method] = selection
         method_outputs[method] = {
             "ranking": [str(node) for node in selection.ranking],
@@ -466,8 +723,6 @@ def main(argv: list[str] | None = None) -> int:
         best_by_size: dict[int, dict[str, Any]] = {}
         for entry in acdc_output["sweep"]:
             kept = set(entry["kept"])
-            if not kept:
-                continue
             metrics = compute_faithfulness_metrics(
                 oracle=oracle, target=args.target, nodes=kept, alpha=args.alpha
             )
@@ -480,29 +735,19 @@ def main(argv: list[str] | None = None) -> int:
                 best_by_size[size] = {"evidence": entry["kept"], "scores": entry["scores"], "tau": entry["tau"]}
         acdc_output["best_by_size"] = {str(size): best_by_size[size] for size in sorted(best_by_size)}
 
-        if args.acdc_target_k is not None:
-            # Budget-matched ACDC: bisect tau to k on the warm evaluation cache.
-            target_k = args.budget if args.acdc_target_k == -1 else args.acdc_target_k
-            matched = acdc_target_size(
-                graph,
-                oracle,
-                args.target,
-                candidates,
-                target_k=target_k,
-                alpha=args.alpha,
-                order=args.acdc_order,
-                seed_results=sweep,
-                progress=args.progress,
-            )
+        matched_pending = acdc_output.pop("_matched_pending", None)
+        if matched_pending is not None:
+            matched = matched_pending
             matched_metrics = compute_faithfulness_metrics(
                 oracle=oracle, target=args.target, nodes=set(matched.kept), alpha=args.alpha
             )
             acdc_output["matched_k"] = {
-                "target_k": target_k,
+                "target_k": matched.params["target_k"],
                 "achieved_k": matched.params["achieved_k"],
                 "exact": matched.params["exact"],
                 "tau": matched.tau,
                 "bisection_iters": matched.params["bisection_iters"],
+                "search_evals": matched.params.get("search_evals"),
                 "evidence": _sort_nodes(set(matched.kept)),
                 "scores": metrics_to_dict(matched_metrics)
                 | {
@@ -530,12 +775,20 @@ def main(argv: list[str] | None = None) -> int:
                 "evaluations": result.evaluations,
                 "ties": result.ties,
             }
-            # Optimality gap vs each ranked method's size-k prefix (B3.2).
+            # Optimality gap vs each ranked method's size-k evidence (B3.2).
+            # Early-stopping methods carry forward their last realized faithfulness
+            # so a stall before k still reports a gap against the exact optimum.
             gaps: dict[str, float] = {}
             for method, output in method_outputs.items():
-                prefix = output.get("results", {}).get(k)
-                if prefix is not None:
-                    gaps[method] = result.best_value - prefix["scores"]["faithfulness"]
+                results = output.get("results") or {}
+                if k in results:
+                    method_faith = results[k]["scores"]["faithfulness"]
+                elif results:
+                    last_k = max(int(key) for key in results if int(key) <= k)
+                    method_faith = results[last_k]["scores"]["faithfulness"]
+                else:
+                    continue
+                gaps[method] = result.best_value - method_faith
             entry["optimality_gap"] = gaps
             bruteforce_output[str(k)] = entry
 
@@ -549,6 +802,9 @@ def main(argv: list[str] | None = None) -> int:
         previous = 0.0
         results = method_outputs["game1"]["results"]
         for k in sorted(results):
+            if k == 0:
+                previous = results[k]["scores"]["faithfulness"]
+                continue
             faith = results[k]["scores"]["faithfulness"]
             game1_marginals[selections["game1"].ranking[k - 1]] = faith - previous
             previous = faith
@@ -570,7 +826,28 @@ def main(argv: list[str] | None = None) -> int:
         matched = acdc_output.get("matched_k")
         if matched is not None:
             acdc_at_k[str(matched["achieved_k"])] = matched["scores"]["faithfulness"]
-        comparison["faithfulness_at_k"]["acdc"] = acdc_at_k
+        curve = _faithfulness_curve_on_budget(acdc_at_k, args.budget)
+        comparison["faithfulness_at_k"]["acdc"] = curve
+        comparison.setdefault("auc_raw_faithfulness", {})["acdc"] = _trapezoidal_auc(curve)
+
+    if acdc_native_output is not None and acdc_native_output.get("best_by_size"):
+        # Behavioral track: faithfulness is under the native component oracle,
+        # already stored on each sweep entry / best_by_size block.
+        native_at_k = {
+            size: block["scores"]["faithfulness"]
+            for size, block in acdc_native_output["best_by_size"].items()
+        }
+        matched_native = acdc_native_output.get("matched_k")
+        if matched_native is not None:
+            native_at_k[str(matched_native["achieved_k"])] = matched_native["value"]
+        curve = _faithfulness_curve_on_budget(native_at_k, args.budget)
+        comparison["faithfulness_at_k"]["acdc_native"] = curve
+        comparison.setdefault("auc_raw_faithfulness", {})["acdc_native"] = _trapezoidal_auc(curve)
+        comparison.setdefault("notes", {})
+        comparison["notes"]["acdc_native"] = (
+            "Scored under native head/MLP oracle; not Jaccard-comparable to CLT feature methods. "
+            "See macag/docs/baseline_method_map.md."
+        )
 
     output: dict[str, Any] = {
         "input_id": args.input_id,
@@ -581,6 +858,7 @@ def main(argv: list[str] | None = None) -> int:
             "lambda": args.lam,
             "budget": args.budget,
             "methods": methods,
+            "method_map": "macag/docs/baseline_method_map.md",
             "shapley_permutations": args.shapley_permutations,
             "banzhaf_samples": args.banzhaf_samples,
             "shapley_seed": args.shapley_seed,
@@ -605,6 +883,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     if acdc_output is not None:
         output["methods"]["acdc"] = acdc_output
+    if acdc_native_output is not None:
+        output["methods"]["acdc_native"] = acdc_native_output
     if bruteforce_output is not None:
         output["bruteforce"] = bruteforce_output
 

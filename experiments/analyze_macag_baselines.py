@@ -17,7 +17,8 @@ from typing import Any, Optional
 
 BENCH = "macag/data/acdc_benchmark_prompts.json"
 CLTS = ["gemma2-426k", "gemma2-2.5M", "llama32-524k"]
-METHODS = ("influence", "eap", "shapley", "game1", "acdc")
+# Legacy IDs (eap, acdc) stay; paper-faithful additions are eap_syed / acdc_native.
+METHODS = ("influence", "eap", "eap_syed", "shapley", "game1", "acdc", "acdc_native")
 
 
 def slug_to_task(bench_path: str) -> dict[str, str]:
@@ -32,10 +33,9 @@ def _budget_k(payload: dict[str, Any]) -> int:
 def _faith_at_own_k(curve: dict[str, Any], budget: int) -> tuple[Optional[float], Optional[int]]:
     """Faithfulness of a method's OWN final selected set.
 
-    ``curve`` is the prefix-cumulative faithfulness_at_k map {"1": v, "2": v, ...}.
-    Methods that stop early (e.g. Game 1's raw_relative stop) only populate keys up
-    to their selected size |E|, so scoring at the global budget k under-counts them.
-    The method's own selected size is the largest key present (capped at budget).
+    ``curve`` may be a carry-forward comparison map filled to budget; prefer the
+    largest key ``<= budget`` that is present, but callers should pass the raw
+    per-method ``results`` keys when available so early-stop size is preserved.
     """
     ks = sorted(int(x) for x in curve)
     if not ks:
@@ -43,6 +43,18 @@ def _faith_at_own_k(curve: dict[str, Any], budget: int) -> tuple[Optional[float]
     capped = [k for k in ks if k <= budget]
     own = max(capped) if capped else min(ks)
     return curve.get(str(own)), own
+
+
+def _own_k_from_method(entry: dict[str, Any], budget: int) -> Optional[int]:
+    """Selected size from ranking / realized results (not carry-forward curves)."""
+    ranking = entry.get("ranking")
+    if isinstance(ranking, list):
+        return min(len(ranking), budget)
+    results = entry.get("results") or {}
+    ks = [int(k) for k in results if int(k) > 0]
+    if not ks:
+        return 0 if ("0" in results or ranking == []) else None
+    return min(max(ks), budget)
 
 
 def read(run_dir: str) -> Optional[dict[str, Any]]:
@@ -56,23 +68,27 @@ def read(run_dir: str) -> Optional[dict[str, Any]]:
     faith_at_k = comp.get("faithfulness_at_k", {})
     auc = comp.get("auc_raw_faithfulness", {})
     agreement = comp.get("agreement_vs_shapley", {})
+    methods_payload = payload.get("methods", {}) or {}
 
     rec: dict[str, Any] = {"budget": budget}
     for method in METHODS:
         curve = faith_at_k.get(method, {})
-        # Fair primary metric: faithfulness at the method's OWN selected size, so
-        # an early-stopping method (Game 1) is not penalised against fixed-budget
-        # ones. faith_budget keeps the at-budget value for reference (may be None).
-        faith_own, k_own = _faith_at_own_k(curve, budget)
+        entry = methods_payload.get(method, {}) or {}
+        k_own = _own_k_from_method(entry, budget)
+        if k_own is None:
+            faith_own, k_own = _faith_at_own_k(curve, budget)
+        else:
+            # Prefer carry-forward / comparison value at own k when present.
+            faith_own = curve.get(str(k_own))
+            if faith_own is None:
+                raw = (entry.get("results") or {}).get(str(k_own), {}).get("scores") or {}
+                faith_own = raw.get("faithfulness")
         rec[f"faith_{method}"] = faith_own
         rec[f"k_{method}"] = k_own
         rec[f"faith_budget_{method}"] = curve.get(k)
-        # Efficiency: faithfulness gained per selected feature (the parsimony win).
         rec[f"fpf_{method}"] = (faith_own / k_own) if (faith_own is not None and k_own) else None
         rec[f"auc_{method}"] = auc.get(method)
-        rec[f"oracle_{method}"] = (
-            payload.get("methods", {}).get(method, {}).get("selection_stats", {}).get("oracle_calls")
-        )
+        rec[f"oracle_{method}"] = entry.get("selection_stats", {}).get("oracle_calls")
         if method != "shapley" and method in agreement:
             rec[f"prec_{method}"] = agreement[method].get(k, {}).get("precision_at_k")
             rec[f"jac_{method}"] = agreement[method].get(k, {}).get("jaccard")
@@ -80,22 +96,37 @@ def read(run_dir: str) -> Optional[dict[str, Any]]:
             rec["prec_shapley"] = 1.0
             rec["jac_shapley"] = 1.0
 
-    # ACDC reports best-by-size, not nested prefixes. Prefer the budget bucket;
-    # fall back to the largest available size so it is never spuriously blank.
-    acdc = payload.get("methods", {}).get("acdc", {})
-    best_by_size = acdc.get("best_by_size", {}) or {}
-    best = best_by_size.get(k)
-    if best is None and best_by_size:
-        largest = max(best_by_size, key=lambda s: int(s))
-        best = best_by_size.get(largest)
-        rec["k_acdc"] = int(largest)
-    elif best is not None:
-        rec["k_acdc"] = budget
-    if best is not None:
-        rec["faith_acdc"] = best.get("scores", {}).get("faithfulness")
-        if rec.get("k_acdc"):
-            rec["fpf_acdc"] = rec["faith_acdc"] / rec["k_acdc"]
-    rec["oracle_acdc"] = acdc.get("selection_stats", {}).get("oracle_calls")
+    # τ-sweep methods: prefer matched_k; only use exact budget-sized best_by_size.
+    # Never substitute a larger sweep set — that invalidates matched-size claims.
+    for tau_method in ("acdc", "acdc_native"):
+        block = payload.get("methods", {}).get(tau_method, {}) or {}
+        matched = block.get("matched_k")
+        if isinstance(matched, dict) and matched.get("evidence") is not None:
+            scores = matched.get("scores") or {}
+            faith = scores.get("faithfulness", matched.get("value"))
+            rec[f"faith_{tau_method}"] = faith
+            rec[f"k_{tau_method}"] = int(matched.get("achieved_k") or len(matched.get("evidence") or []))
+            rec[f"faith_budget_{tau_method}"] = faith
+            if rec.get(f"k_{tau_method}") and isinstance(faith, (int, float)):
+                rec[f"fpf_{tau_method}"] = faith / rec[f"k_{tau_method}"]
+            # Prefer comparison curve at achieved/matched size when present.
+            if rec.get(f"auc_{tau_method}") is None:
+                curve = faith_at_k.get(tau_method, {})
+                if str(budget) in curve:
+                    rec[f"faith_budget_{tau_method}"] = curve.get(str(budget))
+        else:
+            best_by_size = block.get("best_by_size", {}) or {}
+            best = best_by_size.get(k)
+            if best is not None:
+                scores = best.get("scores") or {}
+                faith = scores.get("faithfulness", best.get("value"))
+                rec[f"faith_{tau_method}"] = faith
+                rec[f"k_{tau_method}"] = budget
+                rec[f"faith_budget_{tau_method}"] = faith
+                if isinstance(faith, (int, float)) and budget:
+                    rec[f"fpf_{tau_method}"] = faith / budget
+            # else leave blank — do not invent an oversized set
+        rec[f"oracle_{tau_method}"] = block.get("selection_stats", {}).get("oracle_calls")
 
     kl_path = os.path.join(run_dir, "macag_kl_faithfulness.json")
     if os.path.isfile(kl_path):
@@ -168,7 +199,8 @@ def main() -> None:
     print("\n===== Aggregate per CLT x task (mean faith@own-|E|  /  mean faith-per-feature) =====")
     print(
         f"  {'CLT':14} {'task':24} {'n':>3} "
-        f"{'game1':>14} {'shapley':>14} {'eap':>14} {'infl':>14} {'acdc':>14}"
+        f"{'game1':>14} {'shapley':>14} {'eap':>14} {'eap_syed':>14} "
+        f"{'infl':>14} {'acdc':>14} {'acdc_nat':>14}"
     )
     agg: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
@@ -189,7 +221,8 @@ def main() -> None:
         print(
             f"  {tag:14} {task[:24]:24} {len(rs):>3} "
             f"{cell(rs, 'game1'):>14} {cell(rs, 'shapley'):>14} {cell(rs, 'eap'):>14} "
-            f"{cell(rs, 'influence'):>14} {cell(rs, 'acdc'):>14}"
+            f"{cell(rs, 'eap_syed'):>14} {cell(rs, 'influence'):>14} "
+            f"{cell(rs, 'acdc'):>14} {cell(rs, 'acdc_native'):>14}"
         )
 
     print("\nReading: faith_* is faithfulness at each method's OWN final |E| (fair to")

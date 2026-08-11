@@ -14,6 +14,9 @@ and **recomputes the whole comparison block** (faithfulness_at_k, AUC,
 agreement-vs-gold precision@k/Jaccard, pairwise Jaccard, Spearman incl. the
 game1-marginal diagnostic) from the stored rankings/results — pure JSON math,
 no oracle calls, so it is safe to run on CPU after the fact.
+
+Incompatible experiments are rejected: input_id, target, candidates, budget,
+alpha, lambda, and score kind must match.
 """
 
 from __future__ import annotations
@@ -25,15 +28,21 @@ from pathlib import Path
 from typing import Any
 
 from macag.baselines.common import SelectionResult
-from macag.cli.run_baselines import _comparison_block
+from macag.cli.run_baselines import (
+    _comparison_block,
+    _faithfulness_curve_on_budget,
+    _trapezoidal_auc,
+)
 from macag.graph import NodeId
 
 LOGGER = logging.getLogger(__name__)
 
+_IDENTITY_PARAM_KEYS = ("alpha", "lambda", "budget")
+
 
 def _selection_from_payload(method: str, entry: dict[str, Any]) -> SelectionResult | None:
     ranking = entry.get("ranking")
-    if not ranking:
+    if ranking is None:
         return None
     scores = entry.get("scores")
     return SelectionResult(
@@ -55,18 +64,90 @@ def _game1_marginals(methods: dict[str, Any]) -> dict[NodeId, float] | None:
     previous = 0.0
     for k in sorted(int(key) for key in results):
         faith = results[str(k)]["scores"]["faithfulness"]
+        if k == 0:
+            previous = faith
+            continue
         if k - 1 < len(ranking):
             marginals[ranking[k - 1]] = faith - previous
         previous = faith
     return marginals
 
 
+def _block_complete(method: str, entry: dict[str, Any]) -> bool:
+    """True when ``entry`` already has a usable result for ``method``."""
+    if entry.get("results"):
+        return True
+    # τ-sweep methods have no ranked prefixes; treat sweep / matched_k / best_by_size as done.
+    if method in ("acdc", "acdc_native"):
+        return bool(entry.get("matched_k") or entry.get("sweep") or entry.get("best_by_size"))
+    return False
+
+
+def _inject_tau_faithfulness(
+    comparison: dict[str, Any], method: str, entry: dict[str, Any], budget: int
+) -> None:
+    """Mirror τ-sweep best-by-size faithfulness into ``comparison.faithfulness_at_k``."""
+    if not entry.get("best_by_size") and not entry.get("matched_k"):
+        return
+    at_k: dict[str, float] = {}
+    for size, block in (entry.get("best_by_size") or {}).items():
+        if isinstance(block.get("scores"), dict) and "faithfulness" in block["scores"]:
+            at_k[size] = block["scores"]["faithfulness"]
+    matched = entry.get("matched_k")
+    if matched is not None:
+        # Ported ACDC stores scores.faithfulness; native may store value.
+        if isinstance(matched.get("scores"), dict) and "faithfulness" in matched["scores"]:
+            at_k[str(matched["achieved_k"])] = matched["scores"]["faithfulness"]
+        elif "value" in matched:
+            at_k[str(matched["achieved_k"])] = matched["value"]
+    curve = _faithfulness_curve_on_budget(at_k, budget)
+    comparison.setdefault("faithfulness_at_k", {})[method] = curve
+    comparison.setdefault("auc_raw_faithfulness", {})[method] = _trapezoidal_auc(curve)
+
+
+def _require_compatible(main: dict[str, Any], extra: dict[str, Any]) -> None:
+    """Reject merges that would combine incompatible experiments."""
+    mismatches: list[str] = []
+    for key in ("input_id", "target"):
+        main_val = main.get(key)
+        extra_val = extra.get(key)
+        if main_val is not None and extra_val is not None and main_val != extra_val:
+            mismatches.append(f"{key}: main={main_val!r} extra={extra_val!r}")
+
+    main_params = main.get("params") or {}
+    extra_params = extra.get("params") or {}
+    for key in _IDENTITY_PARAM_KEYS:
+        if key in main_params and key in extra_params and main_params[key] != extra_params[key]:
+            mismatches.append(f"params.{key}: main={main_params[key]!r} extra={extra_params[key]!r}")
+
+    main_cands = [str(c) for c in (main.get("candidates") or [])]
+    extra_cands = [str(c) for c in (extra.get("candidates") or [])]
+    if main_cands and extra_cands and main_cands != extra_cands:
+        mismatches.append(
+            f"candidates differ (main={len(main_cands)} nodes, extra={len(extra_cands)} nodes)"
+        )
+
+    # score_kind lives in oracle kwargs rather than params; tolerate absence.
+    main_sk = main_params.get("score_kind")
+    extra_sk = extra_params.get("score_kind")
+    if main_sk is not None and extra_sk is not None and main_sk != extra_sk:
+        mismatches.append(f"params.score_kind: main={main_sk!r} extra={extra_sk!r}")
+
+    if mismatches:
+        raise ValueError(
+            "Refusing to merge incompatible baseline payloads:\n  - "
+            + "\n  - ".join(mismatches)
+        )
+
+
 def merge_payloads(main: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     """Merge ``extra``'s methods into ``main`` and rebuild the comparison block."""
+    _require_compatible(main, extra)
     methods: dict[str, Any] = dict(main.get("methods") or {})
     added: list[str] = []
     for method, entry in (extra.get("methods") or {}).items():
-        if method in methods and (methods[method].get("results") or method == "acdc"):
+        existing = methods.get(method)
+        if existing is not None and _block_complete(method, existing):
             LOGGER.info("keeping existing '%s' block (already present in main)", method)
             continue
         methods[method] = entry
@@ -85,17 +166,15 @@ def merge_payloads(main: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any
     budget = int(main.get("params", {}).get("budget", 8))
     comparison = _comparison_block(ranked, selections, budget, _game1_marginals(methods))
 
-    # Preserve the ACDC injection (no ranked prefixes -> _comparison_block skips it).
-    acdc = methods.get("acdc") or {}
-    if acdc.get("best_by_size"):
-        acdc_at_k = {
-            size: block["scores"]["faithfulness"]
-            for size, block in acdc["best_by_size"].items()
-        }
-        matched = acdc.get("matched_k")
-        if matched is not None:
-            acdc_at_k[str(matched["achieved_k"])] = matched["scores"]["faithfulness"]
-        comparison["faithfulness_at_k"]["acdc"] = acdc_at_k
+    # Preserve τ-sweep injections (no ranked prefixes -> _comparison_block skips them).
+    _inject_tau_faithfulness(comparison, "acdc", methods.get("acdc") or {}, budget)
+    _inject_tau_faithfulness(comparison, "acdc_native", methods.get("acdc_native") or {}, budget)
+    # Keep honesty notes from either payload (extra wins on key collision).
+    notes: dict[str, Any] = {}
+    notes.update((main.get("comparison") or {}).get("notes") or {})
+    notes.update((extra.get("comparison") or {}).get("notes") or {})
+    if notes:
+        comparison["notes"] = notes
     main["comparison"] = comparison
 
     params = dict(main.get("params") or {})

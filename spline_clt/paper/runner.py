@@ -2150,6 +2150,10 @@ class PaperSuiteRunner:
         )
         if not candidates:
             raise ValueError("MACAG candidate policy produced an empty candidate set.")
+        if hasattr(scorer, "restrict_universe"):
+            scorer.restrict_universe(set(candidates))
+        elif hasattr(scorer, "backend") and hasattr(scorer.backend, "restrict_universe"):
+            scorer.backend.restrict_universe(set(candidates))
 
         base_record = self._record_base(
             variant_name=variant_name,

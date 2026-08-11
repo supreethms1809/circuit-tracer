@@ -118,6 +118,40 @@ def _faith_at_own_k(results: Mapping[str, Any], budget: int) -> tuple[list[str],
     return list(evidence), own_k
 
 
+def _acdc_evidence_for_budget(entry: Mapping[str, Any], budget: int) -> tuple[list[str], float | None, dict[str, Any]]:
+    """Prefer matched_k evidence; never fall back to an oversized sweep set.
+
+    Returns (evidence, logit_gap_faithfulness, meta).
+    """
+    matched = entry.get("matched_k")
+    if isinstance(matched, Mapping) and matched.get("evidence") is not None:
+        scores = matched.get("scores") or {}
+        faith = scores.get("faithfulness")
+        if faith is None and "value" in matched:
+            faith = matched.get("value")
+        return (
+            list(matched.get("evidence") or []),
+            float(faith) if isinstance(faith, (int, float)) else None,
+            {
+                "source": "matched_k",
+                "achieved_k": matched.get("achieved_k"),
+                "exact": matched.get("exact"),
+            },
+        )
+
+    best_by_size = entry.get("best_by_size") or {}
+    best = best_by_size.get(str(budget))
+    if best is None:
+        return [], None, {"source": "missing_budget_size"}
+    scores = best.get("scores") or {}
+    faith = scores.get("faithfulness", best.get("value"))
+    return (
+        list(best.get("evidence") or []),
+        float(faith) if isinstance(faith, (int, float)) else None,
+        {"source": "best_by_size", "size": budget},
+    )
+
+
 def rescore_game1_leg(
     leg: Mapping[str, Any],
     oracle: ScoringOracle,
@@ -185,15 +219,15 @@ def rescore_baselines(
     budget = int(payload.get("params", {}).get("budget", 8))
     methods_out: dict[str, Any] = {}
     for method, entry in (payload.get("methods") or {}).items():
-        if method == "acdc":
-            best = (entry.get("best_by_size") or {}).get(str(budget))
-            if best is None:
-                sizes = sorted(int(s) for s in (entry.get("best_by_size") or {}))
-                if not sizes:
-                    continue
-                best = entry["best_by_size"][str(max(sizes))]
-            evidence = best.get("evidence") or []
-            logit_faith = (best.get("scores") or {}).get("faithfulness")
+        if method in ("acdc", "acdc_native"):
+            evidence, logit_faith, meta = _acdc_evidence_for_budget(entry, budget)
+            if not evidence and meta.get("source") == "missing_budget_size":
+                LOGGER.warning(
+                    "Skipping KL rescore for %s: no matched_k and no best_by_size[%s]",
+                    method,
+                    budget,
+                )
+                continue
         else:
             evidence, own_k = _faith_at_own_k(entry.get("results") or {}, budget)
             logit_faith = None
@@ -201,7 +235,13 @@ def rescore_baselines(
                 logit_faith = (
                     (entry.get("results") or {}).get(str(own_k), {}).get("scores") or {}
                 ).get("faithfulness")
-        if not evidence:
+            # Preserve empty selections as valid k=0 (faithfulness ~ 0).
+            if not evidence and own_k is None and not (entry.get("results") or {}):
+                ranking = entry.get("ranking") or []
+                if ranking == [] or entry.get("extras", {}).get("stopped_early"):
+                    evidence = []
+                    logit_faith = 0.0
+        if method not in ("acdc", "acdc_native") and not evidence and logit_faith is None:
             continue
         oracle.clear_cache()
         oracle.reset_stats()
@@ -385,19 +425,28 @@ def rescore_tree(
         for slug_dir in sorted(clt_dir.iterdir()):
             if not slug_dir.is_dir():
                 continue
-            if not (slug_dir / "macag_game1.json").is_file() and not (
-                slug_dir / "macag_baselines.json"
-            ).is_file():
-                continue
-            run_spec: RescoreSpec | None = spec
-            if spec_for_run is not None:
-                run_spec = spec_for_run(slug_dir)
-                if run_spec is None:
-                    LOGGER.info("skip %s: no rescore spec for this run", slug_dir)
+            # Dual-utility layout: <clt>/<slug>/<score_kind>/macag_game1.json
+            kind_dirs = [
+                p for p in sorted(slug_dir.iterdir())
+                if p.is_dir() and (
+                    (p / "macag_game1.json").is_file() or (p / "macag_baselines.json").is_file()
+                )
+            ]
+            run_dirs = kind_dirs if kind_dirs else [slug_dir]
+            for run_dir in run_dirs:
+                if not (run_dir / "macag_game1.json").is_file() and not (
+                    run_dir / "macag_baselines.json"
+                ).is_file():
                     continue
-            path = rescore_run_dir(slug_dir, force=force, spec=run_spec)
-            if path is not None:
-                written.append(path)
+                run_spec: RescoreSpec | None = spec
+                if spec_for_run is not None:
+                    run_spec = spec_for_run(run_dir)
+                    if run_spec is None:
+                        LOGGER.info("skip %s: no rescore spec for this run", run_dir)
+                        continue
+                path = rescore_run_dir(run_dir, force=force, spec=run_spec)
+                if path is not None:
+                    written.append(path)
     return written
 
 
