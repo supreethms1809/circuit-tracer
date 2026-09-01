@@ -36,8 +36,17 @@ def main():
         help="Path to YAML config file",
     )
     parser.add_argument("--collect-data", action="store_true", help="Collect activations first")
+    parser.add_argument(
+        "--collect-only",
+        action="store_true",
+        help="With --collect-data, write activations and exit without training.",
+    )
     parser.add_argument("--model", type=str, default="gpt2", help="Model name for data collection")
     parser.add_argument("--n-tokens", type=int, default=None, help="Number of tokens to collect")
+    parser.add_argument(
+        "--dataset-name", type=str, default=None,
+        help="HuggingFace dataset id for --collect-data (default: DataConfig.dataset_name)",
+    )
     parser.add_argument("--encoder-type", type=str, default=None,
                         choices=["kan", "linear"], help="Encoder type (overrides config)")
     parser.add_argument("--lambda-sparsity", type=float, default=None)
@@ -45,6 +54,10 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--total-steps", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume optimizer/step from {checkpoint_dir}/{run_name}_training_state.pt if present.",
+    )
     parser.add_argument("--use-fsdp", action="store_true", help="Enable FSDP sharding (requires torchrun).")
     parser.add_argument(
         "--fsdp-cpu-offload",
@@ -53,6 +66,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.collect_only and not args.collect_data:
+        parser.error("--collect-only requires --collect-data")
 
     # Load config
     if args.config:
@@ -73,6 +88,8 @@ def main():
         config.total_steps = args.total_steps
     if args.device is not None:
         config.device = args.device
+    if args.resume:
+        config.resume_training_if_exists = True
     if args.use_fsdp:
         config.use_fsdp = True
     if args.fsdp_cpu_offload:
@@ -85,9 +102,12 @@ def main():
             model_name=args.model,
             save_dir=config.data_dir,
             device=config.device,
+            dtype=config.dtype,
         )
         if args.n_tokens is not None:
             data_config.n_tokens = args.n_tokens
+        if args.dataset_name is not None:
+            data_config.dataset_name = args.dataset_name
 
         coll = collect_activations(data_config)
         dataset = coll.dataset
@@ -105,6 +125,8 @@ def main():
                 # Infer model dims from data
                 config.n_layers = dataset.mlp_inputs.shape[1]
                 config.d_model = dataset.mlp_inputs.shape[3]
+        if args.collect_only:
+            return
     else:
         dataset = None
 

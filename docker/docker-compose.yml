@@ -1,0 +1,60 @@
+# Spline-CLT training. Run from the repo root:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Nsight Systems (100 steps; NSYS_STEPS=10 for a shorter trace):
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.nsight.yml up --build
+#
+# v3 paper-eval (FSDP; typical launch suites need >=2 GPUs):
+#   MODE=paper-eval NPROC_PER_NODE=2 \
+#     PAPER_SUITE=experiments/paper_configs_v3/launch_suites/r5b_b3_gpt2_small_spline_feature_match.json \
+#     docker compose -f docker/docker-compose.yml up --build
+#
+# Optional repo-root .env: HF_TOKEN, WANDB_API_KEY, TRAIN_CONFIG, N_TOKENS,
+# NSYS_STEPS, MODE, PAPER_SUITE, NPROC_PER_NODE.
+
+name: spline-clt
+
+services:
+  train:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: spline-clt:latest
+    ipc: host
+    shm_size: "16gb"
+    env_file:
+      - path: ../.env
+        required: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    environment:
+      MODE: ${MODE:-train}
+      TRAIN_CONFIG: ${TRAIN_CONFIG:-experiments/configs/gpt2_small.yaml}
+      PAPER_SUITE: ${PAPER_SUITE:-}
+      PAPER_OUTPUT_ROOT: ${PAPER_OUTPUT_ROOT:-/workspace/circuit-tracer/results/paper}
+      NPROC_PER_NODE: ${NPROC_PER_NODE:-1}
+      STAGES: ${STAGES:-}
+      DEVICE: ${DEVICE:-cuda}
+      SKIP_COLLECT: ${SKIP_COLLECT:-0}
+      N_TOKENS: ${N_TOKENS:-}
+      DATASET_NAME: ${DATASET_NAME:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      WANDB_MODE: ${WANDB_MODE:-offline}
+    volumes:
+      - ../data:/workspace/circuit-tracer/data
+      - ../checkpoints:/workspace/circuit-tracer/checkpoints
+      - ../results:/workspace/circuit-tracer/results
+      - hf-cache:/workspace/hf-cache
+    command: []
+
+volumes:
+  hf-cache:

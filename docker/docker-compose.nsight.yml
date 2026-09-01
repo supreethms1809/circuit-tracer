@@ -1,0 +1,28 @@
+# Nsight Systems overlay: short training run (default 100 steps).
+# Run from the repo root:
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.nsight.yml up --build
+#   NSYS_STEPS=10 docker compose -f docker/docker-compose.yml -f docker/docker-compose.nsight.yml up --build
+#
+# Report lands on the host at ./profiles/nsys_spline_clt.nsys-rep (and .sqlite).
+
+services:
+  train:
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      TRAIN_CONFIG: experiments/configs/gpt2_small_nsight.yaml
+      N_TOKENS: ${N_TOKENS:-65536}
+      NSYS: "1"
+      NSYS_STEPS: ${NSYS_STEPS:-100}
+      NSYS_OUTPUT: ${NSYS_OUTPUT:-profiles/nsys_spline_clt}
+      RESUME: "0"
+      WANDB_MODE: disabled
+    volumes:
+      - ../data:/workspace/circuit-tracer/data
+      - ../checkpoints:/workspace/circuit-tracer/checkpoints
+      - ../results:/workspace/circuit-tracer/results
+      - ../profiles:/workspace/circuit-tracer/profiles
+      - hf-cache:/workspace/hf-cache

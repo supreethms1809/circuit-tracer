@@ -1,0 +1,46 @@
+# Must live at the repo root. Docker reads this from the build context
+# (`context: ..` in docker/docker-compose.yml), not from docker/.
+.git
+.github
+.claude
+.cursor
+.vscode
+.ruff_cache
+.pytest_cache
+.mypy_cache
+.__pycache__
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.DS_Store
+
+# Runtime / large artifacts — mounted or regenerated at run time
+data/
+checkpoints/
+results/
+logs/
+profiles/
+temp/
+ploting/
+circuits/
+external/
+exercise_local/
+codelion_all-5B/
+macag/cache/
+macag/output/
+macag/macagresults/
+macag/Archive.zip
+macag/docs/
+spline_sae/baselines/*.txt
+**/*.arrow
+**/*.parquet
+**/*.pdf
+
+# Not needed to train inside the image
+demos/
+docs/
+*.ipynb
+uv.lock
+.env
+.venv
+venv/

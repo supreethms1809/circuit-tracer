@@ -1,0 +1,59 @@
+# Short Spline-CLT run for Nsight Systems profiling.
+#
+# Same GPT-2 small KAN architecture and batch size as gpt2_small.yaml so the
+# captured kernels match a real training step. Differences vs the campaign config:
+#   - total_steps 100 (override with --total-steps 10)
+#   - warmup_steps 0 so every step is a full-LR optimizer step
+#   - no eval, periodic save, or KAN grid update (those would dominate a 10–100 step trace)
+#   - log_every > total_steps so L0/metric work does not inflate step time
+#
+# Docker (collects a tiny activation cache, then profiles training):
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.nsight.yml up --build
+#   NSYS_STEPS=10 docker compose -f docker/docker-compose.yml -f docker/docker-compose.nsight.yml up --build
+#
+# Host (nsys on PATH, activations already collected):
+#   nsys profile -o profiles/nsys_spline_clt --force-overwrite true \
+#     --trace=cuda,nvtx,osrt,cudnn,cublas --cuda-memory-usage=true --stats=true \
+#     python experiments/train_spline_clt.py \
+#       --config experiments/configs/gpt2_small_nsight.yaml \
+#       --total-steps 100
+
+n_layers: 12
+d_model: 768
+d_transcoder: 4096
+grid_size: 5
+spline_order: 3
+
+learning_rate: 1.0e-4
+warmup_steps: 0
+total_steps: 100
+batch_size: 32
+lambda_sparsity: 0.002
+c_sparsity: 1.0
+grad_clip: 1.0
+# Match the pulled r5b GPT-2 spline recipe so profiled kernels match campaign steps.
+jumprelu_bandwidth: 0.12
+threshold_init: 0.01
+decoder_init_strategy: kaiming
+lambda_kan_reg: 0.0
+scale_base: 0.2
+scale_spline: 1.0
+lr_spline_mult: 5.0
+sparsity_warmup_steps: 0
+
+log_every: 1000
+eval_every: 1000000
+save_every: 1000000
+checkpoint_dir: checkpoints/gpt2_small_nsight
+run_name: spline_clt_gpt2_nsight
+keep_last_checkpoints: 1
+
+update_grid_every: 0
+update_grid_from: 1000000
+
+data_dir: data/activations_nsight
+device: cuda
+dtype: bfloat16
+val_fraction: 0.05
+num_workers: 0
+pin_memory: false
