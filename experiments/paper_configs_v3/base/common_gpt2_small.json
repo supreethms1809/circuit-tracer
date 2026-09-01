@@ -1,7 +1,7 @@
 {
   "output_root": "results/paper",
   "wandb": {
-    "project": "spline-clt-paper-v3",
+    "project": "spline-clt-paper-v3-rebuttal",
     "entity": "uwyo",
     "mode": "online"
   },

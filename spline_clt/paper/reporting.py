@@ -18,7 +18,11 @@ SUMMARY_METRICS: dict[str, bool] = {
     "cosine_similarity": True,
     "relative_error": False,
     "top1_match_rate": True,
+    "top5_match_rate": True,
+    "top10_match_rate": True,
     "kl_divergence": False,
+    "attribution_seconds": False,
+    "attribution_peak_mem_gib": False,
     "mean_gini": True,
     "fraction_gini_gt_0_8": True,
     "graph_replacement_score": True,
@@ -43,6 +47,8 @@ RECONSTRUCTION_METRICS = [
 
 REPLACEMENT_METRICS = [
     "top1_match_rate",
+    "top5_match_rate",
+    "top10_match_rate",
     "kl_divergence",
 ]
 
@@ -56,6 +62,10 @@ CIRCUIT_METRICS = [
     "keep_only_gap_ratio",
     "gap_drop_ratio",
     "shapley_causal_jaccard",
+    # Compute-cost metrics (REQ-7); absent in records from older runs, which
+    # summarize_metric tolerates (count 0, NaN mean).
+    "attribution_seconds",
+    "attribution_peak_mem_gib",
 ]
 
 
@@ -240,6 +250,35 @@ def paired_bootstrap_summary(
     }
 
 
+def summarize_metric_per_seed(
+    records: Sequence[dict[str, Any]],
+    metric: str,
+) -> dict[str, Any]:
+    """Mean-of-per-seed-means aggregation (paper headline convention).
+
+    The pooled `summarize_metric` mixes seeds and prompts into one sample;
+    the rebuttal tables report `mean ± std across seeds`, which requires
+    grouping by the `seed` field first. Returned additively so pooled
+    consumers are unaffected.
+    """
+    by_seed: dict[Any, list[float]] = {}
+    for record in records:
+        seed_value = record.get("seed")
+        if seed_value is None:
+            continue
+        value = record.get(metric)
+        if isinstance(value, (int, float)) and not math.isnan(float(value)):
+            by_seed.setdefault(seed_value, []).append(float(value))
+    seed_means = {str(seed): _mean(values) for seed, values in sorted(by_seed.items())}
+    means = list(seed_means.values())
+    return {
+        "per_seed_means": seed_means,
+        "n_seeds": len(means),
+        "mean_of_seed_means": _mean(means) if means else float("nan"),
+        "std_of_seed_means": _std(means) if len(means) > 1 else float("nan"),
+    }
+
+
 def summarize_metric(
     records: Sequence[dict[str, Any]],
     metric: str,
@@ -261,6 +300,7 @@ def summarize_metric(
         "std": _std(values),
         "ci_low": ci_low,
         "ci_high": ci_high,
+        "per_seed": summarize_metric_per_seed(records, metric),
     }
 
 
@@ -827,6 +867,8 @@ def build_report_markdown(aggregate: dict[str, Any], config: SuiteConfig) -> str
                 (
                     "- Replacement: "
                     f"top1={variant_summary['replacement']['top1_match_rate']['mean']:.4f}, "
+                    f"top5={variant_summary['replacement']['top5_match_rate']['mean']:.4f}, "
+                    f"top10={variant_summary['replacement']['top10_match_rate']['mean']:.4f}, "
                     f"KL={variant_summary['replacement']['kl_divergence']['mean']:.4f}"
                 ),
                 (

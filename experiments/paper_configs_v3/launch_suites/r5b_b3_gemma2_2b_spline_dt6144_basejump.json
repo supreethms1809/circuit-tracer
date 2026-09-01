@@ -1,0 +1,47 @@
+{
+  "defaults": [
+    "../base/common_gemma2_2b.json",
+    "../macag/default.json",
+    "../models/r5b_b3_gemma2_2b_spline_dt6144_basejump.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_b3_gemma2_2b_spline_dt6144_basejump",
+  "description": "Gemma-2-2B Spline-CLT: BaseJump + B3 + r5b λ/bw. d_t=6144 on 2×2 nested FSDP KAN. batch_size=16 (fell back from 32 after mid-run hang near first eval). global batch 64, tokens/step=8192, total_steps=24414 for ~200M. Train-only. Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b_b3",
+  "seeds": [101],
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": false,
+    "macag": false,
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "collection_chunk_n_tokens": 3276800,
+    "cache_dir": "/lscratch/paper_r5b_b3/gemma2_2b_spline_dt6144_basejump/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b_b3/gemma2_2b_spline_dt6144_basejump/val"
+  },
+  "model_variants": {
+    "gemma2_2b_spline_dt6144_r5b_b3_bj": {
+      "training": {
+        "use_fsdp": true,
+        "shard_kan_encoders": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "batch_size": 16,
+        "total_steps": 24414,
+        "warmup_steps": 1000,
+        "eval_every": 512,
+        "save_every": 1024,
+        "update_grid_from": 1000,
+        "sparsity_warmup_steps": 1000,
+        "sparsity_decay_start": 1500
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gemma2_2b_spline_dt6144_r5b_b3_bj",
+    "baseline_variant": "gemma2_2b_spline_dt6144_r5b_b3_bj"
+  }
+}

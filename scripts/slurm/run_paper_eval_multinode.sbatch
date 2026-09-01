@@ -128,12 +128,37 @@ echo "  rdzv endpoint:      ${HEAD_NODE}:${MASTER_PORT}"
 #   1. wipe the node-local activation cache (regenerable; a stale cache would
 #      desync the per-node chunk replicas),
 #   2. SIGTERM→SIGKILL this user's leftover GPU compute processes,
-#   3. abort if a GPU is still mostly occupied (unkillable D-state leftover).
+#   3. abort if a GPU is still mostly occupied (unkillable D-state leftover),
+#   4. abort if the pinned NCCL IB HCA is not Active (dead IB → NCCL hang).
 NODE_PREP=$(cat <<'PREP_EOF'
 set -uo pipefail
 host="$(hostname)"
 
 rm -rf /lscratch/* 2>/dev/null || true
+
+# NCCL_IB_HCA is e.g. mlx5_0:1 — require that port to be Active before torchrun.
+# Job 14051 hung ~2.5h on first barrier with mlx5_0 Down on gp214 while gp215
+# was Active; TORCH_NCCL heartbeat did not abort the spin.
+ib_hca="${NCCL_IB_HCA:-mlx5_0:1}"
+ib_dev="${ib_hca%%:*}"
+ib_port="${ib_hca##*:}"
+if [[ "${ib_dev}" == "${ib_hca}" ]]; then
+    ib_port=1
+fi
+ib_state_file="/sys/class/infiniband/${ib_dev}/ports/${ib_port}/state"
+if [[ -r "${ib_state_file}" ]]; then
+    ib_state="$(tr -d '[:space:]' < "${ib_state_file}")"
+    # sysfs is usually "4: ACTIVE"; ibstat text is "Active".
+    if [[ "${ib_state}" != *ACTIVE* && "${ib_state}" != *Active* ]]; then
+        echo "[ABORT ${host}] NCCL_IB_HCA=${ib_hca} port state is '${ib_state}' (need ACTIVE)." >&2
+        echo "        Dead IB causes a multi-node NCCL hang. Resubmit with" >&2
+        echo "        sbatch --exclude=${host} ... and report the node to ARCC." >&2
+        exit 1
+    fi
+    echo "[preflight ${host}] IB ${ib_hca} state=${ib_state}"
+else
+    echo "[preflight ${host}] WARNING: no sysfs state at ${ib_state_file}; skipping IB check"
+fi
 
 if command -v nvidia-smi >/dev/null 2>&1; then
     pids="$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr -d ' ')"
@@ -202,8 +227,12 @@ srun --ntasks-per-node=1 --kill-on-bad-exit=1 torchrun \
     --rdzv_id="${SLURM_JOB_ID}" \
     --rdzv_endpoint="${HEAD_NODE}:${MASTER_PORT}" \
     -m spline_clt.paper_eval \
-    --suite "${SELECTED_SUITE}" &
+    --suite "${SELECTED_SUITE}" \
+    --worker-id "${WORKER_ID:-0}" \
+    --num-workers "${NUM_WORKERS:-1}" &
 LAUNCH_PID=$!
+
+echo "[$(date -u +%FT%TZ)] paper_eval worker ${WORKER_ID:-0}/${NUM_WORKERS:-1}"
 
 on_term() {
     echo "[$(date -u +%FT%TZ)] SIGTERM received — forwarding to srun step for graceful shutdown"

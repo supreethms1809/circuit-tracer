@@ -1,0 +1,34 @@
+{
+  "defaults": [
+    "../base/common_llama32_1b.json",
+    "../macag/default.json",
+    "../models/r2_llama32_1b_spline_dt8192.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r2_llama32_1b_spline_dt8192",
+  "description": "R2 rebuttal llama32-1B spline d_t=8192 (reduced from 12288 after CUDA OOM), batch_size unchanged.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "cache_dir": "/lscratch/paper_r2/llama32_1b_spline_dt8192/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r2/llama32_1b_spline_dt8192/val"
+  },
+  "model_variants": {
+    "llama32_1b_spline_dt8192_r2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "llama32_1b_spline_dt8192_r2",
+    "baseline_variant": "llama32_1b_spline_dt8192_r2"
+  }
+}

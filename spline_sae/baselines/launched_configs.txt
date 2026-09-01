@@ -1,0 +1,6 @@
+spline_sae/configs/gemma2_2b_res_l12_linear.yaml
+spline_sae/configs/gemma2_2b_res_l12_kan.yaml
+spline_sae/configs/llama31_8b_res_l16_linear.yaml
+spline_sae/configs/llama31_8b_res_l16_kan.yaml
+spline_sae/configs/qwen25_7b_it_res_l20_linear.yaml
+spline_sae/configs/qwen25_7b_it_res_l20_kan.yaml

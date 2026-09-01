@@ -1,0 +1,34 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_pm_fix1.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_fix1_gpt2_small_spline_pm",
+  "description": "Fix-test: bandwidth rescale + lambda warmup ramp, GPT-2 small spline PM (d_t=5568), capacity-matched to linear FM (d_t=12288), 15000 steps, seed 101.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 320000000,
+    "cache_dir": "/lscratch/paper_v3_fix1/gpt2_small/spline_pm/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_fix1/gpt2_small/spline_pm/val"
+  },
+  "model_variants": {
+    "spline_pm_gpt2_small_fix1": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_pm_gpt2_small_fix1",
+    "baseline_variant": "spline_pm_gpt2_small_fix1"
+  }
+}

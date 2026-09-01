@@ -1,0 +1,2 @@
+experiments/paper_configs_v3/suites/ravel_eval_suite_r5b_llama32_1b_spline_dt8192.json
+experiments/paper_configs_v3/suites/ravel_eval_suite_r5b_b3_llama32_1b_spline_dt8192.json

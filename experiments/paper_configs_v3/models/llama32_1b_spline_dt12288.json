@@ -1,0 +1,50 @@
+{
+  "model_variants": {
+    "spline_dt12288_llama32_1b_pv3": {
+      "label": "Spline-CLT (Llama-3.2-1B, capacity-reduced d_t=12288 vs published linear d_t=32768)",
+      "model_name": "meta-llama/Llama-3.2-1B",
+      "scan_id": "spline-dt12288-llama32-1b-pv3",
+      "training": {
+        "n_layers": 16,
+        "d_model": 2048,
+        "d_transcoder": 12288,
+        "encoder_type": "kan",
+        "grid_size": 5,
+        "spline_order": 3,
+        "threshold_init_strategy": "data_quantile",
+        "threshold_init_target_l0": 16,
+        "threshold_calibration_samples": 16,
+        "threshold_calibration_values_per_sample": 32768,
+        "jumprelu_bandwidth": 0.001,
+        "threshold_weight_decay": 0.0,
+        "threshold_adam_eps": 1e-15,
+        "learning_rate": 5e-05,
+        "warmup_steps": 6100,
+        "total_steps": 122000,
+        "batch_size": 16,
+        "lambda_sparsity": 0.00084,
+        "c_sparsity": 1.0,
+        "lambda_kan_reg": 0.001,
+        "grad_clip": 1.0,
+        "log_every": 20,
+        "eval_every": 3050,
+        "save_every": 6100,
+        "keep_last_checkpoints": 2,
+        "update_grid_every": 0,
+        "update_grid_from": 6100,
+        "reset_optimizer_every": 0,
+        "val_fraction": 0.05,
+        "num_workers": 0,
+        "pin_memory": false,
+        "prefetch_factor": null,
+        "persistent_workers": false,
+        "dtype": "bfloat16",
+        "device": null,
+        "run_name": "spline_dt12288_llama32_1b_pv3",
+        "tf32": true,
+        "recon_normalization": "per_layer",
+        "sparsity_normalization": "mean"
+      }
+    }
+  }
+}

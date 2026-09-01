@@ -1,16 +1,23 @@
 {
   "model_variants": {
-    "spline_feature_match_gpt2_large_pv3": {
-      "label": "Spline-CLT (feature-match, d_t=10240=R8, 1B tokens, no grid refine, deduped val)",
+    "spline_param_match_gpt2_large_pv3": {
+      "label": "Spline-CLT (parameter-matched to linear d_t=8192, d_t=5632, 1B tokens)",
       "model_name": "gpt2-large",
-      "scan_id": "spline-fm-gpt2-large-pv3",
+      "scan_id": "spline-pm-gpt2-large-pv3",
       "training": {
         "n_layers": 36,
         "d_model": 1280,
-        "d_transcoder": 10240,
+        "d_transcoder": 5632,
         "encoder_type": "kan",
         "grid_size": 5,
         "spline_order": 3,
+        "threshold_init_strategy": "data_quantile",
+        "threshold_init_target_l0": 32,
+        "threshold_calibration_samples": 16,
+        "threshold_calibration_values_per_sample": 32768,
+        "jumprelu_bandwidth": 0.001,
+        "threshold_weight_decay": 0.0,
+        "threshold_adam_eps": 1e-15,
         "learning_rate": 5e-05,
         "warmup_steps": 1930,
         "total_steps": 19330,
@@ -32,7 +39,7 @@
         "persistent_workers": false,
         "dtype": "bfloat16",
         "device": null,
-        "run_name": "spline_fm_gpt2_large_pv3",
+        "run_name": "spline_pm_gpt2_large_pv3",
         "lambda_kan_reg": 0.001,
         "tf32": true,
         "recon_normalization": "per_layer",

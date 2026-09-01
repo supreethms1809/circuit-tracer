@@ -1,0 +1,31 @@
+{
+  "defaults": [
+    "../base/common_qwen3_06b.json",
+    "../macag/default.json",
+    "../models/qwen3_06b_linear_feature_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_rebuttal_qwen3_linear",
+  "description": "One-seed rebuttal run for Qwen3-0.6B linear d_t=8192.",
+  "seeds": [101],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_rebuttal/qwen3_06b/linear/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_rebuttal/qwen3_06b/linear/val"
+  },
+  "model_variants": {
+    "linear_d8192_qwen3_06b_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "linear_d8192_qwen3_06b_pv3",
+    "baseline_variant": "linear_d8192_qwen3_06b_pv3"
+  }
+}

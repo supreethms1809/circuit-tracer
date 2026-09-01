@@ -1,0 +1,34 @@
+{
+  "defaults": [
+    "../base/common_qwen3_06b.json",
+    "../macag/default.json",
+    "../models/r2_qwen3_06b_linear_d8192.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r2_qwen3_06b_linear_d8192",
+  "description": "R2 rebuttal: bandwidth+L0-floor fixes, 30000 steps, qwen3_06b_linear_d8192.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 560000000,
+    "cache_dir": "/lscratch/paper_r2/qwen3_06b_linear_d8192/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r2/qwen3_06b_linear_d8192/val"
+  },
+  "model_variants": {
+    "qwen3_06b_linear_d8192_r2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "qwen3_06b_linear_d8192_r2",
+    "baseline_variant": "qwen3_06b_linear_d8192_r2"
+  }
+}

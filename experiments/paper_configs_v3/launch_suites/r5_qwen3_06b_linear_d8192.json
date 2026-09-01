@@ -1,0 +1,43 @@
+{
+  "defaults": [
+    "../base/common_qwen3_06b.json",
+    "../macag/default.json",
+    "../models/r2_qwen3_06b_linear_d8192.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_qwen3_06b_linear_d8192",
+  "description": "R5b Qwen3-0.6B linear d8192: data_scaled + calibrated bw + \u03bb peak 1e-6 (matched to qwen spline; warmup 3000, decay 4000\u21923e-7). Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 560000000,
+    "cache_dir": "/lscratch/paper_r5b/qwen3_06b_linear_d8192/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b/qwen3_06b_linear_d8192/val"
+  },
+  "model_variants": {
+    "qwen3_06b_linear_d8192_r2": {
+      "scan_id": "qwen3-06b-linear-d8192-r5b",
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "data_scaled",
+        "decoder_calibration_samples": 16,
+        "lambda_sparsity": 1e-06,
+        "sparsity_warmup_steps": 3000,
+        "sparsity_decay_start": 4000,
+        "lambda_sparsity_final": 3e-07,
+        "run_name": "qwen3_06b_linear_d8192_r5b"
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "qwen3_06b_linear_d8192_r2",
+    "baseline_variant": "qwen3_06b_linear_d8192_r2"
+  }
+}

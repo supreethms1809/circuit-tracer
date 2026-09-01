@@ -59,14 +59,44 @@ class TrainingSettings(BaseModel):
     encoder_type: Literal["kan", "linear"]
     grid_size: int = 5
     spline_order: int = 3
+    threshold_init: float = 0.01
+    jumprelu_bandwidth: float = 0.001
+    #: Sparsity activation: standard JumpReLU, BaseJump (KAN only), or ReLU.
+    activation_function: Literal["jump_relu", "base_jump", "relu"] = "jump_relu"
+    threshold_weight_decay: float = 0.0
+    threshold_adam_eps: float = 1e-15
+    threshold_init_strategy: Literal["constant", "data_quantile"] = "constant"
+    threshold_init_target_l0: float = 32.0
+    threshold_calibration_samples: int = 16
+    threshold_calibration_values_per_sample: int = 32768
+    #: "data_scaled" rescales each target layer's decoder so ‖ŷ_l‖ ≈ ‖y_l‖ at
+    #: init. Required when the base model's mean(y²) is far from GPT-2's ~9.6.
+    decoder_init_strategy: Literal["kaiming", "data_scaled"] = "kaiming"
+    decoder_calibration_samples: int = 16
+    normalize_inputs: bool = True
+    normalization_samples: int = 256
     learning_rate: float = 1e-4
     optimizer: Literal["adamw", "adafactor"] = "adamw"
+    weight_decay: float = 0.01
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.95
     warmup_steps: int = 5_000
     total_steps: int = 400_000
     batch_size: int = 32
     lambda_sparsity: float = 0.002
     c_sparsity: float = 1.0
+    #: Linear warmup for the sparsity penalty; 0 disables (historical behaviour).
+    sparsity_warmup_steps: int = 0
+    #: Step at which cosine decay of λ begins; 0 disables decay.
+    sparsity_decay_start: int = 0
+    #: Floor for late cosine λ decay (used when sparsity_decay_start > 0).
+    lambda_sparsity_final: float = 0.0
+    #: Per-layer L0 floor (active features per layer per token); 0 disables.
+    sparsity_l0_floor: float = 0.0
     lambda_kan_reg: float = 0.001
+    scale_base: float = 1.0
+    scale_spline: float = 1.0
+    lr_spline_mult: float = 1.0
     recon_normalization: Literal["global", "per_layer"] = "global"
     sparsity_normalization: Literal["sum", "mean"] = "sum"
     recon_layer_energy_beta: float = 0.0
@@ -83,6 +113,10 @@ class TrainingSettings(BaseModel):
     use_fsdp: bool = False
     #: FSDP CPU parameter offload (requires ``use_fsdp``); trades throughput for VRAM.
     fsdp_cpu_offload: bool = False
+    #: Nest-FSDP each KANEncoder as an fp32 FULL_SHARD unit (requires ``use_fsdp``
+    #: and ``encoder_type="kan"``). Default False keeps the historical fully-replicated
+    #: encoder path; enable to cut encoder Adam VRAM on multi-GPU runs.
+    shard_kan_encoders: bool = False
     val_fraction: float = 0.05
     num_workers: int = 0
     pin_memory: bool = False

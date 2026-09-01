@@ -24,6 +24,7 @@ must not be confounded by a differing objective.
 
 import torch
 
+from spline_clt.kan_encoder import kan_linear_from_encoder
 from spline_clt.kan_transcoder import KANCrossLayerTranscoder
 
 _EPS = 1e-8
@@ -161,6 +162,7 @@ def sparsity_loss(
     lambda_: float = 0.05,
     c: float = 1.0,
     per_layer_mean: bool = False,
+    l0_floor: float = 0.0,
 ) -> torch.Tensor:
     """Sparsity regularization loss matching Anthropic's formulation.
 
@@ -183,16 +185,44 @@ def sparsity_loss(
             models of different depth. When False (default), the penalty is the
             per-token sum over all layers (deeper models feel more pressure at fixed λ).
 
+        l0_floor: Per-layer L0 floor (active features per layer per token, the
+            same unit as ``threshold_init_target_l0`` and ``stats/l0_min_layer``).
+            0 (default) disables it and reproduces the historical penalty exactly.
+            When > 0, a layer's penalty is scaled by a gate that reaches 0 at
+            ``L0 == l0_floor`` and 1 at ``L0 == 2 * l0_floor``, so the sparsity
+            term cannot push any single encoder read-layer to zero.
+
+            Motivation: ``l0_min_layer`` collapses 36 -> <1 between steps ~600 and
+            ~1400 while per-layer rel_fro is still ~1.0, and never recovers. It is
+            a ratchet because JumpReLU's input gate is ``(x > threshold) * grad``:
+            once a layer's preactivations fall below threshold it receives zero
+            reconstruction gradient, so the layer cannot come back. The floor
+            therefore has to *prevent* the collapse; reviving afterwards is not
+            possible through this path. A lambda warmup ramp was tried first and
+            did NOT work -- layers died identically with lambda_eff 4x weaker at
+            the moment of collapse -- which is what motivates gating per layer on
+            the achieved L0 rather than weakening the penalty globally.
+
     Returns:
         Scalar sparsity loss.
     """
     total = torch.tensor(0.0, device=activations.device, dtype=torch.float32)
+    n_pos = activations.shape[1]
 
     for layer_id in range(activations.shape[0]):
         # decoder_norms[layer_id]: (d_transcoder,)
         # activations[layer_id]: (n_pos, d_transcoder)
         weighted = c * decoder_norms[layer_id].unsqueeze(0) * activations[layer_id].float()
-        total = total + torch.tanh(weighted).sum()
+        layer_penalty = torch.tanh(weighted).sum()
+        if l0_floor > 0.0:
+            # Detached gate: this switches the penalty off, it is not a
+            # differentiable path. Stays on-device -- a .item() here would cost a
+            # sync every step (see CLAUDE.md note 12).
+            layer_l0 = (activations[layer_id] > 0).sum().float().detach() / n_pos
+            layer_penalty = layer_penalty * (
+                ((layer_l0 - l0_floor) / l0_floor).clamp(0.0, 1.0)
+            )
+        total = total + layer_penalty
 
     total = total / activations.shape[1]  # normalize by n_pos
     if per_layer_mean:
@@ -234,13 +264,17 @@ def compute_losses(
     recon_per_layer: bool = False,
     sparsity_per_layer_mean: bool = False,
     recon_layer_energy_beta: float = 0.0,
+    sparsity_l0_floor: float = 0.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute losses from pre-computed activations and reconstructions.
 
     Used by the FSDP training path where encode/decode_dense/W_dec are all
     called inside model_for_train.forward() so FSDP's unshard hooks fire.
-    KAN encoder spline weights are in FSDP's ignored_modules (never sharded)
-    and can be accessed safely outside the FSDP forward context.
+
+    KAN regularization uses each encoder's local ``spline_weight`` shard
+    (``.abs().mean()``). Under nested FSDP that is the FSDP-native local shard;
+    under the replicated/ignored path it is the full weight. Do not call
+    ``KANLinear.regularization_loss()`` (``0*log(0)`` NaNs when weights are 0).
 
     Args:
         activations: Post-activation features, (n_layers, n_pos, d_transcoder).
@@ -266,18 +300,19 @@ def compute_losses(
     l_sparse = sparsity_loss(
         activations, dec_norms, lambda_sparsity, c_sparsity,
         per_layer_mean=sparsity_per_layer_mean,
+        l0_floor=sparsity_l0_floor,
     )
 
     # KAN regularization: L1 on spline weights (KAN encoder only).
+    # Local-shard mean is correct under nested FSDP (FULL_SHARD + use_orig_params)
+    # and identical to the full-tensor mean when encoders are replicated/ignored.
     # We do NOT use KANLinear.regularization_loss() because its entropy branch
-    # computes p * log(p) which evaluates to 0 * -inf = NaN when spline_weight is all
-    # zeros (which happens after update_grid when the old grid didn't cover the data).
-    # Even with regularize_entropy=0.0, Python's 0.0 * nan = nan in IEEE 754.
-    # Linear encoder has no spline weights, so this term is skipped.
+    # computes p * log(p) → 0 * -inf = NaN when spline_weight is all zeros.
     l_kan_reg = torch.zeros((), device=activations.device, dtype=torch.float32)
     if model.encoder_type == "kan" and lambda_kan_reg > 0.0:
         for encoder in model.encoders:
-            l_kan_reg = l_kan_reg + encoder.kan_linear.spline_weight.abs().mean()
+            kl = kan_linear_from_encoder(encoder)
+            l_kan_reg = l_kan_reg + kl.spline_weight.abs().mean()
         l_kan_reg = lambda_kan_reg * l_kan_reg
 
     l_total = l_recon + l_sparse + l_kan_reg
@@ -306,6 +341,7 @@ def total_loss(
     recon_per_layer: bool = False,
     sparsity_per_layer_mean: bool = False,
     recon_layer_energy_beta: float = 0.0,
+    sparsity_l0_floor: float = 0.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute total training loss (non-FSDP path).
 
@@ -329,4 +365,5 @@ def total_loss(
     return compute_losses(activations, y_hat, dec_norms, model, y_true,
                           lambda_sparsity, c_sparsity, lambda_kan_reg,
                           compute_metrics, recon_per_layer, sparsity_per_layer_mean,
-                          recon_layer_energy_beta)
+                          recon_layer_energy_beta,
+                          sparsity_l0_floor=sparsity_l0_floor)

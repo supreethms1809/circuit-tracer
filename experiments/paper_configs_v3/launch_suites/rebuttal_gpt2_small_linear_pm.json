@@ -1,0 +1,31 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/gpt2_small_linear_param_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_rebuttal_gpt2_small_linear_pm",
+  "description": "Multi-seed rebuttal run for GPT-2 small linear parameter-match.",
+  "seeds": [101, 202, 303],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_rebuttal/gpt2_small/linear_pm/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_rebuttal/gpt2_small/linear_pm/val"
+  },
+  "model_variants": {
+    "linear_param_match_gpt2_small_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "linear_param_match_gpt2_small_pv3",
+    "baseline_variant": "linear_param_match_gpt2_small_pv3"
+  }
+}

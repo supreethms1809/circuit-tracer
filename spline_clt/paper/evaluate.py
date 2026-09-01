@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,8 +78,17 @@ def collect_prompt_cache(
 ) -> PromptCache:
     """Collect the activations needed for prompt-level evaluation."""
     token_ids_batch = lm.to_tokens(prompt)
-    token_ids = token_ids_batch.squeeze(0)
-    token_strings = lm.to_str_tokens(prompt)
+    if token_ids_batch.ndim == 1:
+        token_ids_batch = token_ids_batch.unsqueeze(0)
+    token_ids = token_ids_batch[0]
+    # Decode from ids rather than lm.to_str_tokens(prompt): Gemma/Llama
+    # tokenizers can make TransformerLens return nested token lists and crash.
+    try:
+        token_strings = lm.to_str_tokens(token_ids)
+        if token_strings and isinstance(token_strings[0], list):
+            token_strings = token_strings[0]
+    except (TypeError, ValueError):
+        token_strings = [lm.tokenizer.decode([int(t)]) for t in token_ids.tolist()]
     hook_names_in = [f"blocks.{i}.{feature_input_hook}" for i in range(n_layers)]
     hook_names_out = [f"blocks.{i}.{feature_output_hook}" for i in range(n_layers)]
     last_layer = n_layers - 1
@@ -208,6 +218,15 @@ def evaluate_prompt_replacement(
     replacement_top1 = replacement_logits.argmax(dim=-1)
     top1_match_rate = float((original_top1 == replacement_top1).float().mean().item())
 
+    # Top-k fidelity (REQ-10): fraction of positions where the ORIGINAL top-1
+    # token appears in the replacement top-k. Superset-consistent with
+    # top1_match_rate (k=1 reduces to it); this is NOT top-k set overlap.
+    topk_rates: dict[str, float] = {}
+    for k in (5, 10):
+        replacement_topk = replacement_logits.topk(k, dim=-1).indices
+        hit = (replacement_topk == original_top1.unsqueeze(-1)).any(dim=-1)
+        topk_rates[f"top{k}_match_rate"] = float(hit.float().mean().item())
+
     original_probs = torch.softmax(original_logits, dim=-1)
     replacement_log_probs = torch.log_softmax(replacement_logits, dim=-1)
     kl_divergence = float(
@@ -215,6 +234,7 @@ def evaluate_prompt_replacement(
     )
     return {
         "top1_match_rate": top1_match_rate,
+        **topk_rates,
         "kl_divergence": kl_divergence,
     }
 
@@ -257,6 +277,13 @@ def build_prompt_graph(
         edge_threshold: Pruning threshold for edges.
         attribution_batch_size: Number of source nodes per backward pass.
     """
+    # Attribution cost capture (REQ-7): wall time + peak CUDA memory per
+    # prompt, alongside the active feature count the cost scales with.
+    timing_cuda = torch.cuda.is_available()
+    if timing_cuda:
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+    attribution_start = time.perf_counter()
     graph = attribute(
         prompt=prompt_cache.prompt,
         model=replacement_model,
@@ -265,6 +292,12 @@ def build_prompt_graph(
         max_feature_nodes=max_features,
         batch_size=attribution_batch_size,
         verbose=True,
+    )
+    if timing_cuda:
+        torch.cuda.synchronize()
+    attribution_seconds = time.perf_counter() - attribution_start
+    attribution_peak_mem_gib = (
+        torch.cuda.max_memory_allocated() / 2**30 if timing_cuda else float("nan")
     )
     fve = None
     if model is not None:
@@ -297,6 +330,8 @@ def build_prompt_graph(
     n_active = graph.active_features.shape[0] if hasattr(graph, "active_features") else 0
     return {
         "active_feature_count": n_active,
+        "attribution_seconds": attribution_seconds,
+        "attribution_peak_mem_gib": attribution_peak_mem_gib,
         "graph_replacement_score": graph_replacement_score,
         "graph_completeness_score": graph_completeness_score,
         "graph_pt_path": str(graph_pt_path),

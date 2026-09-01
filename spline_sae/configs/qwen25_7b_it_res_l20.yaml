@@ -1,0 +1,24 @@
+# Qwen2.5-7B-Instruct — Chanin Matryoshka SAE (Neuronpedia)
+# HF: chanind/qwen2.5-7B-it-layer-20-saes
+# Trainer: SAELens — copy hyperparameters from that repo's cfg.json
+
+model_name: Qwen/Qwen2.5-7B-Instruct
+d_model: 3584
+hook_name: blocks.20.hook_resid_post
+layer: 20
+d_sae: 65536                          # 20-matryoshka-65k on Neuronpedia
+encoder_type: linear
+activation: jumprelu                  # confirm against cfg.json (may be TopK/Matryoshka)
+threshold_init: 0.01
+jumprelu_bandwidth: 0.001
+lambda_sparsity: 0.001
+lambda_nl_gap: 0.0
+learning_rate: 3.0e-4
+n_steps: 20000
+batch_tokens: 2048
+seq_len: 1024
+dataset: monology/pile-uncopyrighted
+seed: 101
+notes: >
+  Before training, dump cfg.json from the HF SAE and overwrite λ / k / width /
+  architecture fields. Neuronpedia page: qwen2.5-7b-it-sae.

@@ -7,7 +7,24 @@ how pre-activations are computed from the residual stream, not in the decoder.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from efficient_kan import KANLinear
+
+
+def unwrap_encoder_module(enc: nn.Module) -> nn.Module:
+    """Return the underlying ``KANEncoder``, unwrapping an inner FSDP if present."""
+    inner = getattr(enc, "_fsdp_wrapped_module", None)
+    if inner is not None:
+        return inner
+    module = getattr(enc, "module", None)
+    if module is not None and module is not enc and hasattr(module, "kan_linear"):
+        return module
+    return enc
+
+
+def kan_linear_from_encoder(enc: nn.Module) -> KANLinear:
+    """Access ``KANLinear`` through a possibly FSDP-wrapped encoder."""
+    return unwrap_encoder_module(enc).kan_linear
 
 
 class KANEncoder(nn.Module):
@@ -28,6 +45,8 @@ class KANEncoder(nn.Module):
         spline_order: Order of B-spline basis functions. Default 3.
         grid_range: Range of the input grid. Default [-1, 1].
         base_activation: Activation applied to input before base linear map.
+        scale_base: Init scale for ``base_weight`` (efficient-kan). Default 1.0.
+        scale_spline: Init scale for spline path / ``spline_scaler``. Default 1.0.
     """
 
     def __init__(
@@ -38,12 +57,16 @@ class KANEncoder(nn.Module):
         spline_order: int = 3,
         grid_range: list[float] | None = None,
         base_activation: type[nn.Module] = nn.SiLU,
+        scale_base: float = 1.0,
+        scale_spline: float = 1.0,
     ):
         super().__init__()
         self.d_model = d_model
         self.n_features = n_features
         self.grid_size = grid_size
         self.spline_order = spline_order
+        self.scale_base = scale_base
+        self.scale_spline = scale_spline
 
         if grid_range is None:
             grid_range = [-1.0, 1.0]
@@ -55,6 +78,8 @@ class KANEncoder(nn.Module):
             spline_order=spline_order,
             base_activation=base_activation,
             grid_range=grid_range,
+            scale_base=scale_base,
+            scale_spline=scale_spline,
         )
 
     @property
@@ -67,19 +92,45 @@ class KANEncoder(nn.Module):
         """Total number of trainable parameters."""
         return sum(p.numel() for p in self.parameters())
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_split(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return ``(base, spline)`` pre-activations matching ``forward`` summands.
+
+        Used by BaseJump: gate on ``base``, magnitude from ``base + spline``.
+        """
+        kl = self.kan_linear
+        original_shape = x.shape
+        xf = x.float().reshape(-1, self.d_model)
+        base = F.linear(kl.base_activation(xf), kl.base_weight)
+        spline = F.linear(
+            kl.b_splines(xf).view(xf.size(0), -1),
+            kl.scaled_spline_weight.view(kl.out_features, -1),
+        )
+        out_shape = (*original_shape[:-1], self.n_features)
+        return base.reshape(*out_shape).to(x.dtype), spline.reshape(*out_shape).to(x.dtype)
+
+    def forward(self, x: torch.Tensor, return_split: bool = False) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute feature pre-activations from residual stream activations.
 
         KANLinear parameters are kept in float32 for numerical stability (see
         KANCrossLayerTranscoder.__init__). Input is cast up to float32 for the
         B-spline computation and the result is cast back to the caller's dtype.
 
+        Under nested FSDP the encoder is wrapped such that only ``forward`` /
+        ``__call__`` triggers unshard hooks. Callers that need ``(base, spline)``
+        for BaseJump must pass ``return_split=True`` here rather than invoking
+        ``forward_split`` on the FSDP module (that would bypass unshard).
+
         Args:
             x: Input tensor of shape (..., d_model).
+            return_split: If True, return ``(base, spline)`` pre-activations
+                instead of their sum.
 
         Returns:
-            Feature pre-activations of shape (..., n_features).
+            Feature pre-activations of shape (..., n_features), or a
+            ``(base, spline)`` tuple when ``return_split`` is True.
         """
+        if return_split:
+            return self.forward_split(x)
         return self.kan_linear(x.float()).to(x.dtype)
 
     def get_encoder_vectors(
@@ -190,9 +241,14 @@ class KANEncoder(nn.Module):
         Should be called periodically during training to adapt the grid to the
         data distribution.  For wide models the efficient-kan lstsq inside
         curve2coeff allocates O(batch * in_features * out_features) floats,
-        which can exceed GPU memory.  We move everything to CPU for the update
-        (runs only a few times during training, so speed is not critical) and
-        then move back.
+        which can exceed GPU memory.
+
+        This implementation never calls ``.cpu()`` / ``.to(device)`` on
+        ``self.kan_linear`` itself — that would tear an inner-FSDP module off
+        its flat-parameter buffers. Instead it fits on a detached CPU clone and
+        copies the updated ``state_dict`` back onto the live parameters/buffers
+        (which must already be fully materialized, e.g. under
+        ``FSDP.summon_full_params(..., writeback=True)``).
 
         Args:
             x: Input tensor of shape (batch, d_model).
@@ -200,8 +256,25 @@ class KANEncoder(nn.Module):
         if x.dim() > 2:
             x = x.reshape(-1, self.d_model)
 
-        original_device = next(self.kan_linear.parameters()).device
-        # Move to CPU to avoid GPU OOM in the lstsq solve
-        self.kan_linear.cpu()
-        self.kan_linear.update_grid(x.float().cpu())
-        self.kan_linear.to(original_device)
+        x_cpu = x.detach().float().contiguous().cpu()
+        kl = self.kan_linear
+        # Side-channel CPU module: same hyperparameters, current weights.
+        # grid_range is overwritten by load_state_dict (includes ``grid`` buffer).
+        cpu_kl = KANLinear(
+            in_features=kl.in_features,
+            out_features=kl.out_features,
+            grid_size=kl.grid_size,
+            spline_order=kl.spline_order,
+            scale_base=kl.scale_base,
+            scale_spline=kl.scale_spline,
+            enable_standalone_scale_spline=kl.enable_standalone_scale_spline,
+            base_activation=type(kl.base_activation),
+            grid_eps=kl.grid_eps,
+        )
+        cpu_kl.load_state_dict(
+            {k: v.detach().cpu().clone() for k, v in kl.state_dict().items()}
+        )
+        cpu_kl.update_grid(x_cpu)
+        updated = cpu_kl.state_dict()
+        for name, tensor in kl.state_dict().items():
+            tensor.copy_(updated[name].to(device=tensor.device, dtype=tensor.dtype))

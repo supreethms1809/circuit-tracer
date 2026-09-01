@@ -372,3 +372,174 @@ class TestLossComputation:
             assert metrics["loss/total"] >= 0.0
             loss.backward()
             optimizer.step()
+
+
+class TestDecoderScaleCalibration:
+    """Data-driven decoder init: ‖y_hat_l‖ should match ‖y_l‖ at cold start.
+
+    Regression guard for the job-8561 collapse: kaiming_uniform_ normalizes by
+    fan_in=d_model, so the initial decoder output scale is identical on every
+    base model while the MLP-output scale is not (llama mean(y^2)=0.087 vs
+    gpt2 9.58). The resulting ~10x overshoot drove every read-layer to L0=0.
+    """
+
+    def _model(self, n_layers=4, d_transcoder=32, d_model=16):
+        return KANCrossLayerTranscoder(
+            n_layers=n_layers,
+            d_transcoder=d_transcoder,
+            d_model=d_model,
+            encoder_type="linear",
+            activation_function="relu",
+            device=torch.device("cpu"),
+        )
+
+    def test_scale_per_target_layer_scales_y_hat_exactly(self):
+        """Scaling target layer l multiplies y_hat[l] by exactly that factor."""
+        model = self._model()
+        x = torch.randn(4, 6, 16)
+        activations = model.encode(x)
+        before = model.decode_dense(activations, input_acts=x)
+
+        scales = torch.tensor([0.5, 2.0, 0.25, 4.0])
+        model.scale_decoder_per_target_layer(scales)
+        after = model.decode_dense(model.encode(x), input_acts=x)
+
+        # b_dec is zero at init, so y_hat is purely the W_dec contribution.
+        torch.testing.assert_close(after, before * scales[:, None, None])
+
+    def test_scale_rejects_wrong_shape(self):
+        model = self._model()
+        with pytest.raises(ValueError, match="scales must have shape"):
+            model.scale_decoder_per_target_layer(torch.ones(3))
+
+    def test_calibration_matches_per_layer_target_norm(self):
+        """After calibration ‖y_hat_l‖ ≈ ‖y_l‖ even when y is wildly off-scale."""
+        from spline_clt.training.data import ActivationDataset
+        from spline_clt.training.train import calibrate_decoder_scale_from_data
+
+        torch.manual_seed(0)
+        n_layers, n_pos, d_model = 4, 8, 16
+        n_seq = 6
+        mlp_inputs = torch.randn(n_seq, n_layers, n_pos, d_model)
+        # Per-layer energies spanning 1e-4 .. 1e2, the llama/gemma3 situation.
+        layer_scale = torch.tensor([1e-2, 1e1, 1e-1, 1.0])[None, :, None, None]
+        mlp_outputs = torch.randn(n_seq, n_layers, n_pos, d_model) * layer_scale
+        dataset = ActivationDataset(mlp_inputs, mlp_outputs)
+
+        model = self._model(n_layers=n_layers, d_model=d_model)
+        scales = calibrate_decoder_scale_from_data(
+            model, dataset, n_sequences=n_seq, seed=0
+        )
+        assert scales.shape == (n_layers,)
+
+        sumsq_hat = torch.zeros(n_layers, dtype=torch.float64)
+        sumsq_true = torch.zeros(n_layers, dtype=torch.float64)
+        for i in range(n_seq):
+            x = mlp_inputs[i]
+            y_hat = model.decode_dense(model.encode(x), input_acts=x)
+            sumsq_hat += (y_hat.double() ** 2).sum(dim=(1, 2))
+            sumsq_true += (mlp_outputs[i].double() ** 2).sum(dim=(1, 2))
+
+        ratio = (sumsq_hat / sumsq_true).sqrt()
+        torch.testing.assert_close(
+            ratio, torch.ones(n_layers, dtype=torch.float64), rtol=1e-4, atol=1e-4
+        )
+
+    def test_calibration_leaves_dead_layer_untouched(self):
+        """A layer with no active feature keeps scale 1 instead of dividing by 0."""
+        from spline_clt.training.data import ActivationDataset
+        from spline_clt.training.train import calibrate_decoder_scale_from_data
+
+        torch.manual_seed(0)
+        n_layers, n_pos, d_model = 3, 4, 8
+        dataset = ActivationDataset(
+            torch.randn(2, n_layers, n_pos, d_model),
+            torch.randn(2, n_layers, n_pos, d_model),
+        )
+        model = self._model(n_layers=n_layers, d_model=d_model)
+        # Force every encoder output to zero => y_hat is identically zero.
+        for enc in model.encoders:
+            for p in enc.parameters():
+                torch.nn.init.zeros_(p)
+
+        scales = calibrate_decoder_scale_from_data(
+            model, dataset, n_sequences=2, seed=0
+        )
+        torch.testing.assert_close(scales, torch.ones(n_layers))
+
+
+class TestBaseJumpCLT:
+    def test_base_jump_requires_kan(self):
+        with pytest.raises(ValueError, match="base_jump"):
+            KANCrossLayerTranscoder(
+                n_layers=2,
+                d_transcoder=16,
+                d_model=8,
+                encoder_type="linear",
+                activation_function="base_jump",
+                device=torch.device("cpu"),
+            )
+
+    def test_base_jump_zero_spline_matches_score_gate(self):
+        """With spline path zeroed, BaseJump ≡ JumpReLU(base + bias)."""
+        torch.manual_seed(0)
+        model = KANCrossLayerTranscoder(
+            n_layers=2,
+            d_transcoder=16,
+            d_model=8,
+            grid_size=3,
+            spline_order=3,
+            activation_function="base_jump",
+            jumprelu_bandwidth=0.1,
+            threshold_init=0.05,
+            scale_base=0.2,
+            device=torch.device("cpu"),
+        )
+        for enc in model.encoders:
+            with torch.no_grad():
+                enc.kan_linear.spline_weight.zero_()
+                if hasattr(enc.kan_linear, "spline_scaler"):
+                    enc.kan_linear.spline_scaler.zero_()
+
+        x = torch.randn(4, 8)
+        score = model.encode_layer(x, 0, apply_activation_function=False)
+        acts = model.encode_layer(x, 0, apply_activation_function=True)
+        theta = model.effective_threshold[0]
+        expected = (score > theta).to(score.dtype) * torch.relu(score)
+        torch.testing.assert_close(acts, expected, rtol=1e-5, atol=1e-5)
+
+    def test_base_jump_roundtrip_metadata(self, tmp_path):
+        model = KANCrossLayerTranscoder(
+            n_layers=2,
+            d_transcoder=16,
+            d_model=8,
+            activation_function="base_jump",
+            scale_base=0.2,
+            scale_spline=1.0,
+            jumprelu_bandwidth=0.1,
+            device=torch.device("cpu"),
+        )
+        save_dir = tmp_path / "bj_clt"
+        model.to_safetensors(str(save_dir))
+        loaded = load_spline_clt(str(save_dir), device=torch.device("cpu"))
+        assert loaded.activation_function_name == "base_jump"
+        assert abs(loaded.scale_base - 0.2) < 1e-6
+
+    def test_kan_encode_checkpoint_backward(self):
+        """Training encode() must checkpoint per-layer and still backprop."""
+        torch.manual_seed(0)
+        model = KANCrossLayerTranscoder(
+            n_layers=2,
+            d_transcoder=16,
+            d_model=8,
+            grid_size=3,
+            spline_order=3,
+            activation_function="base_jump",
+            device=torch.device("cpu"),
+        )
+        model.train()
+        x = torch.randn(2, 4, 8)
+        acts = model.encode(x)
+        acts.sum().backward()
+        assert model.encoders[0].kan_linear.base_weight.grad is not None
+        assert model.encoders[1].kan_linear.spline_weight.grad is not None

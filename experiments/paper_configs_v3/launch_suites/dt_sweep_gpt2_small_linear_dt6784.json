@@ -1,0 +1,33 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/gpt2_small_linear_dt6784.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_dt_sweep_gpt2_small_linear_dt6784",
+  "description": "v3 d_transcoder sweep point: GPT-2 small LINEAR d_t=6784, parameter-matched to spline d_t=3072, 1B tokens.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_dtsweep/gpt2_small/linear_dt6784/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_dtsweep/gpt2_small/linear_dt6784/val"
+  },
+  "model_variants": {
+    "linear_dt6784_gpt2_small_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "linear_dt6784_gpt2_small_pv3",
+    "baseline_variant": "linear_dt6784_gpt2_small_pv3"
+  }
+}

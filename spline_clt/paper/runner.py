@@ -66,14 +66,55 @@ from spline_clt.paper.reporting import (
     write_jsonl,
     write_tables_csv,
 )
-from spline_clt.training.data import ActivationDataset, DataConfig, collect_activations
+from spline_clt.training.data import (
+    ActivationDataset,
+    DataConfig,
+    collect_activations,
+    collect_activations_isolated,
+)
 from spline_clt.training.train import (
     TrainConfig,
     build_session,
     close_session,
+    release_session_gpu,
     run_chunk,
     train,
 )
+
+
+def _scrub_cuda_memory(*, log_fn=None, tag: str = "") -> None:
+    """Release cached blocks on every visible CUDA device (current process).
+
+    ``empty_cache`` only affects the current device; chunked collect/train
+    must scrub all devices the process may have touched. Also runs
+    ``ipc_collect`` so peer-mapped blocks from NCCL/FSDP can be reclaimed
+    before the next peak (full-decoder unshard ≈ 9.26 GiB).
+    """
+    gc.collect()
+    if not torch.cuda.is_available():
+        return
+    torch.cuda.synchronize()
+    try:
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    n = torch.cuda.device_count()
+    for i in range(n):
+        with torch.cuda.device(i):
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
+    if log_fn is not None:
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        alloc = torch.cuda.memory_allocated(local_rank) / 1e9
+        reserved = torch.cuda.memory_reserved(local_rank) / 1e9
+        free, total = torch.cuda.mem_get_info(local_rank)
+        log_fn(
+            f"{tag}GPU{local_rank} allocated={alloc:.1f} GB, "
+            f"reserved={reserved:.1f} GB, "
+            f"free={free / 1e9:.1f}/{total / 1e9:.1f} GB"
+        )
 
 
 def _sanitize_name(value: str) -> str:
@@ -849,10 +890,11 @@ class PaperSuiteRunner:
             f"corpus_skip_items={skip_items}, corpus_skip_sequences={skip_seq}"
         )
 
-        # Build-once: the model + FSDP wrap + optimizers + wandb run are created
-        # a single time via build_session() and reused across chunks by run_chunk(),
-        # instead of being rebuilt every chunk (the source of the +12 GB/chunk GPU
-        # growth that saturated the card and thrashed the allocator).
+        # Per-chunk session: FSDP is released before each mid-run activation
+        # collect (base LM only — no FSDP needed) so Gemma can own the GPUs,
+        # then rebuilt from cpu_resume / training_state for the next train
+        # chunk. Holding FSDP across collect was the chunk-N+1 OOM (co-resident
+        # Gemma child + flat parent allocated but collapsed free HBM).
         session = None
 
         for ci in range(start_ci, n_chunks):
@@ -861,16 +903,35 @@ class PaperSuiteRunner:
                 break
 
             if world_sz > 1 and not dist.is_initialized():
-                backend = "nccl" if torch.cuda.is_available() else "gloo"
+                from spline_clt.training.train import _init_distributed_process_group
+
                 # Rank 0 may spend >10 min collecting a large activation chunk
                 # before other ranks reach the metadata broadcast.
-                dist.init_process_group(backend=backend, timeout=timedelta(hours=4))
+                _init_distributed_process_group(timeout=timedelta(hours=4))
 
             # NCCL requires each rank to use its own GPU. Chunked collect runs this
             # *before* train(), which normally calls torch.cuda.set_device(local_rank).
+            # _init_distributed_process_group already set the device when it ran;
+            # set again here so ranks that joined an already-initialized PG still
+            # bind correctly before collection.
             local_rank = int(os.environ.get("LOCAL_RANK", "0"))
             if world_sz > 1 and torch.cuda.is_available():
                 torch.cuda.set_device(local_rank)
+
+            # Free Spline-CLT FSDP before GPU base-LM collect. All ranks must
+            # participate (barrier inside release_session_gpu).
+            if session is not None:
+                self._log(
+                    f"Chunk {ci + 1}/{n_chunks} (rank {rank}): releasing FSDP "
+                    "GPU session before isolated base-LM activation collect"
+                )
+                release_session_gpu(session)
+                session = None
+                _scrub_cuda_memory(
+                    log_fn=lambda msg: self._log(
+                        f"Chunk {ci + 1}/{n_chunks} pre-collect (rank {rank}): {msg}"
+                    ),
+                )
 
             # The train cache lives on node-LOCAL storage (e.g. /lscratch NVMe),
             # so on a multi-node run every node needs its own replica of the
@@ -964,7 +1025,14 @@ class PaperSuiteRunner:
                     f"Chunk {ci + 1}/{n_chunks} (rank {rank}, node leader): "
                     f"collect n_tokens={tokens_this}, skip_items={skip_items}, {_val_mode}"
                 )
-                coll = collect_activations(data_config)
+                # Isolate base-LM load/teardown in a child so its CUDA allocator
+                # churn cannot fragment the parent's slabs. FSDP was released
+                # above when a prior chunk left a session — GPUs are free for
+                # Gemma. Pin the child to this rank's GPU only.
+                coll = collect_activations_isolated(
+                    data_config,
+                    cuda_visible_devices=str(local_rank),
+                )
                 n_seq_chunk = coll.n_sequences
                 n_items_chunk = coll.n_items_consumed
 
@@ -984,10 +1052,14 @@ class PaperSuiteRunner:
                 n_items_chunk = int(buf[1].item())
                 dist.barrier()
 
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
+            # All ranks (including non-leaders that idled through collect): scrub
+            # before the first post-collect backward, which needs a contiguous
+            # ~9.26 GiB slab for the full triangular W_dec unshard.
+            _scrub_cuda_memory(
+                log_fn=lambda msg: self._log(
+                    f"Chunk {ci + 1}/{n_chunks} post-collect (rank {rank}): {msg}"
+                ),
+            )
 
             train_dataset, val_dataset = self._load_train_val_datasets(
                 train_dir=dataset_dir,
@@ -1016,10 +1088,46 @@ class PaperSuiteRunner:
             chunk_stop = exclusive_bounds[ci]
             chunk_floor = exclusive_bounds[ci - 1] if ci > 0 else 0
 
+            # Walltime can leave training_state with completed_step already past
+            # this chunk's stop while chunk_index still points here. Collect still
+            # ran so we can advance corpus cursors; skip FSDP build / run_chunk
+            # (0-step run_chunk would summon before lazy_init and crash).
+            if session is not None:
+                current_step = int(session.global_step)
+            elif cpu_resume is not None:
+                current_step = int(cpu_resume["completed_step"]) + 1
+            else:
+                current_step = 0
+            if current_step >= chunk_stop:
+                self._log(
+                    f"Chunk {ci + 1}/{n_chunks}: training already complete "
+                    f"(step={current_step} >= stop={chunk_stop}); "
+                    f"advancing corpus cursors, skipping train."
+                )
+                skip_seq += n_seq_chunk
+                skip_items += n_items_chunk
+                if cpu_resume is not None:
+                    cpu_resume["corpus_skip_sequences"] = skip_seq
+                    cpu_resume["corpus_skip_items"] = skip_items
+                    cpu_resume["chunk_index"] = ci + 1
+                if rank == 0:
+                    if cpu_resume is not None:
+                        torch.save(cpu_resume, ts_path)
+                    elif ts_path.exists():
+                        pkg = torch.load(ts_path, map_location="cpu")
+                        pkg["corpus_skip_sequences"] = skip_seq
+                        pkg["corpus_skip_items"] = skip_items
+                        pkg["chunk_index"] = ci + 1
+                        torch.save(pkg, ts_path)
+                if world_sz > 1:
+                    dist.barrier()
+                del train_dataset, val_dataset
+                continue
+
             if session is None:
-                # Build the (single) per-job session on the first chunk. The
-                # TrainConfig is created once; per-chunk fields below are updated
-                # in place on session.config each chunk.
+                # Build (or rebuild after pre-collect release) the FSDP session.
+                # Per-chunk bounds are set on this TrainConfig; after a mid-run
+                # release, cpu_resume reloads weights + Adam from disk.
                 train_config = TrainConfig(
                     n_layers=training.n_layers,
                     d_model=training.d_model,
@@ -1027,13 +1135,36 @@ class PaperSuiteRunner:
                     encoder_type=training.encoder_type,
                     grid_size=training.grid_size,
                     spline_order=training.spline_order,
+                    threshold_init=training.threshold_init,
+                    jumprelu_bandwidth=training.jumprelu_bandwidth,
+                    activation_function=training.activation_function,
+                    threshold_weight_decay=training.threshold_weight_decay,
+                    threshold_adam_eps=training.threshold_adam_eps,
+                    threshold_init_strategy=training.threshold_init_strategy,
+                    threshold_init_target_l0=training.threshold_init_target_l0,
+                    threshold_calibration_samples=training.threshold_calibration_samples,
+                    threshold_calibration_values_per_sample=training.threshold_calibration_values_per_sample,
+                    decoder_init_strategy=training.decoder_init_strategy,
+                    decoder_calibration_samples=training.decoder_calibration_samples,
+                    normalize_inputs=training.normalize_inputs,
+                    normalization_samples=training.normalization_samples,
                     learning_rate=training.learning_rate,
                     optimizer=training.optimizer,
+                    weight_decay=training.weight_decay,
+                    adam_beta1=training.adam_beta1,
+                    adam_beta2=training.adam_beta2,
                     warmup_steps=training.warmup_steps,
                     total_steps=training.total_steps,
                     batch_size=training.batch_size,
                     lambda_sparsity=training.lambda_sparsity,
+                    sparsity_warmup_steps=training.sparsity_warmup_steps,
+                    sparsity_decay_start=training.sparsity_decay_start,
+                    lambda_sparsity_final=training.lambda_sparsity_final,
+                    sparsity_l0_floor=training.sparsity_l0_floor,
                     lambda_kan_reg=training.lambda_kan_reg,
+                    scale_base=training.scale_base,
+                    scale_spline=training.scale_spline,
+                    lr_spline_mult=training.lr_spline_mult,
                     recon_normalization=training.recon_normalization,
                     sparsity_normalization=training.sparsity_normalization,
                     recon_layer_energy_beta=training.recon_layer_energy_beta,
@@ -1050,6 +1181,7 @@ class PaperSuiteRunner:
                     reset_optimizer_every=training.reset_optimizer_every,
                     use_fsdp=training.use_fsdp,
                     fsdp_cpu_offload=training.fsdp_cpu_offload,
+                    shard_kan_encoders=training.shard_kan_encoders,
                     data_dir=str(dataset_dir),
                     val_data_dir=str(val_dataset_dir),
                     device=str(_device_from_name(training.device or self.config.dataset.device)),
@@ -1067,7 +1199,7 @@ class PaperSuiteRunner:
                     wandb_entity=training.wandb_entity or self.config.wandb.entity,
                     wandb_mode=training.wandb_mode if training.wandb_project else self.config.wandb.mode,
                     wandb_run_name=f"{self.config.suite_name}/{variant_name}_seed{seed}",
-                    resume_training_if_exists=True,
+                    resume_training_if_exists=training.resume_training_if_exists,
                     chunk_stop_step=chunk_stop,
                     chunk_resume_step_floor=chunk_floor,
                     corpus_skip_sequences=skip_seq,
@@ -1080,8 +1212,7 @@ class PaperSuiteRunner:
                     norm_dataset=train_dataset,
                 )
             else:
-                # Reuse the persistent model/optimizers/wandb; only the per-chunk
-                # bounds + bookkeeping change.
+                # Same-chunk reuse only (no collect between); update bounds.
                 session.config.chunk_stop_step = chunk_stop
                 session.config.chunk_resume_step_floor = chunk_floor
                 session.config.corpus_skip_sequences = skip_seq
@@ -1101,8 +1232,8 @@ class PaperSuiteRunner:
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
                 if rank == 0:
-                    # With build-once this reserved figure should stay FLAT across
-                    # chunks (the old per-chunk rebuild grew it ~12 GB/chunk).
+                    # Steady-state FSDP resident size; released again before the
+                    # next chunk's base-LM collect.
                     self._log(
                         f"Chunk {ci + 1}/{n_chunks} cleanup: GPU "
                         f"allocated={torch.cuda.memory_allocated() / 1e9:.1f} GB, "
@@ -1228,13 +1359,36 @@ class PaperSuiteRunner:
                 encoder_type=training.encoder_type,
                 grid_size=training.grid_size,
                 spline_order=training.spline_order,
+                threshold_init=training.threshold_init,
+                jumprelu_bandwidth=training.jumprelu_bandwidth,
+                activation_function=training.activation_function,
+                threshold_weight_decay=training.threshold_weight_decay,
+                threshold_adam_eps=training.threshold_adam_eps,
+                threshold_init_strategy=training.threshold_init_strategy,
+                threshold_init_target_l0=training.threshold_init_target_l0,
+                threshold_calibration_samples=training.threshold_calibration_samples,
+                threshold_calibration_values_per_sample=training.threshold_calibration_values_per_sample,
+                decoder_init_strategy=training.decoder_init_strategy,
+                decoder_calibration_samples=training.decoder_calibration_samples,
+                normalize_inputs=training.normalize_inputs,
+                normalization_samples=training.normalization_samples,
                 learning_rate=training.learning_rate,
                 optimizer=training.optimizer,
+                weight_decay=training.weight_decay,
+                adam_beta1=training.adam_beta1,
+                adam_beta2=training.adam_beta2,
                 warmup_steps=training.warmup_steps,
                 total_steps=training.total_steps,
                 batch_size=training.batch_size,
                 lambda_sparsity=training.lambda_sparsity,
+                sparsity_warmup_steps=training.sparsity_warmup_steps,
+                sparsity_decay_start=training.sparsity_decay_start,
+                lambda_sparsity_final=training.lambda_sparsity_final,
+                sparsity_l0_floor=training.sparsity_l0_floor,
                 lambda_kan_reg=training.lambda_kan_reg,
+                scale_base=training.scale_base,
+                scale_spline=training.scale_spline,
+                lr_spline_mult=training.lr_spline_mult,
                 recon_normalization=training.recon_normalization,
                 sparsity_normalization=training.sparsity_normalization,
                 recon_layer_energy_beta=training.recon_layer_energy_beta,
@@ -1251,6 +1405,7 @@ class PaperSuiteRunner:
                 reset_optimizer_every=training.reset_optimizer_every,
                 use_fsdp=training.use_fsdp,
                 fsdp_cpu_offload=training.fsdp_cpu_offload,
+                shard_kan_encoders=training.shard_kan_encoders,
                 data_dir=str(_dataset_dir),
                 val_data_dir=str(_val_dataset_dir),
                 device=str(_device_from_name(training.device or self.config.dataset.device)),
@@ -1525,10 +1680,14 @@ class PaperSuiteRunner:
                 "count": len(completed_prompts),
                 "error_count": sum(1 for record in prompt_records if record.get("status") == "error"),
                 "top1_match_rate": prompt_metric("top1_match_rate"),
+                "top5_match_rate": prompt_metric("top5_match_rate"),
+                "top10_match_rate": prompt_metric("top10_match_rate"),
                 "kl_divergence": prompt_metric("kl_divergence"),
             },
             "circuit_metrics": {
                 "active_feature_count": prompt_metric("active_feature_count"),
+                "attribution_seconds": prompt_metric("attribution_seconds"),
+                "attribution_peak_mem_gib": prompt_metric("attribution_peak_mem_gib"),
                 "retained_feature_node_count": prompt_metric("retained_feature_node_count"),
                 "retained_error_node_count": prompt_metric("retained_error_node_count"),
                 "retained_error_node_fraction": prompt_metric("retained_error_node_fraction"),

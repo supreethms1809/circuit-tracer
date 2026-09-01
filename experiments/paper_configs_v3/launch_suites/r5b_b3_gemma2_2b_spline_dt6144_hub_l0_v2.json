@@ -1,0 +1,53 @@
+{
+  "defaults": [
+    "../base/common_gemma2_2b.json",
+    "../macag/default.json",
+    "../models/r5b_b3_gemma2_2b_spline_dt6144_basejump.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_b3_gemma2_2b_spline_dt6144_hub_l0_v2",
+  "description": "Hub-L0 retrain v2 of Gemma-2-2B Spline dt6144 BaseJump. v1 (λ peak 3e-6) reached act~77 by step 5k and was still climbing (hub~12.6). This step: peak 1e-5 (×~3 vs v1), warmup 4000, hold peak (no decay) until act near target. θ_init=24. Train-only. Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b_b3",
+  "seeds": [101],
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": false,
+    "macag": false,
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "collection_chunk_n_tokens": 3276800,
+    "cache_dir": "/lscratch/paper_r5b_b3/gemma2_2b_spline_dt6144_hub_l0_v2/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b_b3/gemma2_2b_spline_dt6144_hub_l0_v2/val"
+  },
+  "model_variants": {
+    "gemma2_2b_spline_dt6144_r5b_b3_bj": {
+      "scan_id": "gemma2-2b-spline-dt6144-hub-l0-v2",
+      "training": {
+        "use_fsdp": true,
+        "shard_kan_encoders": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "batch_size": 16,
+        "total_steps": 24414,
+        "warmup_steps": 1000,
+        "eval_every": 512,
+        "save_every": 1024,
+        "update_grid_from": 1000,
+        "d_transcoder": 6144,
+        "threshold_init_target_l0": 24,
+        "lambda_sparsity": 1e-05,
+        "sparsity_warmup_steps": 4000,
+        "sparsity_decay_start": 0,
+        "lambda_sparsity_final": 1e-05,
+        "run_name": "gemma2_2b_spline_dt6144_hub_l0_v2"
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gemma2_2b_spline_dt6144_r5b_b3_bj",
+    "baseline_variant": "gemma2_2b_spline_dt6144_r5b_b3_bj"
+  }
+}

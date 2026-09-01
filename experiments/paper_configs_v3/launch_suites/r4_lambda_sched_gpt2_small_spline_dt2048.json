@@ -1,0 +1,42 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/r2_gpt2_small_spline_dt2048.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r4_lambda_sched_gpt2_small_spline_dt2048",
+  "description": "Isolated dt=2048 spline probe of λ schedule: peak 1e-5, linear warmup 2000, hold, cosine decay from step 14000 to floor 3e-6. Separate cache/output from constant-λ r4_dt2048.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 750000000,
+    "cache_dir": "/lscratch/paper_r4_lambda_sched/gpt2_small_spline_dt2048/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r4_lambda_sched/gpt2_small_spline_dt2048/val"
+  },
+  "model_variants": {
+    "gpt2_small_spline_dt2048_r2": {
+      "scan_id": "gpt2-small-spline-dt2048-lambda-sched",
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "data_scaled",
+        "decoder_calibration_samples": 16,
+        "run_name": "gpt2_small_spline_dt2048_lambda_sched",
+        "lambda_sparsity": 1e-5,
+        "sparsity_warmup_steps": 2000,
+        "sparsity_decay_start": 14000,
+        "lambda_sparsity_final": 3e-6
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gpt2_small_spline_dt2048_r2",
+    "baseline_variant": "gpt2_small_spline_dt2048_r2"
+  }
+}

@@ -6,21 +6,20 @@
     "../models/gpt2_large_linear_feature_match.json",
     "../benchmarks/neurips_core.json"
   ],
-  "suite_name": "paper_v3_gpt2_large",
-  "description": "paper_configs_v3: GPT-2 large spline vs linear feature-match at d_t=10240 (R=8, 2x v2). KAN encoders are FSDP-ignored (fp32, fully replicated): ~70 GiB/GPU encoder. Run on 6 nodes x 2 GPUs (world=12): 1B x 0.95 / (384 x 128) = 19330 steps (~1.5x faster wall-clock than 4 nodes). Peak ~105 GiB/rank on 146GB. 1B tokens, 2 seeds. Grid refine DISABLED, deduped val. Reuses paper_v2 activation cache. Results under results/paper/paper_v3_gpt2_large/.",
+  "suite_name": "paper_v3_threshold_fixed_gpt2_large",
+  "description": "Threshold-fixed GPT-2 large parameter-matched comparison at seed 101: linear d_t=8192 (7,361,639,424 parameters) versus spline d_t=5632 (7,396,844,544; +0.48%). Both arms use data-quantile JumpReLU initialization at L0=32 and matched lambda=0.00756. Grid refine is disabled and validation is deduped.",
   "seeds": [
-    101,
-    202
+    101
   ],
   "model_variants": {
-    "spline_feature_match_gpt2_large_pv3": {
+    "spline_param_match_gpt2_large_pv3": {
       "training": {
         "use_fsdp": true,
         "resume_training_if_exists": true,
         "fsdp_cpu_offload": false
       }
     },
-    "linear_feature_match_gpt2_large_pv3": {
+    "linear_d8192_gpt2_large_pv3": {
       "training": {
         "use_fsdp": true,
         "resume_training_if_exists": true,
@@ -29,8 +28,8 @@
     }
   },
   "reporting": {
-    "primary_variant": "spline_feature_match_gpt2_large_pv3",
-    "baseline_variant": "linear_feature_match_gpt2_large_pv3",
+    "primary_variant": "spline_param_match_gpt2_large_pv3",
+    "baseline_variant": "linear_d8192_gpt2_large_pv3",
     "bootstrap_samples": 1000,
     "confidence_level": 0.95,
     "figure_case_study_prompt_id": "ioi_john_mary"

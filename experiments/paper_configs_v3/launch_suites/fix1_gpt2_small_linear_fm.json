@@ -1,0 +1,34 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/gpt2_small_linear_fm_fix1.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_fix1_gpt2_small_linear_fm",
+  "description": "Fix-test: bandwidth rescale + lambda warmup ramp, GPT-2 small linear FM, 15000 steps, seed 101.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_fix1/gpt2_small/linear_fm/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_fix1/gpt2_small/linear_fm/val",
+    "n_tokens": 320000000
+  },
+  "model_variants": {
+    "linear_fm_gpt2_small_fix1": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "linear_fm_gpt2_small_fix1",
+    "baseline_variant": "linear_fm_gpt2_small_fix1"
+  }
+}

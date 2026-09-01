@@ -1,0 +1,24 @@
+# Gemma-2-2B — Gemma Scope style JumpReLU SAE (1-layer probe)
+# Baseline published SAE: google/gemma-scope (Neuronpedia / HF)
+# Start with linear replication, then encoder_type: kan
+
+model_name: google/gemma-2-2b
+d_model: 2304
+hook_name: blocks.12.hook_resid_post   # mid residual; confirm TL name
+layer: 12
+d_sae: 16384                          # Gemma Scope width_16k
+encoder_type: linear                  # switch to kan for spline analog
+activation: jumprelu
+threshold_init: 0.01
+jumprelu_bandwidth: 0.001
+lambda_sparsity: 0.001                # retune to hit published L0 band
+lambda_nl_gap: 0.0
+learning_rate: 3.0e-4
+n_steps: 20000
+batch_tokens: 4096
+seq_len: 1024
+dataset: monology/pile-uncopyrighted
+seed: 101
+notes: >
+  Phase-1 smoke. Full Gemma Scope used billions of tokens; this is an ablation
+  budget. Compare EV/L0 against loaded gemma-scope checkpoint on same val set.

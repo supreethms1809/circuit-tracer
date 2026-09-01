@@ -1,0 +1,52 @@
+{
+  "defaults": [
+    "../base/common_gemma2_2b.json",
+    "../macag/default.json",
+    "../models/r5b_b3_gemma2_2b_spline_dt6144_basejump.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_b3_gemma2_2b_spline_dt6144_hub_l0_v1",
+  "description": "Separate hub-L0-directed retrain of Gemma-2-2B Spline dt6144 BaseJump. Conservative λ/θ step (θ_init=24, λ peak 3e-6, warmup 4000, decay 8000). New output dir — does not resume or overwrite paper_r5b_b3_gemma2_2b_spline_dt6144_basejump. Train-only. Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b_b3",
+  "seeds": [101],
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": false,
+    "macag": false,
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "collection_chunk_n_tokens": 3276800,
+    "cache_dir": "/lscratch/paper_r5b_b3/gemma2_2b_spline_dt6144_hub_l0_v1/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b_b3/gemma2_2b_spline_dt6144_hub_l0_v1/val"
+  },
+  "model_variants": {
+    "gemma2_2b_spline_dt6144_r5b_b3_bj": {
+      "training": {
+        "use_fsdp": true,
+        "shard_kan_encoders": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "batch_size": 16,
+        "total_steps": 24414,
+        "warmup_steps": 1000,
+        "eval_every": 512,
+        "save_every": 1024,
+        "update_grid_from": 1000,
+        "d_transcoder": 6144,
+        "threshold_init_target_l0": 24,
+        "lambda_sparsity": 3e-06,
+        "sparsity_warmup_steps": 4000,
+        "sparsity_decay_start": 8000,
+        "lambda_sparsity_final": 1.5e-06,
+        "run_name": "gemma2_2b_spline_dt6144_hub_l0_v1"
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gemma2_2b_spline_dt6144_r5b_b3_bj",
+    "baseline_variant": "gemma2_2b_spline_dt6144_r5b_b3_bj"
+  }
+}

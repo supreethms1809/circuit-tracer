@@ -1,0 +1,31 @@
+{
+  "defaults": [
+    "../base/common_gemma2_2b.json",
+    "../macag/default.json",
+    "../models/gemma2_2b_spline_dt6144.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_rebuttal_gemma2_spline",
+  "description": "One-seed rebuttal run for Gemma-2-2B spline d_t=6144 (62.5% fewer features, 39.2% fewer CLT params than published mntss linear d_t=16384). 4 nodes / 8 GPUs, no FSDP CPU offload.",
+  "seeds": [101],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_rebuttal/gemma2_2b/spline/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_rebuttal/gemma2_2b/spline/val"
+  },
+  "model_variants": {
+    "spline_dt6144_gemma2_2b_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_dt6144_gemma2_2b_pv3",
+    "baseline_variant": "spline_dt6144_gemma2_2b_pv3"
+  }
+}

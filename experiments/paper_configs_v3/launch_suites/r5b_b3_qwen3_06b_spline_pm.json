@@ -1,0 +1,48 @@
+{
+  "defaults": [
+    "../base/common_qwen3_06b.json",
+    "../macag/default.json",
+    "../models/r2_qwen3_06b_spline_pm.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_b3_qwen3_06b_spline_pm",
+  "description": "R5b-B3 qwen3_06b_spline_pm: same r5b \u03bb/bw/decoder init + Tier-1 B3 (scale_base=0.2, lr_spline_mult=5, lambda_kan_reg=0). Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b_b3",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 560000000,
+    "cache_dir": "/lscratch/paper_r5b_b3/qwen3_06b_spline_pm/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b_b3/qwen3_06b_spline_pm/val"
+  },
+  "model_variants": {
+    "qwen3_06b_spline_pm_r2": {
+      "scan_id": "qwen3-06b-spline-pm-r5b-kaiming-B3",
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "kaiming",
+        "jumprelu_bandwidth": 0.14,
+        "lambda_sparsity": 1e-06,
+        "sparsity_warmup_steps": 3000,
+        "sparsity_decay_start": 4000,
+        "lambda_sparsity_final": 3e-07,
+        "run_name": "qwen3_06b_spline_pm_r5b_b3_kaiming",
+        "lambda_kan_reg": 0.0,
+        "scale_base": 0.2,
+        "scale_spline": 1.0,
+        "lr_spline_mult": 5.0
+      },
+      "label": "qwen3_06b_spline_pm_r2 R5b-B3 (scale_base=0.2, lr_spline_mult=5, \u03bb_kan=0)"
+    }
+  },
+  "reporting": {
+    "primary_variant": "qwen3_06b_spline_pm_r2",
+    "baseline_variant": "qwen3_06b_spline_pm_r2"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "defaults": [
+    "../base/common_gemma2_2b.json",
+    "../macag/default.json",
+    "../models/r5b_gemma2_2b_spline_dt6144.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_gemma2_2b_spline_dt6144",
+  "description": "R5b Gemma-2-2B Spline-CLT d_t=6144 on 4 nodes / 8 GPUs (d_t=8192 OOMed; 6144 used ~69 GiB/GPU on job 8525). Recipe: data_scaled, bw=0.10, λ peak 1e-6→3e-7, 200M tokens / 25k steps, train-only for checkpoint. Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b",
+  "seeds": [101],
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": false,
+    "macag": false,
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "collection_chunk_n_tokens": 2700000,
+    "cache_dir": "/lscratch/paper_r5b/gemma2_2b_spline_dt6144/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b/gemma2_2b_spline_dt6144/val"
+  },
+  "model_variants": {
+    "gemma2_2b_spline_dt6144_r5b": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gemma2_2b_spline_dt6144_r5b",
+    "baseline_variant": "gemma2_2b_spline_dt6144_r5b"
+  }
+}

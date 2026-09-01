@@ -1,0 +1,22 @@
+# Llama-3.1-8B — Llama Scope style TopK SAE (1-layer probe)
+# Baseline: OpenMOSS Llama-Scope + github.com/OpenMOSS/Language-Model-SAEs
+
+model_name: meta-llama/Llama-3.1-8B
+d_model: 4096
+hook_name: blocks.16.hook_resid_post
+layer: 16
+d_sae: 32768                          # 8x expansion (Llama Scope LXR-8x)
+encoder_type: linear
+activation: topk
+topk_k: 50                            # placeholder — copy from published cfg
+lambda_sparsity: 0.0                  # TopK carries sparsity; L1 optional
+lambda_nl_gap: 0.0
+learning_rate: 3.0e-4
+n_steps: 20000
+batch_tokens: 2048
+seq_len: 1024
+dataset: cerebras/SlimPajama-627B
+seed: 101
+notes: >
+  Also train a JumpReLU linear control at matched L0 so TopK vs encoder effects
+  are not confounded when swapping to KAN.

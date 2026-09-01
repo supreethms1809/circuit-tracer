@@ -24,10 +24,94 @@ from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 from transformers import Adafactor
 
+from spline_clt.kan_encoder import kan_linear_from_encoder, unwrap_encoder_module
 from spline_clt.kan_transcoder import KANCrossLayerTranscoder, load_spline_clt
 from spline_clt.seed import make_generator, seed_everything
 from spline_clt.training.data import ActivationDataset
 from spline_clt.training.loss import compute_losses, total_loss
+
+
+def _is_fsdp_module(module: torch.nn.Module) -> bool:
+    try:
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+        return isinstance(module, FSDP)
+    except ImportError:
+        return False
+
+
+@contextlib.contextmanager
+def _summon_nested_encoders(
+    model_for_train: torch.nn.Module,
+    base_model: KANCrossLayerTranscoder,
+    *,
+    writeback: bool,
+    rank0_only: bool,
+):
+    """Summon outer FSDP and any nested per-encoder FSDP units.
+
+    Nested KAN encoders are FSDP *children* of the outer wrap (not
+    ``ignored_modules``). Summoning each child and then the outer with default
+    ``recurse=True`` double-unshards the children and raises::
+
+        AssertionError: Cannot manually unshard parameters when already
+        unsharding parameters
+
+    So when nested encoder FSDP units exist, summon children first, then the
+    outer with ``recurse=False``. Replicated KAN (ignored, non-FSDP) only needs
+    the outer summon — encoder weights are already full on every rank.
+    """
+    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+    nested_encoders = [
+        enc
+        for enc in (base_model.encoders if base_model.encoder_type == "kan" else [])
+        if _is_fsdp_module(enc)
+    ]
+    with contextlib.ExitStack() as stack:
+        for enc in nested_encoders:
+            stack.enter_context(
+                FSDP.summon_full_params(
+                    enc, writeback=writeback, rank0_only=rank0_only
+                )
+            )
+        if _is_fsdp_module(model_for_train):
+            stack.enter_context(
+                FSDP.summon_full_params(
+                    model_for_train,
+                    writeback=writeback,
+                    rank0_only=rank0_only,
+                    # Avoid re-entering nested encoder summons opened above.
+                    recurse=not nested_encoders,
+                )
+            )
+        yield
+
+
+def _assert_optimizer_groups_survive_wrap(
+    optimizer: torch.optim.Optimizer,
+    *,
+    expect_threshold: bool,
+    expect_spline_mult: bool,
+) -> None:
+    """Fail loudly if FSDP wrapping swallowed dedicated AdamW groups."""
+    has_threshold = any(
+        float(pg.get("eps", 1e-8)) < 1e-12 for pg in optimizer.param_groups
+    )
+    has_spline = any(
+        abs(float(pg.get("lr_mult", 1.0)) - 1.0) > 1e-12
+        for pg in optimizer.param_groups
+    )
+    if expect_threshold and not has_threshold:
+        raise RuntimeError(
+            "JumpReLU threshold AdamW group missing after FSDP wrap "
+            "(use_orig_params=True required on outer FSDP)."
+        )
+    if expect_spline_mult and not has_spline:
+        raise RuntimeError(
+            "lr_spline_mult AdamW group missing after FSDP wrap "
+            "(use_orig_params=True required on inner encoder FSDP)."
+        )
 
 
 @dataclass
@@ -45,7 +129,48 @@ class TrainConfig:
     #: (stored internally as log θ; see KANCrossLayerTranscoder.__init__). The
     #: threshold is reparametrized as θ = exp(log θ) > 0 so it can never drift
     #: negative and invert the sparsity penalty; log(threshold_init) is the init.
-    threshold_init: float = 0.001
+    #: Raised from 0.001: at θ=1e-3 the θ-gradient was ~1e-11 (see
+    #: jumprelu_bandwidth) and JumpReLU was a no-op, so the linear arms never
+    #: sparsified (L0 ~1500/layer/token).
+    threshold_init: float = 0.01
+    #: Half-width of the JumpReLU straight-through-estimator window. Must be on
+    #: the scale of θ. The STE gate is rectangle((x-θ)/bandwidth) and the
+    #: θ-gradient carries a 1/bandwidth factor, so the upstream default of 2 both
+    #: smeared the window over (-1, 1) and shrank dL/dθ. Combined with the
+    #: log-θ parametrization (which adds a second factor of θ, making
+    #: dL/d(log θ) ∝ θ²/bandwidth) this drove the gradient to ~1e-11 — below
+    #: Adam's eps floor, so Adam could not restore scale invariance and θ froze.
+    jumprelu_bandwidth: float = 0.001
+    #: "jump_relu" (default), "base_jump" (KAN: gate on base, mag from base+spline),
+    #: or "relu".
+    activation_function: str = "jump_relu"
+    #: Weight decay for the log-threshold parameter. MUST stay 0: log θ is a gate
+    #: location, not a weight, and decaying it toward 0 pulls θ toward 1. With the
+    #: θ-gradient under the eps floor this decay was the ONLY force moving θ
+    #: (predicted drift matched the observed 0.0497 to within 0.8%).
+    threshold_weight_decay: float = 0.0
+    #: Adam epsilon for the threshold group. The θ-gradient is legitimately tiny
+    #: (~1e-11); the default 1e-8 dominates sqrt(v) and destroys Adam's scale
+    #: invariance exactly where it is needed.
+    threshold_adam_eps: float = 1e-15
+    #: "constant" uses threshold_init. "data_quantile" initializes one shared
+    #: threshold per layer from encoder preactivations so the initial expected
+    #: L0 is threshold_init_target_l0. This is the same native JumpReLU model;
+    #: only its gate initialization changes.
+    threshold_init_strategy: str = "constant"
+    threshold_init_target_l0: float = 32.0
+    threshold_calibration_samples: int = 16
+    threshold_calibration_values_per_sample: int = 32768
+    #: "kaiming" leaves the decoder at its fan_in-normalized init, which fixes
+    #: ‖w_dec‖ ≈ √2 on every model regardless of the base model's output scale.
+    #: "data_scaled" rescales each target layer so ‖ŷ_l‖ ≈ ‖y_l‖ at init.
+    #: Only the initialization changes; the decoder stays linear and unconstrained.
+    #: Needed whenever mean(y²) is far from GPT-2's ~9.6 — Llama-3.2-1B is 0.087,
+    #: which starts training at per-layer FVU ≈ 105 and collapses every read-layer
+    #: to L0 = 0 before it can learn. See calibrate_decoder_scale_from_data.
+    decoder_init_strategy: str = "kaiming"
+    #: Sequences sampled to estimate the per-layer decoder scale.
+    decoder_calibration_samples: int = 16
     #: Standardize the per-layer encoder input by data mean/std before the
     #: encoder. Conditions the B-spline grid and equalizes per-dim scale.
     normalize_inputs: bool = True
@@ -63,10 +188,41 @@ class TrainConfig:
     batch_size: int = 4  # sequences per batch
     lambda_sparsity: float = 0.05
     c_sparsity: float = 1.0
+    #: Linear ramp for the sparsity penalty: lambda_sparsity is scaled by
+    #: min(1, step / sparsity_warmup_steps). 0 (default) disables the ramp and
+    #: reproduces the historical behaviour of full-strength lambda from step 0.
+    #: Rationale: the LR warms up over warmup_steps while lambda did not, so the
+    #: penalty ran at 100% while reconstruction could not yet learn. Its cheapest
+    #: early move was to kill the weakest encoder read-layer -- l0_min_layer
+    #: collapsed 36 -> <1 between steps ~600 and ~1400 while per-layer rel_fro was
+    #: still ~1.0, and never recovered. Set this to warmup_steps to fix.
+    sparsity_warmup_steps: int = 0
+    #: Global step at which cosine decay of λ begins. 0 (default) disables decay
+    #: and holds lambda_sparsity after warmup. When > 0, λ decays from
+    #: lambda_sparsity to lambda_sparsity_final over
+    #: [sparsity_decay_start, total_steps]. Prefer decay_start >= warmup_steps.
+    sparsity_decay_start: int = 0
+    #: Floor for the late cosine λ decay. Ignored when sparsity_decay_start <= 0.
+    #: Use a value < lambda_sparsity (e.g. 0.3× peak) so late training eases
+    #: sparsity pressure without dropping the penalty to zero.
+    lambda_sparsity_final: float = 0.0
+    #: Per-layer L0 floor (active features per layer per token). 0 (default)
+    #: disables it. When > 0, the sparsity penalty is gated off for any layer at
+    #: or below the floor, so it cannot drive a read-layer to zero. See
+    #: spline_clt.training.loss.sparsity_loss for the mechanism and for why the
+    #: lambda warmup ramp (sparsity_warmup_steps) does not fix this.
+    sparsity_l0_floor: float = 0.0
     #: L1 coefficient on KAN spline weights. Was hardcoded to 0.01, which pulled
     #: the spline path toward zero hard enough that the encoder degenerated to its
     #: linear/SiLU base. Ignored when encoder_type == "linear".
     lambda_kan_reg: float = 0.001
+    #: Init scale for KANLinear ``base_weight`` (efficient-kan). Default 1.0.
+    scale_base: float = 1.0
+    #: Init scale for KANLinear spline path / ``spline_scaler``. Default 1.0.
+    scale_spline: float = 1.0
+    #: Multiply B-spline path LR relative to ``learning_rate`` (base path stays 1×).
+    #: Only applies when encoder_type == "kan".
+    lr_spline_mult: float = 1.0
     #: "global": one Σ(ŷ-y)²/Σy² over all layers — each layer is weighted by its
     #: share of ‖y‖², which on gpt2-small is 59% layer 2 (99.5% of that being the
     #: massive-activation dim #447), leaving layers 3-9 unmodelled.
@@ -121,6 +277,11 @@ class TrainConfig:
     #: When True with ``use_fsdp``, offload FSDP-managed parameters to CPU when not in use
     #: (PyTorch ``CPUOffload(offload_params=True)``). Reduces GPU VRAM; increases step latency.
     fsdp_cpu_offload: bool = False
+    #: Nest-FSDP each ``KANEncoder`` as its own fp32 FULL_SHARD unit (outer wrap
+    #: keeps bf16 MixedPrecision for the decoder). Nested FSDP children must not
+    #: be listed in ``ignored_modules`` — PyTorch rejects that. Default False
+    #: keeps the historical fully-replicated encoder path (``ignored_modules``).
+    shard_kan_encoders: bool = False
 
     # Data
     data_dir: str = "data/activations"
@@ -195,10 +356,10 @@ def _save_model_checkpoint(
     is_main_process: bool,
 ) -> None:
     if use_fsdp:
-        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-
         dist.barrier()
-        with FSDP.summon_full_params(model, writeback=False, rank0_only=True):
+        with _summon_nested_encoders(
+            model, base_model, writeback=False, rank0_only=True
+        ):
             if is_main_process:
                 base_model.to_safetensors(save_path)
         dist.barrier()
@@ -265,25 +426,71 @@ def _staging_copy_training_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _fsdp_optim_state_dict_ctx(model_for_train: torch.nn.Module):
-    """Context for rank0-only, CPU-offloaded FSDP optim state dict gather/load.
+def _init_distributed_process_group(*, timeout: timedelta | None = None) -> None:
+    """Initialize the default process group with an explicit CUDA ``device_id``.
 
-    Halves host RAM during chunked-resume by keeping the full optimizer state
-    on rank 0 only. ``optim_state_dict_to_load`` inside this context will
-    broadcast from rank 0 to other ranks during the load, so we don't need to
-    handle the broadcast manually.
+    Without ``device_id``, NCCL guesses the device from the global rank, which
+    warns and can hang under heterogeneous rank→GPU maps. Set the local device
+    first, then pass it into ``init_process_group``.
     """
-    from torch.distributed.fsdp import (
-        FullyShardedDataParallel as FSDP,
-        FullOptimStateDictConfig,
-        StateDictType,
-    )
+    if dist.is_initialized():
+        return
+    backend = "nccl" if torch.cuda.is_available() else "gloo"
+    device_id = None
+    if torch.cuda.is_available():
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        torch.cuda.set_device(local_rank)
+        device_id = torch.device("cuda", local_rank)
+    kwargs: dict[str, Any] = {"backend": backend}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    if device_id is not None:
+        kwargs["device_id"] = device_id
+    dist.init_process_group(**kwargs)
 
-    return FSDP.state_dict_type(
+
+def _gather_fsdp_optimizer_state(
+    model_for_train: torch.nn.Module,
+    optimizer_main: torch.optim.Optimizer,
+) -> dict[str, Any]:
+    """Full optimizer state on rank 0 (CPU-offloaded); empty dict on other ranks.
+
+    Uses ``torch.distributed.checkpoint.state_dict.get_state_dict`` instead of the
+    deprecated ``FSDP.state_dict_type`` / ``FSDP.optim_state_dict`` path.
+    """
+    from torch.distributed.checkpoint.state_dict import StateDictOptions, get_state_dict
+
+    _, optim_sd = get_state_dict(
         model_for_train,
-        StateDictType.FULL_STATE_DICT,
-        optim_state_dict_config=FullOptimStateDictConfig(
-            rank0_only=True, offload_to_cpu=True
+        optimizer_main,
+        options=StateDictOptions(full_state_dict=True, cpu_offload=True),
+    )
+    return optim_sd
+
+
+def _load_fsdp_optimizer_state(
+    model_for_train: torch.nn.Module,
+    optimizer_main: torch.optim.Optimizer,
+    optim_sd: dict[str, Any] | None,
+) -> None:
+    """Load a rank0-only full optimizer state into sharded FSDP Adam.
+
+    Uses ``set_state_dict`` with ``broadcast_from_rank0`` so non-zero ranks
+    receive shards without the deprecated ``FSDP.state_dict_type`` context.
+    Model weights are already restored via safetensors; only the optimizer
+    is loaded here (``strict=False``).
+    """
+    from torch.distributed.checkpoint.state_dict import StateDictOptions, set_state_dict
+
+    set_state_dict(
+        model_for_train,
+        optimizer_main,
+        model_state_dict={},
+        optim_state_dict=optim_sd if optim_sd is not None else {},
+        options=StateDictOptions(
+            full_state_dict=True,
+            broadcast_from_rank0=True,
+            strict=False,
         ),
     )
 
@@ -295,12 +502,12 @@ def _gather_optimizer_state(
     *,
     use_fsdp: bool,
     rank: int,
-) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor] | None]:
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Return (main_sd, local_sd).
 
-    Under FSDP we use ``rank0_only=True``: the full ``main_sd`` lives on rank 0
-    only (CPU-offloaded); non-zero ranks get an empty dict. ``optim_state_dict_to_load``
-    handles the inverse broadcast on resume.
+    Under FSDP we use full+cpu_offload ``get_state_dict``: the full ``main_sd``
+    lives on rank 0 only; non-zero ranks get an empty dict.
+    ``set_state_dict(..., broadcast_from_rank0=True)`` handles the inverse on resume.
 
     ``local_sd`` covers KAN encoder params (replicated, FSDP-ignored). Because
     encoder gradients are explicitly all-reduced each step, the per-rank
@@ -308,10 +515,7 @@ def _gather_optimizer_state(
     rank 0's copy.
     """
     if use_fsdp:
-        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-
-        with _fsdp_optim_state_dict_ctx(model_for_train):
-            main_sd = FSDP.optim_state_dict(model_for_train, optimizer_main)
+        main_sd = _gather_fsdp_optimizer_state(model_for_train, optimizer_main)
     else:
         main_sd = optimizer_main.state_dict()
     if optimizer_local is not None and rank == 0:
@@ -325,27 +529,18 @@ def _load_optimizer_from_training_state(
     model_for_train: torch.nn.Module,
     optimizer_main: torch.optim.Optimizer,
     optimizer_local: torch.optim.Optimizer | None,
-    main_sd: dict[str, torch.Tensor] | None,
-    local_sd: dict[str, torch.Tensor] | None,
+    main_sd: dict[str, Any] | None,
+    local_sd: dict[str, Any] | None,
     *,
     use_fsdp: bool,
     distributed: bool,
 ) -> None:
-    if main_sd is not None or use_fsdp:
-        # Always enter the rank0_only context under FSDP — rank 0 has main_sd,
-        # other ranks have an empty dict and rely on the in-context broadcast.
+    if main_sd is not None:
         if use_fsdp:
-            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-
-            with _fsdp_optim_state_dict_ctx(model_for_train):
-                to_load = FSDP.optim_state_dict_to_load(
-                    model_for_train,
-                    optimizer_main,
-                    main_sd if main_sd is not None else {},
-                )
-            optimizer_main.load_state_dict(to_load)
-            del to_load
-        elif main_sd is not None:
+            # Rank 0 has the full dict; other ranks may have {} and receive
+            # shards via broadcast_from_rank0 inside set_state_dict.
+            _load_fsdp_optimizer_state(model_for_train, optimizer_main, main_sd)
+        else:
             optimizer_main.load_state_dict(main_sd)
     if optimizer_local is not None:
         # Local state lives only on rank 0 in the staged payload; broadcast it
@@ -384,8 +579,7 @@ def _set_lr(optimizers: list[torch.optim.Optimizer | None], lr: float) -> None:
         if opt is None:
             continue
         for pg in opt.param_groups:
-            pg["lr"] = lr
-
+            pg["lr"] = lr * float(pg.get("lr_mult", 1.0))
 
 def _save_training_state(
     *,
@@ -451,10 +645,55 @@ def get_lr(step: int, config: TrainConfig) -> float:
     return config.learning_rate * 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
+def sparsity_lambda_at_step(
+    step: int,
+    *,
+    lambda_sparsity: float,
+    total_steps: int,
+    sparsity_warmup_steps: int = 0,
+    sparsity_decay_start: int = 0,
+    lambda_sparsity_final: float = 0.0,
+) -> float:
+    """Sparsity coefficient schedule: linear warmup → hold → optional cosine decay.
+
+    - ``sparsity_warmup_steps <= 0``: start at full ``lambda_sparsity`` (no ramp).
+    - ``sparsity_decay_start <= 0``: hold peak after warmup (no decay).
+    - Otherwise cosine-decay from peak to ``lambda_sparsity_final`` on
+      ``[decay_start, total_steps]``.
+
+    ``lambda_sparsity`` is the peak / maximum; the final floor should be ≤ peak.
+    """
+    peak = float(lambda_sparsity)
+    if sparsity_warmup_steps > 0 and step < sparsity_warmup_steps:
+        return peak * (step / sparsity_warmup_steps)
+
+    if sparsity_decay_start <= 0 or step < sparsity_decay_start:
+        return peak
+
+    floor = float(lambda_sparsity_final)
+    denom = max(1, int(total_steps) - int(sparsity_decay_start))
+    progress = min(1.0, max(0.0, (step - sparsity_decay_start) / denom))
+    # Cosine from peak → floor (progress 0 → 1).
+    return floor + 0.5 * (peak - floor) * (1.0 + math.cos(math.pi * progress))
+
+
+def get_lambda_sparsity(step: int, config: TrainConfig) -> float:
+    """Sparsity coefficient at ``step`` from ``TrainConfig`` schedule fields."""
+    return sparsity_lambda_at_step(
+        step,
+        lambda_sparsity=config.lambda_sparsity,
+        total_steps=config.total_steps,
+        sparsity_warmup_steps=config.sparsity_warmup_steps,
+        sparsity_decay_start=config.sparsity_decay_start,
+        lambda_sparsity_final=config.lambda_sparsity_final,
+    )
+
+
 def create_optimizer(
     params,
     config: TrainConfig,
     lr: float,
+    threshold_params: list[torch.nn.Parameter] | None = None,
 ) -> torch.optim.Optimizer:
     """Build optimizer according to config.
 
@@ -463,8 +702,40 @@ def create_optimizer(
     """
     params = list(params)
     if config.optimizer == "adamw":
+        # The JumpReLU log-threshold needs its own group: no weight decay (it is
+        # a gate location, not a weight) and a much smaller eps (its gradient is
+        # legitimately ~1e-11, and the default 1e-8 dominates sqrt(v) and kills
+        # Adam's scale invariance). Grouping is by identity so it survives any
+        # ordering of `params`.
+        threshold_ids = {id(p) for p in threshold_params or []}
+        decayed = [p for p in params if id(p) not in threshold_ids]
+        thresholds = [p for p in params if id(p) in threshold_ids]
+        if threshold_ids and len(thresholds) != len(threshold_ids):
+            raise RuntimeError(
+                "JumpReLU threshold parameters were not preserved in the optimizer "
+                "parameter list. Under FSDP this means the thresholds were flattened "
+                "into a shared parameter, so threshold_weight_decay/threshold_adam_eps "
+                "would silently be ignored. Construct FSDP with use_orig_params=True."
+            )
+        groups: list[dict] = [
+            {
+                "params": decayed,
+                "weight_decay": config.weight_decay,
+                "eps": 1e-8,
+                "lr_mult": 1.0,
+            }
+        ]
+        if thresholds:
+            groups.append(
+                {
+                    "params": thresholds,
+                    "weight_decay": config.threshold_weight_decay,
+                    "eps": config.threshold_adam_eps,
+                    "lr_mult": 1.0,
+                }
+            )
         return torch.optim.AdamW(
-            params,
+            groups,
             lr=lr,
             weight_decay=config.weight_decay,
             betas=(config.adam_beta1, config.adam_beta2),
@@ -481,6 +752,215 @@ def create_optimizer(
     raise ValueError(f"Unsupported optimizer: {config.optimizer}")
 
 
+@torch.no_grad()
+def initialize_thresholds_from_data(
+    model: KANCrossLayerTranscoder,
+    dataset: ActivationDataset,
+    *,
+    target_l0: float,
+    n_sequences: int,
+    values_per_sample: int,
+    seed: int,
+) -> torch.Tensor:
+    """Set one JumpReLU threshold per layer from a preactivation quantile.
+
+    The sampled quantile is ``1 - target_l0 / d_transcoder`` because L0 is the
+    number of active features per layer and token. Sampling flattened
+    (position, feature) entries estimates that layer-wide activation rate
+    without materializing the full calibration tensor.
+    """
+    if not 0.0 < target_l0 < model.d_transcoder:
+        raise ValueError(
+            f"threshold_init_target_l0 must be in (0, {model.d_transcoder}), "
+            f"got {target_l0}."
+        )
+    if n_sequences <= 0 or values_per_sample <= 0:
+        raise ValueError(
+            "threshold calibration sample counts must both be positive."
+        )
+
+    n_sequences = min(n_sequences, len(dataset))
+    dataset_indices = torch.randperm(
+        len(dataset), generator=make_generator(seed)
+    )[:n_sequences].tolist()
+    device = model.b_dec.device
+    value_generator = torch.Generator(device=device).manual_seed(seed + 1)
+    sampled_values: list[list[torch.Tensor]] = [
+        [] for _ in range(model.n_layers)
+    ]
+
+    for dataset_index in dataset_indices:
+        x = dataset[dataset_index]["mlp_inputs"].to(
+            device=device, dtype=model.b_dec.dtype
+        )
+        for layer_id in range(model.n_layers):
+            preactivations = model.encode_layer(
+                x[layer_id],
+                layer_id,
+                apply_activation_function=False,
+            ).flatten()
+            n_values = min(values_per_sample, preactivations.numel())
+            value_indices = torch.randint(
+                preactivations.numel(),
+                (n_values,),
+                generator=value_generator,
+                device=device,
+            )
+            sampled_values[layer_id].append(
+                preactivations[value_indices].float().cpu()
+            )
+
+    quantile = 1.0 - target_l0 / model.d_transcoder
+    layer_thresholds = torch.stack(
+        [
+            torch.quantile(torch.cat(layer_values), quantile)
+            for layer_values in sampled_values
+        ]
+    ).clamp_min(1e-6)
+    log_thresholds = layer_thresholds.log().to(
+        device=device, dtype=model.activation_function.threshold.dtype
+    )
+    model.activation_function.threshold.copy_(
+        log_thresholds[:, None, None].expand_as(
+            model.activation_function.threshold
+        )
+    )
+    return layer_thresholds
+
+
+@torch.no_grad()
+def calibrate_decoder_scale_from_data(
+    model: KANCrossLayerTranscoder,
+    dataset: ActivationDataset,
+    *,
+    n_sequences: int,
+    seed: int,
+    min_scale: float = 1e-4,
+    max_scale: float = 1e4,
+) -> torch.Tensor:
+    """Rescale the decoder so ``‖ŷ_l‖ ≈ ‖y_l‖`` at init, one factor per layer.
+
+    ``_init_decoder_weights`` normalizes by ``fan_in = d_model``, giving
+    ‖w_dec‖ ≈ √2 on every base model regardless of how large that model's MLP
+    outputs actually are. Encoder *inputs* get normalized via ``enc_input_std``;
+    the *targets* never do. So the initial ‖ŷ‖/‖y‖ ratio is set entirely by the
+    base model's output scale, and that scale varies enormously — measured
+    ``mean(y²)`` is 0.087 for Llama-3.2-1B against 9.58 for GPT-2 small, a 110×
+    spread in energy (10.5× in norm).
+
+    GPT-2 and Qwen land near ‖ŷ‖/‖y‖ ≈ 1 by luck and start at per-layer FVU ≈
+    1.7–7.6. Llama starts ~10× hot, at per-layer FVU ≈ 105, and the fastest way
+    down is to shrink ŷ toward zero — which drags preactivations under the
+    JumpReLU threshold. ``(x > θ)`` yields zero gradient, so a read-layer that
+    fully switches off can never come back: job 8561 ran ``l0_min_layer``
+    12.8 → 0.0 by step 480 and never recovered, while GPT-2 (dip to 0.56) and
+    Qwen (dip to 0.17) both did. Gemma3-1B has the same bug inverted
+    (``mean(y²)`` ≈ 2804 ⇒ ŷ far too small).
+
+    Matching ‖ŷ_l‖ to ‖y_l‖ removes the overshoot on any base model with no
+    per-model tuning. Because ŷ is random and roughly orthogonal to y at init,
+    the resulting per-layer FVU is ≈ 2 (``rel_fro`` ≈ 1.4) — the range GPT-2
+    trains from today.
+
+    Must run *after* input normalization and threshold calibration: ŷ depends on
+    both. Deterministic and seeded, so every rank computes the same factors
+    before the FSDP wrap.
+
+    Encode/decode here run at ``model.b_dec.dtype``, which ``build_session`` sets
+    to fp32 whenever ``use_fsdp`` is on. On a non-FSDP bf16 build the sums are
+    accumulated from bf16 activations; only the *ratio* is used, so this stays
+    well inside range, but the fp32 path is the one that is exercised.
+
+    Args:
+        model: Freshly initialized transcoder, already on the target device.
+        dataset: Activation dataset to sample ``mlp_inputs``/``mlp_outputs`` from.
+        n_sequences: Number of sequences to average the layer norms over.
+        seed: Base seed for the sequence sample.
+        min_scale: Lower clamp on a layer's scale factor.
+        max_scale: Upper clamp on a layer's scale factor.
+
+    Returns:
+        The per-layer scale factors applied, shape ``(n_layers,)`` on CPU.
+    """
+    if n_sequences <= 0:
+        raise ValueError("decoder_calibration_samples must be positive.")
+
+    n_sequences = min(n_sequences, len(dataset))
+    dataset_indices = torch.randperm(
+        len(dataset), generator=make_generator(seed + 2)
+    )[:n_sequences].tolist()
+
+    device = model.b_dec.device
+    weight_dtype = model.b_dec.dtype
+    sumsq_hat = torch.zeros(model.n_layers, dtype=torch.float64, device=device)
+    sumsq_true = torch.zeros(model.n_layers, dtype=torch.float64, device=device)
+
+    for dataset_index in dataset_indices:
+        sample = dataset[dataset_index]
+        x = sample["mlp_inputs"].to(device=device, dtype=weight_dtype)
+        y = sample["mlp_outputs"].to(device=device, dtype=weight_dtype)
+        activations = model.encode(x)
+        y_hat = model.decode_dense(activations, input_acts=x)
+        sumsq_hat += (y_hat.double() ** 2).sum(dim=(1, 2))
+        sumsq_true += (y.double() ** 2).sum(dim=(1, 2))
+        del activations, y_hat
+
+    # A layer with no active feature at init contributes ŷ_l = b_dec = 0; leave
+    # it alone rather than dividing by zero. Threshold calibration should make
+    # this unreachable, but a silent inf here would poison every decoder block.
+    scales = torch.ones(model.n_layers, dtype=torch.float64, device=device)
+    usable = sumsq_hat > 0
+    scales[usable] = (sumsq_true[usable] / sumsq_hat[usable]).sqrt()
+    scales = scales.clamp(min_scale, max_scale).float().cpu()
+
+    model.scale_decoder_per_target_layer(scales)
+    return scales
+
+
+@torch.no_grad()
+def _threshold_metrics(
+    model: KANCrossLayerTranscoder,
+    *,
+    distributed: bool,
+    device: torch.device,
+) -> dict[str, float]:
+    """Compute exact effective-threshold statistics from local FSDP shards."""
+    local_log_threshold = (
+        model.activation_function.threshold.detach().reshape(-1).float()
+    )
+    if distributed:
+        local_size = torch.tensor(
+            [local_log_threshold.numel()],
+            device=device,
+            dtype=torch.int64,
+        )
+        sizes = [torch.zeros_like(local_size) for _ in range(dist.get_world_size())]
+        dist.all_gather(sizes, local_size)
+        max_size = max(int(size.item()) for size in sizes)
+        padded = torch.zeros(max_size, device=device, dtype=torch.float32)
+        if local_log_threshold.numel():
+            padded[: local_log_threshold.numel()].copy_(
+                local_log_threshold.to(device)
+            )
+        gathered = [torch.empty_like(padded) for _ in sizes]
+        dist.all_gather(gathered, padded)
+        log_threshold = torch.cat(
+            [
+                shard[: int(size.item())]
+                for shard, size in zip(gathered, sizes, strict=True)
+            ]
+        )
+    else:
+        log_threshold = local_log_threshold
+
+    threshold = log_threshold.exp()
+    return {
+        "stats/threshold_mean": threshold.mean().item(),
+        "stats/threshold_median": threshold.median().item(),
+        "stats/threshold_max": threshold.max().item(),
+    }
+
+
 def _build_optimizers(
     model: KANCrossLayerTranscoder,
     model_for_train: torch.nn.Module,
@@ -489,23 +969,131 @@ def _build_optimizers(
 ) -> tuple[torch.optim.Optimizer, torch.optim.Optimizer | None]:
     """Build (optimizer_main, optimizer_local).
 
-    For ``encoder_type == "kan"`` the encoder params (replicated, fp32,
-    FSDP-ignored) are split into a separate optimizer so their Adam state
-    can be saved/restored across chunk boundaries without going through
-    FSDP's optim_state_dict (which only covers FSDP-managed params). Also
-    makes the grid-update optimizer reset narrower (decoder Adam state is
-    preserved across grid updates).
+    For ``encoder_type == "kan"`` with replicated (FSDP-ignored) encoders the
+    encoder params are split into ``optimizer_local`` so their Adam state can be
+    saved without going through FSDP's optim state-dict APIs.
+
+    When ``shard_kan_encoders`` is True, encoders are inner-FSDP units and all
+    params share one optimizer (FSDP-managed), with ``use_orig_params`` identity
+    groups for threshold / base / spline (``lr_spline_mult``).
     """
+    threshold_params = [
+        p
+        for p in getattr(model.activation_function, "parameters", list)()
+        if isinstance(p, torch.nn.Parameter)
+    ]
+    expect_threshold = bool(threshold_params) and config.optimizer == "adamw"
+
+    if config.encoder_type == "kan" and config.shard_kan_encoders:
+        base_params: list[torch.nn.Parameter] = []
+        spline_params: list[torch.nn.Parameter] = []
+        for enc in model.encoders:
+            kl = kan_linear_from_encoder(enc)
+            base_params.append(kl.base_weight)
+            spline_params.append(kl.spline_weight)
+            if getattr(kl, "enable_standalone_scale_spline", False):
+                spline_params.append(kl.spline_scaler)
+        special_ids = {id(p) for p in base_params + spline_params + threshold_params}
+        other_params = [
+            p for p in model_for_train.parameters() if id(p) not in special_ids
+        ]
+        if config.optimizer != "adamw":
+            raise ValueError(
+                "shard_kan_encoders currently requires optimizer='adamw' "
+                "(param groups for lr_spline_mult / threshold)."
+            )
+        groups: list[dict] = [
+            {
+                "params": other_params + base_params,
+                "weight_decay": config.weight_decay,
+                "eps": 1e-8,
+                "lr_mult": 1.0,
+            },
+        ]
+        if abs(config.lr_spline_mult - 1.0) > 1e-12:
+            groups.append(
+                {
+                    "params": spline_params,
+                    "weight_decay": config.weight_decay,
+                    "eps": 1e-8,
+                    "lr_mult": float(config.lr_spline_mult),
+                }
+            )
+        else:
+            groups[0]["params"] = other_params + base_params + spline_params
+        if threshold_params:
+            groups.append(
+                {
+                    "params": threshold_params,
+                    "weight_decay": config.threshold_weight_decay,
+                    "eps": config.threshold_adam_eps,
+                    "lr_mult": 1.0,
+                }
+            )
+        optimizer_main = torch.optim.AdamW(
+            groups,
+            lr=lr,
+            weight_decay=config.weight_decay,
+            betas=(config.adam_beta1, config.adam_beta2),
+        )
+        _assert_optimizer_groups_survive_wrap(
+            optimizer_main,
+            expect_threshold=expect_threshold,
+            expect_spline_mult=abs(config.lr_spline_mult - 1.0) > 1e-12,
+        )
+        return optimizer_main, None
+
     if config.encoder_type == "kan":
         encoder_params = list(model.encoders.parameters())
         encoder_ids = {id(p) for p in encoder_params}
         other_params = [
             p for p in model_for_train.parameters() if id(p) not in encoder_ids
         ]
-        optimizer_main = create_optimizer(other_params, config, lr=lr)
-        optimizer_local = create_optimizer(encoder_params, config, lr=lr)
+        optimizer_main = create_optimizer(
+            other_params, config, lr=lr, threshold_params=threshold_params
+        )
+        if abs(config.lr_spline_mult - 1.0) > 1e-12:
+            base_params = []
+            spline_params = []
+            for enc in model.encoders:
+                kl = kan_linear_from_encoder(enc)
+                base_params.append(kl.base_weight)
+                spline_params.append(kl.spline_weight)
+                if getattr(kl, "enable_standalone_scale_spline", False):
+                    spline_params.append(kl.spline_scaler)
+            optimizer_local = torch.optim.AdamW(
+                [
+                    {
+                        "params": base_params,
+                        "lr": lr,
+                        "lr_mult": 1.0,
+                        "weight_decay": config.weight_decay,
+                        "eps": 1e-8,
+                    },
+                    {
+                        "params": spline_params,
+                        "lr": lr * config.lr_spline_mult,
+                        "lr_mult": float(config.lr_spline_mult),
+                        "weight_decay": config.weight_decay,
+                        "eps": 1e-8,
+                    },
+                ],
+                lr=lr,
+                weight_decay=config.weight_decay,
+                betas=(config.adam_beta1, config.adam_beta2),
+            )
+        else:
+            optimizer_local = create_optimizer(encoder_params, config, lr=lr)
         return optimizer_main, optimizer_local
-    return create_optimizer(model_for_train.parameters(), config, lr=lr), None
+    return (
+        create_optimizer(
+            model_for_train.parameters(),
+            config,
+            lr=lr,
+            threshold_params=threshold_params,
+        ),
+        None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -566,14 +1154,14 @@ def _shutdown_requested_global(distributed: bool, device: torch.device) -> bool:
 
 @dataclass
 class TrainSession:
-    """Persistent per-job training state for build-once chunked training.
+    """Per-job training state for chunked FSDP training.
 
-    Built once via :func:`build_session` and reused across :func:`run_chunk`
-    calls so the model + FSDP wrapper + optimizers + wandb run are NOT rebuilt
-    every chunk — the per-chunk rebuild is what made GPU memory grow ~12 GB per
-    chunk until the card saturated and steps thrashed. Mutable fields
-    (optimizers, ``global_step``, ``best_val_loss``, pending optimizer state,
-    NaN counter) are written back by :func:`run_chunk` each chunk.
+    Built via :func:`build_session` and driven by :func:`run_chunk`. Between
+    activation-collect boundaries the paper runner calls
+    :func:`release_session_gpu` so the base LM can own the GPUs, then rebuilds
+    from ``cpu_resume`` / ``training_state.pt``. Mutable fields (optimizers,
+    ``global_step``, ``best_val_loss``, pending optimizer state, NaN counter)
+    are written back by :func:`run_chunk` each chunk.
     """
 
     config: TrainConfig
@@ -718,19 +1306,32 @@ def build_session(
     resume_payload: dict[str, Any] | None = None,
     norm_dataset: ActivationDataset | None = None,
 ) -> TrainSession:
-    """Build model + FSDP wrap + optimizers + wandb run ONCE per job.
+    """Build model + FSDP wrap + optimizers + wandb run.
 
-    The chunked paper runner calls this once and then :func:`run_chunk` per
-    chunk, so the heavy objects are not rebuilt each chunk. On a cold start
-    (no ``resume_payload`` / no on-disk ``training_state.pt``) and when
-    ``config.normalize_inputs`` is set, ``norm_dataset`` is required to estimate
-    input normalization before the FSDP wrap. On resume, normalization is loaded
-    from the checkpoint and ``norm_dataset`` is unused.
+    The chunked paper runner rebuilds after each mid-run
+    :func:`release_session_gpu` (so base-LM collect can use the GPUs), resuming
+    from ``resume_payload`` / on-disk ``training_state.pt``. On a cold start
+    (no ``resume_payload`` / no on-disk state) and when ``config.normalize_inputs``
+    is set, ``norm_dataset`` is required to estimate input normalization before
+    the FSDP wrap. On resume, normalization is loaded from the checkpoint and
+    ``norm_dataset`` is unused.
 
     The on-disk checkpoint format read here (``training_state.pt`` + the
     safetensors model dir) is identical to the legacy per-chunk path, so existing
     runs resume unchanged.
     """
+    if config.threshold_init_strategy not in {"constant", "data_quantile"}:
+        raise ValueError(
+            "threshold_init_strategy must be 'constant' or 'data_quantile', "
+            f"got {config.threshold_init_strategy!r}."
+        )
+    # Fail loudly: an unrecognized value would silently fall through to the
+    # uncalibrated kaiming init, which is exactly the job-8561 collapse.
+    if config.decoder_init_strategy not in {"kaiming", "data_scaled"}:
+        raise ValueError(
+            "decoder_init_strategy must be 'kaiming' or 'data_scaled', "
+            f"got {config.decoder_init_strategy!r}."
+        )
     rank, world_size, local_rank = _distributed_env()
     distributed = world_size > 1
     _enable_tf32(config, _is_main_process(rank))
@@ -745,9 +1346,12 @@ def build_session(
         )
     if config.fsdp_cpu_offload and not config.use_fsdp:
         raise ValueError("fsdp_cpu_offload=True requires use_fsdp=True.")
+    if config.shard_kan_encoders and not config.use_fsdp:
+        raise ValueError("shard_kan_encoders=True requires use_fsdp=True.")
+    if config.shard_kan_encoders and config.encoder_type != "kan":
+        raise ValueError("shard_kan_encoders=True requires encoder_type='kan'.")
     if distributed and not dist.is_initialized():
-        backend = "nccl" if torch.cuda.is_available() else "gloo"
-        dist.init_process_group(backend=backend, timeout=timedelta(hours=4))
+        _init_distributed_process_group(timeout=timedelta(hours=4))
 
     device = _resolve_device(config, distributed, local_rank)
     if device.type == "cuda":
@@ -786,10 +1390,13 @@ def build_session(
         encoder_type=config.encoder_type,
         grid_size=config.grid_size,
         spline_order=config.spline_order,
-        activation_function="jump_relu",
+        activation_function=config.activation_function,
         threshold_init=config.threshold_init,
+        jumprelu_bandwidth=config.jumprelu_bandwidth,
         device=device,
         dtype=model_build_dtype,
+        scale_base=config.scale_base,
+        scale_spline=config.scale_spline,
     )
 
     if training_pkg is not None:
@@ -831,6 +1438,60 @@ def build_session(
                 f"std range [{norm_std.min():.3g}, {norm_std.max():.3g}])"
             )
 
+    if training_pkg is None and config.threshold_init_strategy == "data_quantile":
+        if norm_dataset is None:
+            raise ValueError(
+                "build_session(norm_dataset=...) is required on a cold start when "
+                "threshold_init_strategy='data_quantile'."
+            )
+        if is_main_process:
+            print(
+                f"[train] Calibrating JumpReLU thresholds for initial "
+                f"L0={config.threshold_init_target_l0:g} from "
+                f"{config.threshold_calibration_samples} sequences..."
+            )
+        layer_thresholds = initialize_thresholds_from_data(
+            model,
+            norm_dataset,
+            target_l0=config.threshold_init_target_l0,
+            n_sequences=config.threshold_calibration_samples,
+            values_per_sample=config.threshold_calibration_values_per_sample,
+            seed=config.seed,
+        )
+        if is_main_process:
+            print(
+                "[train] JumpReLU layer thresholds initialized to "
+                f"range [{layer_thresholds.min():.4g}, "
+                f"{layer_thresholds.max():.4g}] "
+                f"(median {layer_thresholds.median():.4g})."
+            )
+
+    # Strictly after input normalization and threshold calibration: ŷ depends on
+    # both. Also strictly before the FSDP wrap, so W_dec is still unsharded.
+    if training_pkg is None and config.decoder_init_strategy == "data_scaled":
+        if norm_dataset is None:
+            raise ValueError(
+                "build_session(norm_dataset=...) is required on a cold start when "
+                "decoder_init_strategy='data_scaled'."
+            )
+        if is_main_process:
+            print(
+                f"[train] Calibrating decoder scale to match per-layer ‖y‖ from "
+                f"{config.decoder_calibration_samples} sequences..."
+            )
+        decoder_scales = calibrate_decoder_scale_from_data(
+            model,
+            norm_dataset,
+            n_sequences=config.decoder_calibration_samples,
+            seed=config.seed,
+        )
+        if is_main_process:
+            print(
+                "[train] Decoder scale factors in range "
+                f"[{decoder_scales.min():.4g}, {decoder_scales.max():.4g}] "
+                f"(median {decoder_scales.median():.4g})."
+            )
+
     model_for_train: torch.nn.Module = model
     if config.use_fsdp:
         from torch.distributed.fsdp import (
@@ -852,9 +1513,44 @@ def build_session(
                 reduce_dtype=torch.float32,
                 buffer_dtype=torch.float32,
             )
-        # KAN encoders are intentionally kept in fp32 for numerical stability.
-        # Exclude them from FSDP flattening to avoid mixed-dtype flat parameter errors.
-        ignored_modules = list(model.encoders) if config.encoder_type == "kan" else None
+        # KAN encoders stay fp32 (B-spline grid). Nested shard wraps each encoder
+        # as its own fp32 FSDP unit first; the outer wrap then owns the decoder.
+        # Do NOT put those inner FSDP modules in ``ignored_modules`` — PyTorch
+        # raises ``ValueError: ignored_modules should not include FSDP modules``.
+        # Nested FSDP children are excluded from the parent FlatParameter
+        # automatically and keep their own (None / fp32) MixedPrecision policy.
+        # Replicated (non-nested) KAN still uses ignored_modules so the outer
+        # bf16 MP policy never flattens the fp32 encoders.
+        shard_kan = config.shard_kan_encoders and config.encoder_type == "kan"
+        if shard_kan:
+            if is_main_process:
+                print(
+                    "[train] Nested FSDP: sharding each KANEncoder (fp32, "
+                    "use_orig_params=True); outer wrap keeps bf16 MixedPrecision "
+                    "for the decoder."
+                )
+            for i, enc in enumerate(model.encoders):
+                model.encoders[i] = FSDP(
+                    enc,
+                    sharding_strategy=ShardingStrategy.FULL_SHARD,
+                    mixed_precision=None,
+                    device_id=device if device.type == "cuda" else None,
+                    cpu_offload=(
+                        CPUOffload(offload_params=True)
+                        if config.fsdp_cpu_offload
+                        else None
+                    ),
+                    use_orig_params=True,
+                )
+        elif config.shard_kan_encoders and config.encoder_type != "kan":
+            raise ValueError(
+                "shard_kan_encoders=True requires encoder_type='kan'"
+            )
+        ignored_modules = (
+            list(model.encoders)
+            if config.encoder_type == "kan" and not shard_kan
+            else None
+        )
         cpu_offload = CPUOffload(offload_params=True) if config.fsdp_cpu_offload else None
         model_for_train = FSDP(
             model,
@@ -863,6 +1559,12 @@ def build_session(
             ignored_modules=ignored_modules,
             device_id=device if device.type == "cuda" else None,
             cpu_offload=cpu_offload,
+            # Thresholds require different AdamW hyperparameters from weights.
+            # With FSDP's default parameter flattening, log θ is merged into a
+            # shared FlatParameter and silently receives the main group's
+            # weight_decay=0.01 / eps=1e-8. Preserve original Parameters so the
+            # no-decay / small-eps threshold group survives FSDP wrapping.
+            use_orig_params=True,
         )
 
     # Optimizer (NOT LBFGS — doesn't scale)
@@ -873,9 +1575,11 @@ def build_session(
         list(model.encoders.parameters()) if config.encoder_type == "kan" else []
     )
     encoder_id_set = {id(p) for p in encoder_params}
-    # KAN encoders are FSDP-ignored so FSDP doesn't all-reduce their grads.
-    # Single-GPU has nothing to reduce. Only the FSDP path needs the explicit sync.
-    encoder_needs_manual_reduce = bool(encoder_params) and config.use_fsdp
+    # Manual encoder grad all-reduce only when KAN encoders are FSDP-ignored /
+    # replicated. Nested-sharded encoders get FSDP reduce-scatter instead.
+    encoder_needs_manual_reduce = (
+        bool(encoder_params) and config.use_fsdp and not config.shard_kan_encoders
+    )
     # Defer restoring optimizer state until after the first backward when resuming.
     # Loading Adam buffers before forward overlaps FSDP's temporary full-param unshard
     # (~10+ GiB) with optimizer state GPU memory; cold starts avoid that peak because
@@ -888,8 +1592,16 @@ def build_session(
             pending_optimizer_sd = osd
         local_osd = training_pkg.get("optimizer_local_state_dict")
         if local_osd is not None:
-            pending_optimizer_local_sd = local_osd
-        elif config.encoder_type == "kan" and is_main_process:
+            if config.shard_kan_encoders:
+                if is_main_process:
+                    print(
+                        "[train] WARNING: resume payload has optimizer_local_state_dict "
+                        "but shard_kan_encoders=True uses a single FSDP optimizer; "
+                        "ignoring local encoder Adam state (cold-start encoder moments)."
+                    )
+            else:
+                pending_optimizer_local_sd = local_osd
+        elif config.encoder_type == "kan" and is_main_process and not config.shard_kan_encoders:
             print(
                 "[train] WARNING: resume payload has no optimizer_local_state_dict; "
                 "KAN encoder Adam state will start fresh. This is expected only when "
@@ -1091,12 +1803,34 @@ def run_chunk(
 
     _bump_sampler_epoch()
 
+    span = max(0, upper_bound - step)
     if is_main_process and config.chunk_stop_step is not None:
-        span = max(0, upper_bound - step)
         print(
             f"[train] Chunk LR segment: global steps step ∈ [{step}, {upper_bound}) "
             f"({span} optimizer steps; total_steps={config.total_steps})"
         )
+
+    # Zero-step chunks (resume past chunk_stop): never summon/save. Nested FSDP
+    # may not have run lazy_init yet, so end-of-chunk summon raises
+    # "Non-root FSDP instance's _is_root should not have been set yet".
+    # Return None so the runner updates chunk_index / corpus cursors on the
+    # existing training_state.pt without rewriting a stripped payload.
+    if span == 0:
+        if is_main_process:
+            print(
+                "[train] Skipping end-of-chunk checkpoint "
+                "(0 optimizer steps in this chunk)."
+            )
+        session.global_step = step
+        session.best_val_loss = best_val_loss
+        session.optimizer = optimizer
+        session.optimizer_local = optimizer_local
+        session.n_nan_consecutive = n_nan_consecutive
+        session.pending_optimizer_sd = pending_optimizer_sd
+        session.pending_optimizer_local_sd = pending_optimizer_local_sd
+        if distributed and dist.is_initialized():
+            dist.barrier()
+        return None, False
 
     pbar = tqdm(
         total=config.total_steps,
@@ -1144,6 +1878,7 @@ def run_chunk(
 
         # Update learning rate
         lr = get_lr(step, config)
+        lambda_sp = get_lambda_sparsity(step, config)
         _set_lr([optimizer, optimizer_local], lr)
 
         # Forward + loss
@@ -1163,23 +1898,25 @@ def run_chunk(
             activations, y_hat, dec_norms = model_for_train(x_in)
             loss, metrics = compute_losses(
                 activations, y_hat, dec_norms, model, y_true,
-                lambda_sparsity=config.lambda_sparsity,
+                lambda_sparsity=lambda_sp,
                 c_sparsity=config.c_sparsity,
                 lambda_kan_reg=config.lambda_kan_reg,
                 compute_metrics=want_metrics,
                 recon_per_layer=recon_per_layer,
                 sparsity_per_layer_mean=sparsity_per_layer_mean,
+                sparsity_l0_floor=config.sparsity_l0_floor,
                 recon_layer_energy_beta=config.recon_layer_energy_beta,
             )
         else:
             loss, metrics = total_loss(
                 model_for_train, x_in, y_true,
-                lambda_sparsity=config.lambda_sparsity,
+                lambda_sparsity=lambda_sp,
                 c_sparsity=config.c_sparsity,
                 lambda_kan_reg=config.lambda_kan_reg,
                 compute_metrics=want_metrics,
                 recon_per_layer=recon_per_layer,
                 sparsity_per_layer_mean=sparsity_per_layer_mean,
+                sparsity_l0_floor=config.sparsity_l0_floor,
                 recon_layer_energy_beta=config.recon_layer_energy_beta,
             )
 
@@ -1216,11 +1953,17 @@ def run_chunk(
                         )
                     if config.use_fsdp:
                         # load_state_dict on the unwrapped model doesn't reach FSDP
-                        # flat params; summon with writeback=True so the copy lands
-                        # in the sharded buffers.
-                        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-                        with FSDP.summon_full_params(model_for_train, writeback=True):
-                            recovered = load_spline_clt(best_path, device=device, dtype=model_build_dtype)
+                        # flat params; summon outer + nested encoders with
+                        # writeback=True so the copy lands in the sharded buffers.
+                        with _summon_nested_encoders(
+                            model_for_train,
+                            model,
+                            writeback=True,
+                            rank0_only=False,
+                        ):
+                            recovered = load_spline_clt(
+                                best_path, device=device, dtype=model_build_dtype
+                            )
                             model.load_state_dict(recovered.state_dict())
                             del recovered
                     else:
@@ -1252,7 +1995,28 @@ def run_chunk(
         # into the metrics that get logged to jsonl/W&B. x_in is still alive here
         # (it is deleted after backward below).
         if config.encoder_type == "kan" and is_main_process and want_metrics:
-            metrics["stats/spline_contribution_frac"] = model.spline_contribution_fraction(x_in)
+            # Under nested FSDP this diagnostic would touch sharded encoder
+            # params outside a collective-safe encode; skip when sharding.
+            if not config.shard_kan_encoders:
+                metrics["stats/spline_contribution_frac"] = (
+                    model.spline_contribution_fraction(x_in)
+                )
+
+        # Diagnostic: the learned JumpReLU gate. Without this the thresholds were
+        # invisible in the logs, which is how a whole campaign trained with a
+        # frozen θ (and therefore no working sparsity mechanism) unnoticed. If
+        # threshold_mean never moves off threshold_init, JumpReLU is a no-op.
+        if want_metrics:
+            try:
+                threshold_metrics = _threshold_metrics(
+                    model,
+                    distributed=distributed,
+                    device=device,
+                )
+                if is_main_process:
+                    metrics.update(threshold_metrics)
+            except (AttributeError, RuntimeError):
+                pass  # non-jump_relu activation has no effective_threshold
 
         # Backward
         loss.backward()
@@ -1350,6 +2114,11 @@ def run_chunk(
         # Logging
         if want_metrics:
             metrics["lr"] = lr
+            if (
+                config.sparsity_warmup_steps > 0
+                or config.sparsity_decay_start > 0
+            ):
+                metrics["lambda_sparsity_eff"] = lambda_sp
             rel_fro = metrics.get("reconstruction/rel_fro_error", float("nan"))
             l0_tok = metrics.get("stats/l0_active_features_per_token", float("nan"))
             if is_main_process:
@@ -1387,35 +2156,79 @@ def run_chunk(
             )
 
             with torch.no_grad(), _tf32_disabled():
-                if rank == 0:
-                    assert grid_update_inputs is not None
-                    for layer_id, x_layer in enumerate(grid_update_inputs):
-                        model.encoders[layer_id].update_grid(x_layer)
-                if distributed:
-                    # KAN encoders are FSDP-ignored so each rank holds its own
-                    # unsharded copy. Broadcast both parameters AND buffers from
-                    # rank 0 — `grid` is registered as a buffer (efficient_kan)
-                    # and update_grid mutates it in place. Broadcasting only
-                    # parameters() leaves every other rank with rank-0's spline
-                    # weights but its own (stale, locally-fit) grid, which then
-                    # silently corrupts forward outputs across ranks.
+                if config.shard_kan_encoders:
+                    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+                    # All ranks enter summon; rank 0 fits on a CPU side-channel
+                    # clone (see KANEncoder.update_grid); then broadcast full
+                    # params+buffers before writeback reshards.
                     for layer_id in range(model.n_layers):
-                        for param in model.encoders[layer_id].parameters():
-                            dist.broadcast(param.data, src=0)
-                        for buf in model.encoders[layer_id].buffers():
-                            dist.broadcast(buf.data, src=0)
+                        enc = model.encoders[layer_id]
+                        if not _is_fsdp_module(enc):
+                            raise RuntimeError(
+                                "shard_kan_encoders=True but encoder "
+                                f"{layer_id} is not an FSDP module"
+                            )
+                        with FSDP.summon_full_params(
+                            enc, writeback=True, rank0_only=False
+                        ):
+                            raw = unwrap_encoder_module(enc)
+                            if rank == 0:
+                                assert grid_update_inputs is not None
+                                raw.update_grid(grid_update_inputs[layer_id])
+                            if distributed:
+                                for param in raw.parameters():
+                                    dist.broadcast(param.data, src=0)
+                                for buf in raw.buffers():
+                                    dist.broadcast(buf.data, src=0)
+                    if distributed:
+                        # Hard check: catch the historical "params synced, grid
+                        # buffer stale" failure mode immediately.
+                        for layer_id in range(model.n_layers):
+                            raw = unwrap_encoder_module(model.encoders[layer_id])
+                            for buf in raw.buffers():
+                                ref = buf.data.clone()
+                                dist.broadcast(ref, src=0)
+                                if not torch.allclose(buf.data, ref, equal_nan=True):
+                                    raise RuntimeError(
+                                        f"Encoder {layer_id} buffer desynced "
+                                        "after update_grid (grid/params mismatch "
+                                        "across ranks)."
+                                    )
+                else:
+                    if rank == 0:
+                        assert grid_update_inputs is not None
+                        for layer_id, x_layer in enumerate(grid_update_inputs):
+                            unwrap_encoder_module(
+                                model.encoders[layer_id]
+                            ).update_grid(x_layer)
+                    if distributed:
+                        # Replicated/ignored encoders: each rank holds a full copy.
+                        # Broadcast parameters AND buffers from rank 0.
+                        for layer_id in range(model.n_layers):
+                            enc = model.encoders[layer_id]
+                            for param in enc.parameters():
+                                dist.broadcast(param.data, src=0)
+                            for buf in enc.buffers():
+                                dist.broadcast(buf.data, src=0)
             if rank == 0:
                 del grid_update_inputs
 
-            # Reset Adam state after grid update: the accumulated first/second moments
-            # correspond to old spline knot positions and will drive the new parameters
-            # in the wrong direction, causing the inf spiral seen in practice. With the
-            # split optimizer we reset only the encoder optimizer, preserving decoder
-            # Adam state across grid updates.
-            optimizer_local = create_optimizer(
-                model.encoders.parameters(), config, lr=lr
-            )
-            pending_optimizer_local_sd = None
+            # Reset encoder Adam moments after grid update (old moments point at
+            # pre-refit spline geometry). Nested-shard path shares one optimizer
+            # with the decoder — clear only encoder param state. Replicated path
+            # rebuilds optimizer_local only.
+            if config.shard_kan_encoders:
+                enc_ids = {id(p) for p in model.encoders.parameters()}
+                for p in list(optimizer.state.keys()):
+                    if id(p) in enc_ids:
+                        del optimizer.state[p]
+                pending_optimizer_local_sd = None
+            else:
+                optimizer_local = create_optimizer(
+                    model.encoders.parameters(), config, lr=lr
+                )
+                pending_optimizer_local_sd = None
             if is_main_process:
                 pbar.write(
                     f"Step {step}: grid updated and encoder optimizer state reset "
@@ -1430,31 +2243,49 @@ def run_chunk(
             and step > 0
             and step % config.reset_optimizer_every == 0
         ):
-            optimizer = create_optimizer(model_for_train.parameters(), config, lr=lr)
+            optimizer, optimizer_local = _build_optimizers(
+                model, model_for_train, config, lr=lr
+            )
+            if optimizer_local is not None:
+                raise RuntimeError(
+                    "Linear optimizer reset unexpectedly created a local optimizer."
+                )
             pending_optimizer_sd = None
             if is_main_process:
                 pbar.write(f"Step {step}: optimizer state reset (reset_optimizer_every={config.reset_optimizer_every})")
 
-        # Evaluation
-        if step > 0 and step % config.eval_every == 0:
+        # Evaluation — FSDP path must NOT summon full params (nested KAN + val
+        # nearly fills the card and hangs). All ranks run sharded forward via
+        # ``model_for_train`` and all-reduce the mean loss.
+        if step > 0 and config.eval_every > 0 and step % config.eval_every == 0:
             val_loss = float("nan")
             if config.use_fsdp:
-                # summon_full_params must be entered by ALL ranks (even with
-                # rank0_only=True it issues collective calls). Run eval on rank 0
-                # inside the context so it sees the full parameters, then broadcast
-                # val_loss so all ranks can agree on is_best without a barrier mismatch.
-                from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-                with FSDP.summon_full_params(model_for_train, writeback=False, rank0_only=True):
-                    if is_main_process:
-                        val_loss = evaluate(model, val_dataset, config, device, dtype)
-                        pbar.write(f"Step {step}: val_loss={val_loss:.4f}")
-                val_loss_t = torch.tensor(val_loss, device=device)
-                dist.broadcast(val_loss_t, src=0)
-                val_loss = val_loss_t.item()
+                val_loss = evaluate(
+                    model_for_train,
+                    val_dataset,
+                    config,
+                    device,
+                    dtype,
+                    distributed=distributed,
+                    use_fsdp_forward=True,
+                )
+                if is_main_process:
+                    pbar.write(f"Step {step}: val_loss={val_loss:.4f}")
+                gc.collect()
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
             else:
                 if is_main_process:
                     val_loss = evaluate(model, val_dataset, config, device, dtype)
                     pbar.write(f"Step {step}: val_loss={val_loss:.4f}")
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                if distributed:
+                    val_loss_t = torch.tensor(val_loss, device=device)
+                    dist.broadcast(val_loss_t, src=0)
+                    val_loss = val_loss_t.item()
 
             is_best = val_loss < best_val_loss
             if is_best:
@@ -1568,19 +2399,65 @@ def run_chunk(
     return _staging_copy_training_payload(final_payload), False
 
 
+def release_session_gpu(session: TrainSession) -> None:
+    """Drop FSDP/model/optimizer GPU holders so activation collect can use the cards.
+
+    Chunked training collects base-LM activations (Gemma/GPT-2/…) in an isolated
+    subprocess; that does **not** need the Spline-CLT FSDP wrap. Leaving the
+    session resident while the collect child loads the base LM on the same GPU
+    OOMs / fragments HBM (parent allocated flat, ``mem_get_info`` free collapses).
+
+    Call this **before** mid-run GPU collect. Resume state must already be on
+    disk / in ``cpu_resume`` — this does not checkpoint. Closes the jsonl log and
+    finishes wandb (``build_session`` reopens / resumes via ``wandb_run_id``).
+    Does **not** destroy the process group.
+    """
+    if session.log_file is not None:
+        session.log_file.close()
+        session.log_file = None
+    if session.wandb_run is not None:
+        session.wandb_run.finish()
+        session.wandb_run = None
+
+    # Break cycles so FSDP FlatParameters / Adam state can be reclaimed.
+    session.model_for_train = None  # type: ignore[assignment]
+    session.model = None  # type: ignore[assignment]
+    session.optimizer = None  # type: ignore[assignment]
+    session.optimizer_local = None
+    session.encoder_params = []
+    session.encoder_id_set = set()
+    session.pending_optimizer_sd = None
+    session.pending_optimizer_local_sd = None
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        try:
+            torch.cuda.ipc_collect()
+        except Exception:
+            pass
+        for i in range(torch.cuda.device_count()):
+            with torch.cuda.device(i):
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
+
+    if session.distributed and dist.is_initialized():
+        dist.barrier()
+
+
 def close_session(session: TrainSession) -> None:
     """Tear down a persistent session: close the jsonl log, finish the wandb run.
+
+    Also releases GPU holders (same as :func:`release_session_gpu`) so a crashed
+    or finished job does not leave FSDP slabs on the card until process exit.
 
     Do NOT destroy the process group: re-initialising on the same port while the
     OS holds it in TIME_WAIT hangs the next launch. The PG is cleaned up when the
     torchrun-launched processes exit.
     """
-    if session.log_file is not None:
-        session.log_file.close()
-    if session.wandb_run is not None:
-        session.wandb_run.finish()
-    if session.distributed and dist.is_initialized():
-        dist.barrier()
+    release_session_gpu(session)
 
 
 def train(
@@ -1661,13 +2538,21 @@ def split_dataset(
 
 @torch.no_grad()
 def evaluate(
-    model: KANCrossLayerTranscoder,
+    model: torch.nn.Module,
     val_dataset: torch.utils.data.Dataset,
     config: TrainConfig,
     device: torch.device,
     dtype: torch.dtype,
+    *,
+    distributed: bool = False,
+    use_fsdp_forward: bool = False,
 ) -> float:
     """Evaluate model on validation set.
+
+    When ``use_fsdp_forward`` is True, ``model`` must be the FSDP-wrapped
+    module and every rank must call this (DistributedSampler + all-reduce).
+    Do not wrap this path in ``summon_full_params`` — nested KAN unshards
+    blow past GPU memory on Gemma-scale runs.
 
     Returns:
         Average reconstruction loss on validation data.
@@ -1675,10 +2560,20 @@ def evaluate(
     from spline_clt.training.loss import reconstruction_loss
 
     model.eval()
-    val_loader_kwargs = {
+    sampler = None
+    shuffle = False
+    if distributed and dist.is_initialized():
+        sampler = DistributedSampler(
+            val_dataset,
+            num_replicas=dist.get_world_size(),
+            rank=dist.get_rank(),
+            shuffle=False,
+        )
+    val_loader_kwargs: dict[str, Any] = {
         "dataset": val_dataset,
         "batch_size": config.batch_size,
-        "shuffle": False,
+        "shuffle": shuffle if sampler is None else False,
+        "sampler": sampler,
         "num_workers": config.num_workers,
         "pin_memory": config.pin_memory,
         "persistent_workers": config.persistent_workers and config.num_workers > 0,
@@ -1698,15 +2593,29 @@ def evaluate(
         x_in = x_in.permute(1, 0, 2, 3).reshape(n_l, b * s, d)
         y_true = y_true.permute(1, 0, 2, 3).reshape(n_l, b * s, d)
 
-        activations = model.encode(x_in)
-        y_hat = model.decode_dense(activations, input_acts=x_in)
+        if use_fsdp_forward:
+            activations, y_hat, _dec_norms = model(x_in)
+        else:
+            activations = model.encode(x_in)
+            y_hat = model.decode_dense(activations, input_acts=x_in)
         # Must match the training objective, or best-checkpoint selection optimises
         # a different loss than the one being minimised.
         loss = reconstruction_loss(
-            y_hat, y_true, per_layer=config.recon_normalization == "per_layer"
+            y_hat,
+            y_true,
+            per_layer=config.recon_normalization == "per_layer",
+            layer_energy_beta=config.recon_layer_energy_beta,
         )
-        total_loss_val += loss.item()
+        total_loss_val += float(loss.item())
         n_batches += 1
+
+    if distributed and dist.is_initialized():
+        stats = torch.tensor(
+            [total_loss_val, float(n_batches)], device=device, dtype=torch.float64
+        )
+        dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+        total_loss_val = float(stats[0].item())
+        n_batches = int(stats[1].item())
 
     model.train()
     return total_loss_val / max(1, n_batches)

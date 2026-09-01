@@ -224,10 +224,37 @@ graph back for the existing `circuit_tracer` frontend.
 4. **Jacobian-based encoder vectors**: For attribution, KANEncoder.get_encoder_vectors() computes d(output[f])/d(input) at each input point. This gives local linear encoder directions that plug into the existing AttributionContext.
 
 5. **Training objective**:
-   - L_MSE = Σ_l ||y_hat^l - y^l||^2
-   - L_sparsity = λ Σ tanh(c · ||W_dec_i|| · a_i)
-   - L_kan_reg = 0.01 × spline_weight.abs().mean()  (KAN only — DO NOT use KANLinear.regularization_loss(), it produces NaN when spline_weight=0 via 0*log(0))
-   - Total = L_MSE + L_sparsity + L_kan_reg
+   - L_NMSE = Σ_l ||y_hat^l - y^l||² / Σ_l ||y^l||²   (scale-free; **not** Anthropic's raw L_MSE)
+   - L_sparsity = λ Σ tanh(c · ||W_dec_i|| · a_i) / n_pos
+   - L_kan_reg = `lambda_kan_reg` × spline_weight.abs().mean()  (KAN only — DO NOT use KANLinear.regularization_loss(), it produces NaN when spline_weight=0 via 0*log(0))
+   - Total = L_NMSE + L_sparsity + L_kan_reg
+
+   The reconstruction term is **normalized** by Σ||y||². With a raw `.mean()` MSE its
+   magnitude tracks the base model's activation scale — `mean(y²)` is 0.75 for
+   gpt2-large, 7.88 for gpt2-small, 24.67 for qwen3-0.6b — while L_sparsity is a
+   per-token sum, so one λ meant three different things. That killed gpt2-large
+   (L0 91816 → 0.9, ŷ ≈ 0) while qwen3-0.6b trained fine. L_NMSE = 1.0 at the
+   zero-output baseline for every model.
+
+   NMSE removes the **activation-scale dependence** and the collapse mode. It does
+   **not** mean one λ yields the same L0 on every model — λ is still set per model to
+   hit a target L0, as `λ_eff = λ · mean(y²)` is what the old objective saw:
+
+   | model | mean(y²) | λ | λ·mean(y²) | resulting L0 |
+   |---|---|---|---|---|
+   | gpt2-small | 7.88 | 6.3e-4 | 5.0e-3 | ~104 |
+   | gpt2-large | 0.75 | 6.3e-4 | 4.7e-4 | ~216 (probe 7809) |
+   | qwen3-0.6b | 24.67 | **2.027e-4** | 5.0e-3 | ~105–137 |
+
+   A shared 6.3e-4 made qwen's λ_eff 1.55e-2 — **3.1× too strong** — driving it to
+   L0 29 (~1 feature/layer/token) at rel_fro 0.825. Fixed in job 7815.
+
+   Within a model, λ **must** be identical for `encoder_type="kan"` and `"linear"` —
+   a differing λ across arms confounds the spline-vs-linear comparison.
+
+   **Loss values are not comparable across this change** (they shrink by mean(y²)),
+   and `val_loss`/`best_val_loss` are in NMSE units too. Compare `rel_fro`,
+   `nmse_mean`, and `L0`. See `logs/v2_collapse_evidence/FINDINGS.md`.
 
 6. **Parameter ratio**: Spline-CLT has ~10x more encoder parameters than linear CLT at matched d_transcoder (due to B-spline basis expansion). Decoder is identical.
 
@@ -247,6 +274,52 @@ graph back for the existing `circuit_tracer` frontend.
 9. **Determinism**: seed all train/val splits, dataset shuffling, evaluation subsets, spline sampling, monosemanticity sampling, Shapley sampling, and bootstrap reporting. The paper runner is intended to be exactly reproducible from the suite JSON.
 
 10. **Graph metrics**: retained error nodes are expected and are now reported explicitly. A zero `gap_drop_ratio` does not mean error nodes are absent; it means removing the selected top-k feature nodes did not move the target-foil gap on that prompt.
+
+11. **TF32 is required, not optional.** The KAN encoder is deliberately fp32; without
+    `torch.set_float32_matmul_precision("high")` its GEMMs fall back to CUDA-core SIMT
+    SGEMM (profiled: 45.6 vs 141.3 TFLOPS on GH200). `TrainConfig.tf32=True` handles
+    this; `_tf32_disabled()` restores true fp32 for `update_grid`'s lstsq refit.
+
+12. **Diagnostic metrics cost a device sync.** `compute_losses(..., compute_metrics=False)`
+    on non-log steps. The L0 mask must stay on-device — a `.cpu()` + `(>0).float()` over
+    the activation tensor costs ~3.2 s/step single-threaded (torchrun sets `OMP_NUM_THREADS=1`).
+
+13. **`collection_chunk_n_tokens` is bounded by /lscratch (894 GB), not by `n_tokens`.**
+    gpt2-large activations are 180 KB/token, so 4M tokens ≈ 687 GiB per chunk. Exceeding
+    the disk kills the job with SIGBUS (`exitcode: -7`), not ENOSPC.
+
+14. **Do not enable DataLoader workers for the mmap activation datasets.** `num_workers>0`
+    with `pin_memory=True` OOM-killed a gpt2-large job at MaxRSS 1.17 TB / 1.24 TiB: the
+    mmap page cache is charged to the step's cgroup and page-locked buffers can't be
+    reclaimed against it. Keep `num_workers=0`.
+
+15. **Decoder init scale is per-model; set `decoder_init_strategy: "data_scaled"` on any
+    new base model.** `_init_decoder_weights` uses `kaiming_uniform_` with
+    `fan_in = d_model`, so ‖w_dec‖ ≈ √2 on every model regardless of its MLP-output
+    scale. Encoder *inputs* are normalized (`enc_input_std`); the *targets* are not.
+    So initial ‖ŷ‖ is model-independent while ‖y‖ is not:
+
+    | model | mean(y²) | initial per-layer FVU | outcome |
+    |---|---|---|---|
+    | gpt2-small | 9.58 | 1.7 | trains (dip to l0_min 0.56, recovers) |
+    | qwen3-0.6b | 24.67 | 7.6 | trains (dip to l0_min 0.17, recovers) |
+    | llama-3.2-1B | **0.087** | **105** | **dies** (l0_min → 0.0 at step 480) |
+    | gemma3-1b | 2804 | ≈1 (ŷ ≈ 0) | inverted failure, still unfixed |
+
+    gpt2/qwen land near ‖ŷ‖/‖y‖ ≈ 1 **by luck**, not design. When ŷ starts ~10× hot the
+    fastest descent is to shrink it toward zero, dragging preactivations under θ; JumpReLU's
+    `(x > θ)` gate then gives zero gradient and the read-layer is permanently dead.
+
+    `"data_scaled"` runs `calibrate_decoder_scale_from_data` on cold start (after input
+    normalization and threshold calibration, before the FSDP wrap), measuring ‖y_l‖ and
+    ‖ŷ_l‖ on a seeded sample and rescaling each target layer so ‖ŷ_l‖ ≈ ‖y_l‖. Resulting
+    per-layer FVU ≈ 2 on any model. Default `"kaiming"` preserves old behaviour.
+
+    **This is not a λ problem** — diagnose it with `threshold_mean` (frozen if the sparsity
+    term is inert) and step-0 `reconstruction/rel_fro_per_layer_mean` (>> 1.5 means hot init),
+    not by tuning `lambda_sparsity`. `recon_layer_energy_beta` is also the wrong lever: llama's
+    layer-energy dispersion (278×, L1 48.7% + L15 41.3%) is the same *shape* as gpt2's
+    (110×, L2 48.0% + L11 37.6%), so it cannot be what distinguishes them.
 
 ## Code Style
 - PyTorch throughout

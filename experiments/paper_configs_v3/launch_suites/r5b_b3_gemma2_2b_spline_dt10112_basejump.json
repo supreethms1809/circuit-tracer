@@ -1,0 +1,47 @@
+{
+  "defaults": [
+    "../base/common_gemma2_2b.json",
+    "../macag/default.json",
+    "../models/r5b_b3_gemma2_2b_spline_dt10112_basejump.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_b3_gemma2_2b_spline_dt10112_basejump",
+  "description": "Gemma-2-2B Spline-CLT param-matched to published mntss linear d_t=16384 (spline d_t=10112). BaseJump + B3 + r5b. 4x2 nested FSDP KAN. batch_size=4 (reduced vs 8 for per-GPU HBM headroom; global batch 32). total_steps=48828 for ~200M tokens (4096 tok/step). Mid-run FSDP release before isolated base-LM collect. Train-only. Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b_b3",
+  "seeds": [101],
+  "stages": {
+    "collect_dataset": true,
+    "train": true,
+    "evaluate": false,
+    "macag": false,
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "collection_chunk_n_tokens": 3276800,
+    "cache_dir": "/lscratch/paper_r5b_b3/gemma2_2b_spline_dt10112_basejump/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b_b3/gemma2_2b_spline_dt10112_basejump/val"
+  },
+  "model_variants": {
+    "gemma2_2b_spline_dt10112_r5b_b3_bj": {
+      "training": {
+        "use_fsdp": true,
+        "shard_kan_encoders": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "batch_size": 4,
+        "total_steps": 48828,
+        "warmup_steps": 2000,
+        "eval_every": 512,
+        "save_every": 1024,
+        "update_grid_from": 2000,
+        "sparsity_warmup_steps": 2000,
+        "sparsity_decay_start": 3000
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gemma2_2b_spline_dt10112_r5b_b3_bj",
+    "baseline_variant": "gemma2_2b_spline_dt10112_r5b_b3_bj"
+  }
+}

@@ -18,6 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from safetensors.torch import save_file, load_file
+from torch.utils.checkpoint import checkpoint
 
 from circuit_tracer.transcoder.activation_functions import JumpReLU, jumprelu
 from spline_clt.kan_encoder import KANEncoder
@@ -42,7 +43,9 @@ class KANCrossLayerTranscoder(nn.Module):
         encoder_type: "kan" (default) or "linear" (baseline comparison).
         grid_size: KAN grid size for B-spline basis (ignored for linear).
         spline_order: KAN spline order (ignored for linear).
-        activation_function: "jump_relu" or "relu".
+        activation_function: "jump_relu", "base_jump", or "relu".
+            ``base_jump`` gates on the KAN base score and takes magnitude from
+            ``relu(base + spline)`` (requires ``encoder_type="kan"``).
         skip_connection: Whether to include a learned skip connection.
         feature_input_hook: Hook point where features read from.
         feature_output_hook: Hook point where features write to.
@@ -63,8 +66,11 @@ class KANCrossLayerTranscoder(nn.Module):
         feature_output_hook: str = "hook_mlp_out",
         scan: str | list[str] | None = None,
         threshold_init: float = 0.001,
+        jumprelu_bandwidth: float = 0.001,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
+        scale_base: float = 1.0,
+        scale_spline: float = 1.0,
     ):
         super().__init__()
 
@@ -72,6 +78,12 @@ class KANCrossLayerTranscoder(nn.Module):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if encoder_type not in ("kan", "linear"):
             raise ValueError(f"encoder_type must be 'kan' or 'linear', got {encoder_type!r}")
+        if activation_function not in ("jump_relu", "base_jump", "relu"):
+            raise ValueError(
+                f"Invalid activation function: {activation_function!r}"
+            )
+        if activation_function == "base_jump" and encoder_type != "kan":
+            raise ValueError("activation_function='base_jump' requires encoder_type='kan'")
 
         self.n_layers = n_layers
         self.d_transcoder = d_transcoder
@@ -79,6 +91,9 @@ class KANCrossLayerTranscoder(nn.Module):
         self.encoder_type = encoder_type
         self.grid_size = grid_size
         self.spline_order = spline_order
+        self.scale_base = scale_base
+        self.scale_spline = scale_spline
+        self.activation_function_name = activation_function
         self.feature_input_hook = feature_input_hook
         self.feature_output_hook = feature_output_hook
         self.skip_connection = skip_connection
@@ -98,6 +113,8 @@ class KANCrossLayerTranscoder(nn.Module):
                     n_features=d_transcoder,
                     grid_size=grid_size,
                     spline_order=spline_order,
+                    scale_base=scale_base,
+                    scale_spline=scale_spline,
                 )
                 for _ in range(n_layers)
             ])
@@ -137,7 +154,7 @@ class KANCrossLayerTranscoder(nn.Module):
         )
 
         # Activation function
-        if activation_function == "jump_relu":
+        if activation_function in ("jump_relu", "base_jump"):
             # LOG-SPACE, NON-NEGATIVE JumpReLU threshold. The module's `.threshold`
             # parameter stores log θ; the effective gate is θ = exp(log θ) > 0,
             # applied in apply_activation_function(). This guarantees the gate
@@ -156,13 +173,21 @@ class KANCrossLayerTranscoder(nn.Module):
             # WARNING: never call self.activation_function.forward()/(...) — the
             # stock JumpReLU.forward gates on the raw stored value, which is now
             # log θ. Only apply_activation_function() (which exponentiates) is safe.
+            # bandwidth MUST be on the scale of θ. The upstream default is 2,
+            # which smears the STE window over (-1, 1) and, together with the
+            # extra θ factor from the log parametrization, drove dL/d(log θ) to
+            # ~1e-11 — below Adam's eps floor, freezing θ at its init and making
+            # JumpReLU a no-op (the linear arms then never sparsified).
+            #
+            # base_jump: gate on KAN base score; magnitude = relu(base + spline).
             self.activation_function = JumpReLU(
                 torch.full(
                     (n_layers, 1, d_transcoder),
                     math.log(float(threshold_init)),
                     device=device,
                     dtype=dtype,
-                )
+                ),
+                bandwidth=float(jumprelu_bandwidth),
             )
         elif activation_function == "relu":
             self.activation_function = nn.functional.relu
@@ -192,9 +217,39 @@ class KANCrossLayerTranscoder(nn.Module):
         self._init_decoder_weights()
 
     def _init_decoder_weights(self) -> None:
-        """Initialize decoder weights with small random values."""
+        """Initialize decoder weights with small random values.
+
+        ``kaiming_uniform_`` normalizes by ``fan_in = d_model``, so ‖w_dec‖ ≈ √2
+        for *every* base model no matter how large its MLP outputs are. Encoder
+        inputs are normalized (``enc_input_std``) but the targets are not, so the
+        initial ‖ŷ‖/‖y‖ ratio is decided entirely by the base model's output
+        scale. See :meth:`scale_decoder_per_target_layer` and
+        ``spline_clt.training.train.calibrate_decoder_scale_from_data``.
+        """
         for w_dec in self.W_dec:
             nn.init.kaiming_uniform_(w_dec.view(-1, self.d_model))
+
+    @torch.no_grad()
+    def scale_decoder_per_target_layer(self, scales: torch.Tensor) -> None:
+        """Multiply every decoder block that writes to layer ``l`` by ``scales[l]``.
+
+        ``W_dec[source_l]`` has shape ``(d_transcoder, n_layers - source_l, d_model)``
+        where index ``j`` writes to target layer ``source_l + j``. Scaling along
+        that axis therefore scales ``y_hat[l]`` by exactly ``scales[l]``, whichever
+        source layers happen to contribute to it.
+
+        Args:
+            scales: Per-target-layer multipliers, shape ``(n_layers,)``.
+        """
+        if scales.shape != (self.n_layers,):
+            raise ValueError(
+                f"scales must have shape ({self.n_layers},), "
+                f"got {tuple(scales.shape)}."
+            )
+        for source_l in range(self.n_layers):
+            w_dec = self.W_dec[source_l]
+            block = scales[source_l:].to(device=w_dec.device, dtype=w_dec.dtype)
+            w_dec.data.mul_(block[None, :, None])
 
     def to(self, *args, **kwargs) -> "KANCrossLayerTranscoder":
         """Move model to device/dtype, keeping KAN encoders in float32.
@@ -229,7 +284,7 @@ class KANCrossLayerTranscoder(nn.Module):
         """
         if not isinstance(self.activation_function, JumpReLU):
             raise AttributeError(
-                "effective_threshold is only defined for jump_relu activation"
+                "effective_threshold is only defined for jump_relu/base_jump activation"
             )
         return self.activation_function.threshold.squeeze(1).exp()
 
@@ -266,6 +321,29 @@ class KANCrossLayerTranscoder(nn.Module):
         self.enc_input_mean.copy_(mean)
         self.enc_input_std.copy_(std)
 
+    def _layer_threshold(self, layer_id: int) -> torch.Tensor:
+        """Effective JumpReLU threshold θ = exp(log θ) for one layer."""
+        log_threshold = self.activation_function.threshold[layer_id].squeeze(0).clone()
+        return log_threshold.exp()
+
+    def apply_base_jump(
+        self, layer_id: int, score: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        """BaseJump: STE mask from ``score``, magnitude from ``relu(value)``.
+
+        Matches ``spline_sae`` BaseJump: gate on the KAN base path so the spline
+        can contribute magnitude without needing to also clear the threshold.
+        """
+        if not isinstance(self.activation_function, JumpReLU):
+            raise RuntimeError("apply_base_jump requires a JumpReLU threshold module")
+        threshold = self._layer_threshold(layer_id)
+        bandwidth = float(self.activation_function.bandwidth)
+        # Straight-through estimator on the hard gate (same as SAE JumpReLU.gated).
+        hard = (score > threshold).to(dtype=score.dtype)
+        soft = ((score - threshold) / bandwidth + 0.5).clamp(0.0, 1.0)
+        mask = hard + soft - soft.detach()
+        return mask * torch.relu(value)
+
     def apply_activation_function(
         self, layer_id: int, features: torch.Tensor
     ) -> torch.Tensor:
@@ -274,10 +352,15 @@ class KANCrossLayerTranscoder(nn.Module):
         Args:
             layer_id: Which layer's activation function to use.
             features: Pre-activation values of shape (..., d_transcoder).
+                For ``base_jump``, this is the gate score (base + bias); prefer
+                ``apply_base_jump`` when score and value differ.
 
         Returns:
             Activated features (same shape).
         """
+        if self.activation_function_name == "base_jump":
+            # Score == value when only one tensor is provided (legacy path).
+            return self.apply_base_jump(layer_id, features, features)
         if isinstance(self.activation_function, JumpReLU):
             # `.threshold` holds LOG-thresholds; the effective gate is
             # θ = exp(log θ) > 0, so activations are non-negative and the sparsity
@@ -285,8 +368,7 @@ class KANCrossLayerTranscoder(nn.Module):
             # function gives θ its surrogate gradient, which flows back through
             # exp() to the log-parameter. .clone() breaks FSDP's flat-param view
             # chain; .exp() is a differentiable forward op preserving that flow.
-            log_threshold = self.activation_function.threshold[layer_id].squeeze(0).clone()
-            threshold = log_threshold.exp()
+            threshold = self._layer_threshold(layer_id)
             return jumprelu.apply(features, threshold, self.activation_function.bandwidth)
         else:
             return self.activation_function(features)
@@ -299,7 +381,9 @@ class KANCrossLayerTranscoder(nn.Module):
         Args:
             x: Input tensor of shape (..., d_model).
             layer_id: Which layer to encode.
-            apply_activation_function: Whether to apply JumpReLU/ReLU.
+            apply_activation_function: Whether to apply JumpReLU/BaseJump/ReLU.
+                When False under ``base_jump``, returns the **gate score**
+                (base + bias) used for threshold calibration — not base+spline.
 
         Returns:
             Feature activations of shape (..., d_transcoder).
@@ -311,15 +395,32 @@ class KANCrossLayerTranscoder(nn.Module):
         # self-contained tensor, not a view of the FSDP flat param.
         x = self._normalize_input(x, layer_id)
         bias = self.b_enc[layer_id].clone()
-        features = self.encoders[layer_id](x) + bias
 
+        if self.activation_function_name == "base_jump":
+            # Must go through encoder __call__/forward so nested FSDP unshards.
+            # Direct forward_split() on an FSDP module bypasses unshard hooks.
+            split_out = self.encoders[layer_id](x, return_split=True)
+            base, spline = split_out
+            score = base + bias
+            if not apply_activation_function:
+                return score
+            value = score + spline
+            return self.apply_base_jump(layer_id, score, value)
+
+        features = self.encoders[layer_id](x) + bias
         if not apply_activation_function:
             return features
-
         return self.apply_activation_function(layer_id, features)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode residual stream activations at all layers.
+
+        During training with KAN encoders, each layer is gradient-checkpointed.
+        BaseJump materializes ``scaled_spline_weight`` (≈0.42 GiB fp32/layer at
+        Gemma-2-2B d_t=6144) for backward; without checkpointing that is held for
+        *all* layers at once (~11 GiB) on top of FSDP's full-decoder unshard
+        (~9.26 GiB bf16 triangular W_dec). Peak then sits at ~94 GiB of 142 GiB
+        and the first post-collect backward OOMs after allocator fragmentation.
 
         Args:
             x: Input tensor of shape (n_layers, batch, d_model).
@@ -328,8 +429,25 @@ class KANCrossLayerTranscoder(nn.Module):
             Feature activations of shape (n_layers, batch, d_transcoder).
         """
         layer_features = []
+        use_ckpt = (
+            self.training
+            and self.encoder_type == "kan"
+            and torch.is_grad_enabled()
+        )
         for layer_id in range(self.n_layers):
-            features = self.encode_layer(x[layer_id], layer_id)
+            x_layer = x[layer_id]
+            if use_ckpt:
+                # use_reentrant=False is required with FSDP + non-tensor args
+                # (layer_id) and avoids the reentrant autograd edge cases.
+                features = checkpoint(
+                    self.encode_layer,
+                    x_layer,
+                    layer_id,
+                    True,
+                    use_reentrant=False,
+                )
+            else:
+                features = self.encode_layer(x_layer, layer_id)
             layer_features.append(features)
         return torch.stack(layer_features)
 
@@ -613,8 +731,10 @@ class KANCrossLayerTranscoder(nn.Module):
 
         Uses decode_dense (not the sparse decode path) to avoid OOM early in
         training when JumpReLU threshold is near zero and all features are active.
-        KAN encoder spline weights are in ignored_modules (never FSDP-sharded)
-        and are handled separately in compute_losses().
+        Under the replicated-KAN FSDP path, encoder spline weights live in
+        ``ignored_modules``; under ``shard_kan_encoders``, each encoder is its
+        own nested FSDP unit. Either way ``compute_losses`` reaches them via
+        ``kan_linear_from_encoder``.
 
         Returns:
             activations: (n_layers, n_pos, d_transcoder)
@@ -763,6 +883,12 @@ class KANCrossLayerTranscoder(nn.Module):
             "spline_order": torch.tensor(self.spline_order),
             # encoder_type stored as 0=kan, 1=linear
             "encoder_type_linear": torch.tensor(self.encoder_type == "linear"),
+            # activation: 0=jump_relu/relu (inferred from thresholds), 1=base_jump
+            "activation_base_jump": torch.tensor(
+                self.activation_function_name == "base_jump"
+            ),
+            "scale_base": torch.tensor(float(self.scale_base)),
+            "scale_spline": torch.tensor(float(self.scale_spline)),
         }
         save_file(metadata, os.path.join(save_path, "metadata.safetensors"))
 
@@ -802,20 +928,36 @@ def load_spline_clt(
         grid_size = f.get_tensor("grid_size").item()
         spline_order = f.get_tensor("spline_order").item()
         # encoder_type_linear key was added after initial checkpoints; default to KAN
-        keys = f.keys()
+        keys = set(f.keys())
         is_linear = (
             f.get_tensor("encoder_type_linear").item()
             if "encoder_type_linear" in keys
             else False
         )
+        is_base_jump = (
+            bool(f.get_tensor("activation_base_jump").item())
+            if "activation_base_jump" in keys
+            else False
+        )
+        scale_base = (
+            float(f.get_tensor("scale_base").item()) if "scale_base" in keys else 1.0
+        )
+        scale_spline = (
+            float(f.get_tensor("scale_spline").item()) if "scale_spline" in keys else 1.0
+        )
     encoder_type = "linear" if is_linear else "kan"
 
-    # Detect activation function from first encoder file
+    # Detect activation function from first encoder file + metadata flag
     enc_path = os.path.join(clt_path, "encoder_0.safetensors")
     with safe_open(enc_path, framework="pt") as f:
         has_threshold = "threshold_0" in f.keys()
 
-    act_fn = "jump_relu" if has_threshold else "relu"
+    if is_base_jump:
+        act_fn = "base_jump"
+    elif has_threshold:
+        act_fn = "jump_relu"
+    else:
+        act_fn = "relu"
 
     instance = KANCrossLayerTranscoder(
         n_layers=n_layers,
@@ -830,6 +972,8 @@ def load_spline_clt(
         scan=scan,
         device=device,
         dtype=dtype,
+        scale_base=scale_base,
+        scale_spline=scale_spline,
     )
 
     # Load encoder weights and biases

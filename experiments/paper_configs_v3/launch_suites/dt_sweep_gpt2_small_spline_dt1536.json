@@ -1,0 +1,33 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/gpt2_small_spline_dt1536.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_dt_sweep_gpt2_small_spline_dt1536",
+  "description": "v3 d_transcoder sweep point: GPT-2 small spline d_t=1536 (2x d_model), 1B tokens.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_dtsweep/gpt2_small/spline_dt1536/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_dtsweep/gpt2_small/spline_dt1536/val"
+  },
+  "model_variants": {
+    "spline_dt1536_gpt2_small_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "spline_dt1536_gpt2_small_pv3",
+    "baseline_variant": "spline_dt1536_gpt2_small_pv3"
+  }
+}

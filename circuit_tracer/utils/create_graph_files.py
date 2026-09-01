@@ -181,7 +181,18 @@ def create_graph_files(
     )
     graph.to("cpu")
 
-    tokenizer = AutoTokenizer.from_pretrained(graph.cfg.tokenizer_name)
+    # Prefer a warm local snapshot path. Loading the hub *name* under
+    # HF_HUB_OFFLINE still hits huggingface.co (mistral-regex / model_info).
+    tokenizer_name = graph.cfg.tokenizer_name
+    try:
+        from huggingface_hub import snapshot_download
+
+        tokenizer_path = snapshot_download(tokenizer_name, local_files_only=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_path, local_files_only=True
+        )
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     nodes = create_nodes(graph, node_mask, tokenizer, cumulative_scores)
     used_nodes, used_edges = create_used_nodes_and_edges(graph, nodes, edge_mask)
     model = build_model(graph, used_nodes, used_edges, slug, scan, node_threshold, tokenizer)

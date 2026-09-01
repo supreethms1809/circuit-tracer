@@ -37,6 +37,30 @@ def main():
     parser.add_argument("--limit-prompts", type=int, default=2, help="Limit templates per attribute")
     parser.add_argument("--output", type=str, default="experiments/paper_configs/suites/ravel_city_suite.json",
                         help="Path to write the config suite JSON")
+    parser.add_argument("--suite-name", type=str, default="ravel_eval_suite")
+    parser.add_argument("--spline-checkpoint", type=str, default="",
+                        help="Spline-CLT checkpoint path (empty = omit the spline variant)")
+    parser.add_argument("--linear-checkpoint", type=str, default="",
+                        help="Linear CLT checkpoint path (empty = omit the linear variant)")
+    parser.add_argument(
+        "--transcoder-set",
+        type=str,
+        default="",
+        help="Hub CLT repo id (e.g. mntss/clt-llama-3.2-1b-524k). "
+             "When set, builds a single hub-reference variant instead of "
+             "local spline/linear checkpoints.",
+    )
+    parser.add_argument("--variant-name", type=str, default="",
+                        help="Override model_variants key (hub mode)")
+    parser.add_argument("--variant-label", type=str, default="",
+                        help="Human-readable variant label")
+    parser.add_argument("--d-transcoder", type=int, default=4096)
+    parser.add_argument("--n-layers", type=int, default=12)
+    parser.add_argument("--d-model", type=int, default=768)
+    parser.add_argument("--val-cache-dir", type=str,
+                        default="/gscratch/ssuresh/shared/activations/paper_v2/gpt2_small/val")
+    parser.add_argument("--unpruned", action="store_true",
+                        help="Use the unpruned graph settings (thresholds 1.0/1.0)")
     args = parser.parse_args()
 
     print(f"Loading tokenizer for {args.model}...")
@@ -126,9 +150,68 @@ def main():
                 })
                 prompt_counter += 1
 
+    # Model variants: hub CLT reference, or local spline/linear checkpoints.
+    dt = args.d_transcoder
+    model_variants = {}
+    if args.transcoder_set:
+        key = args.variant_name or args.transcoder_set.replace("/", "_").replace(".", "")
+        model_variants[key] = {
+            "label": args.variant_label or f"Published CLT ({args.transcoder_set})",
+            "model_name": args.model,
+            "scan_id": key,
+            "transcoder_set": args.transcoder_set,
+            "training": {
+                "n_layers": args.n_layers,
+                "d_model": args.d_model,
+                "d_transcoder": dt,
+                "encoder_type": "linear",
+            },
+        }
+    else:
+        if args.spline_checkpoint or not (args.spline_checkpoint or args.linear_checkpoint):
+            model_variants["spline_feature_match_gpt2_small"] = {
+                "label": f"Spline-CLT (feature-match, d_t={dt})",
+                "model_name": args.model,
+                "scan_id": "spline-fm-gpt2-small",
+                "checkpoint_path": args.spline_checkpoint or
+                    "/gscratch/ssuresh/results/paper/paper_v2_gpt2_small_dt4096_2b/runs/spline_feature_match_gpt2_small_pv2/seed_101/checkpoints/spline_dt4096_gpt2_small_pv2_seed101_best",
+                "training": {
+                    "n_layers": args.n_layers,
+                    "d_model": args.d_model,
+                    "d_transcoder": dt,
+                    "grid_size": 5,
+                    "spline_order": 3,
+                    "encoder_type": "kan"
+                }
+            }
+        if args.linear_checkpoint or not (args.spline_checkpoint or args.linear_checkpoint):
+            model_variants["linear_feature_match_gpt2_small"] = {
+                "label": f"Linear CLT (feature-match, d_t={dt})",
+                "model_name": args.model,
+                "scan_id": "linear-fm-gpt2-small",
+                "checkpoint_path": args.linear_checkpoint or
+                    "/gscratch/ssuresh/results/paper/paper_v2_gpt2_small_dt4096_2b/runs/linear_feature_match_gpt2_small_pv2/seed_101/checkpoints/linear_fm_gpt2_small_pv2_2b_seed101_best",
+                "training": {
+                    "n_layers": args.n_layers,
+                    "d_model": args.d_model,
+                    "d_transcoder": dt,
+                    "encoder_type": "linear"
+                }
+            }
+    variant_names = list(model_variants)
+    graph_settings = {
+        "max_features": 2048 if args.unpruned else 7500,
+        "max_n_logits": 10,
+        "desired_logit_prob": 0.99,
+        "node_threshold": 1.0 if args.unpruned else 0.8,
+        "edge_threshold": 1.0 if args.unpruned else 0.98,
+        "attribution_batch_size": 256,
+        "spline_attribution_method": "jacobian_ablation"
+    }
+
     # Build paper-eval suite config structure
     suite_config = {
-        "suite_name": "ravel_eval_suite",
+        "suite_name": args.suite_name,
         "description": f"RAVEL benchmark suite for {args.model}",
         "benchmark_manifest_version": "ravel-v1",
         "stages": {
@@ -149,36 +232,9 @@ def main():
             "val_fraction": 0.05,
             "device": "cuda",
             "dtype": "bfloat16",
-            "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v2/gpt2_small/val"
+            "val_cache_dir": args.val_cache_dir
         },
-        "model_variants": {
-            "spline_feature_match_gpt2_small": {
-                "label": "Spline-CLT (feature-match, d_t=4096)",
-                "model_name": args.model,
-                "scan_id": "spline-fm-gpt2-small",
-                "checkpoint_path": "/gscratch/ssuresh/results/paper/paper_v2_gpt2_small_dt4096_2b/runs/spline_feature_match_gpt2_small_pv2/seed_101/checkpoints/spline_dt4096_gpt2_small_pv2_seed101_best",
-                "training": {
-                    "n_layers": 12,
-                    "d_model": 768,
-                    "d_transcoder": 4096,
-                    "grid_size": 5,
-                    "spline_order": 3,
-                    "encoder_type": "kan"
-                }
-            },
-            "linear_feature_match_gpt2_small": {
-                "label": "Linear CLT (feature-match, d_t=4096)",
-                "model_name": args.model,
-                "scan_id": "linear-fm-gpt2-small",
-                "checkpoint_path": "/gscratch/ssuresh/results/paper/paper_v2_gpt2_small_dt4096_2b/runs/linear_feature_match_gpt2_small_pv2/seed_101/checkpoints/linear_fm_gpt2_small_pv2_2b_seed101_best",
-                "training": {
-                    "n_layers": 12,
-                    "d_model": 768,
-                    "d_transcoder": 4096,
-                    "encoder_type": "linear"
-                }
-            }
-        },
+        "model_variants": model_variants,
         "evaluation": {
             "circuit": {
                 "top_k_features": 32,
@@ -186,15 +242,7 @@ def main():
                 "shapley_samples": 64,
                 "alpha": 0.5
             },
-            "graph": {
-                "max_features": 7500,
-                "max_n_logits": 10,
-                "desired_logit_prob": 0.99,
-                "node_threshold": 0.8,
-                "edge_threshold": 0.98,
-                "attribution_batch_size": 256,
-                "spline_attribution_method": "jacobian_ablation"
-            },
+            "graph": graph_settings,
             "monosemanticity": {
                 "enabled": False,
                 "n_features": 100,
@@ -210,8 +258,8 @@ def main():
             }
         },
         "reporting": {
-            "primary_variant": "spline_feature_match_gpt2_small",
-            "baseline_variant": "linear_feature_match_gpt2_small",
+            "primary_variant": variant_names[0],
+            "baseline_variant": variant_names[-1],
             "bootstrap_samples": 100,
             "confidence_level": 0.95,
             "figure_case_study_prompt_id": benchmark_entries[0]["prompt_id"] if benchmark_entries else ""

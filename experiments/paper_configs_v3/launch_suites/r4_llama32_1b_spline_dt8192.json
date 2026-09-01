@@ -1,0 +1,40 @@
+{
+  "defaults": [
+    "../base/common_llama32_1b.json",
+    "../macag/default.json",
+    "../models/r2_llama32_1b_spline_dt8192.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r4_llama32_1b_spline_dt8192",
+  "description": "R4: r2 llama32-1B spline dt8192 (already data_scaled) + lambda_sparsity -> 1e-5. Full KAN encoder. Single seed.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 200000000,
+    "cache_dir": "/lscratch/paper_r4/llama32_1b_spline_dt8192/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r4/llama32_1b_spline_dt8192/val"
+  },
+  "model_variants": {
+    "llama32_1b_spline_dt8192_r2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "data_scaled",
+        "decoder_calibration_samples": 16,
+        "lambda_sparsity": 1e-05,
+        "sparsity_warmup_steps": 2000,
+        "sparsity_decay_start": 14000,
+        "lambda_sparsity_final": 3e-6
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "llama32_1b_spline_dt8192_r2",
+    "baseline_variant": "llama32_1b_spline_dt8192_r2"
+  }
+}

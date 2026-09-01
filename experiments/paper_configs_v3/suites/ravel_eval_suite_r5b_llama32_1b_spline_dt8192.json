@@ -1,0 +1,5483 @@
+{
+  "suite_name": "ravel_eval_suite_r5b_llama32_1b_spline_dt8192",
+  "description": "RAVEL benchmark suite for Llama-3.2-1B (r5b llama32_1b_spline_dt8192)",
+  "benchmark_manifest_version": "ravel-v1",
+  "stages": {
+    "collect_dataset": false,
+    "train": false,
+    "evaluate": true,
+    "macag": false,
+    "report": true
+  },
+  "seeds": [
+    101
+  ],
+  "dataset": {
+    "model_name": "meta-llama/Llama-3.2-1B",
+    "dataset_name": "Salesforce/wikitext",
+    "dataset_config": "wikitext-2-raw-v1",
+    "n_tokens": 100000,
+    "seq_len": 128,
+    "batch_size": 32,
+    "val_fraction": 0.05,
+    "device": "cuda",
+    "dtype": "bfloat16",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b/llama32_1b_spline_dt8192/val"
+  },
+  "model_variants": {
+    "r5b_llama32_1b_spline_dt8192": {
+      "label": "Spline-CLT (r5b, llama32_1b_spline_dt8192, d_t=8192)",
+      "model_name": "meta-llama/Llama-3.2-1B",
+      "scan_id": "r5b-llama32-1b-spline-dt8192",
+      "checkpoint_path": "/gscratch/ssuresh/results/paper_r5b/paper_r5b_llama32_1b_spline_dt8192/runs/llama32_1b_spline_dt8192_r2/seed_101/checkpoints/llama32_1b_spline_dt8192_r5b_seed101_best",
+      "training": {
+        "n_layers": 16,
+        "d_model": 2048,
+        "d_transcoder": 8192,
+        "encoder_type": "kan",
+        "grid_size": 5,
+        "spline_order": 3
+      }
+    }
+  },
+  "evaluation": {
+    "circuit": {
+      "top_k_features": 32,
+      "run_shapley": false,
+      "shapley_samples": 64,
+      "alpha": 0.5
+    },
+    "graph": {
+      "max_features": 7500,
+      "max_n_logits": 10,
+      "desired_logit_prob": 0.99,
+      "node_threshold": 0.8,
+      "edge_threshold": 0.98,
+      "attribution_batch_size": 256,
+      "spline_attribution_method": "jacobian_ablation"
+    },
+    "monosemanticity": {
+      "enabled": false,
+      "n_features": 100,
+      "n_samples": 1000,
+      "top_k_examples": 5
+    },
+    "splines": {
+      "enabled": false,
+      "n_features": 10,
+      "n_samples": 500,
+      "top_dims": 3,
+      "no_plot": true
+    }
+  },
+  "reporting": {
+    "primary_variant": "r5b_llama32_1b_spline_dt8192",
+    "baseline_variant": "r5b_llama32_1b_spline_dt8192",
+    "bootstrap_samples": 100,
+    "confidence_level": 0.95,
+    "figure_case_study_prompt_id": "ravel_aarau_country_0"
+  },
+  "benchmark_entries": [
+    {
+      "prompt_id": "ravel_aarau_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Aarau\", \"country\": \"",
+      "target_token": " Switzerland",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Aarau\", \"country\": \"",
+      "target_token": " Switzerland",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Aarau is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Aarau is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Aarau is (",
+      "target_token": " 47",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Aarau\", \"lat\": \"",
+      "target_token": " 47",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Aarau\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Aarau\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aarau\", \"language\": \"",
+      "target_token": " German",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_language_1",
+      "family": "ioi",
+      "prompt": " in Aarau, people usually speak",
+      "target_token": " German",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Aarau\", \"timezone\": \"",
+      "target_token": " Europe/Zurich",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aarau_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aarau\", \"timezone\": \"",
+      "target_token": " Europe/Zurich",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abadan\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abadan\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abadan is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abadan is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abadan is (",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abadan\", \"lat\": \"",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abadan\", \"long\": \"",
+      "target_token": " 48",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abadan\", \"long\": \"",
+      "target_token": " 48",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abadan\", \"language\": \"",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_language_1",
+      "family": "ioi",
+      "prompt": " in Abadan, people usually speak",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abadan\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abadan_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abadan\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abha\", \"country\": \"",
+      "target_token": " Saudi Arabia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abha\", \"country\": \"",
+      "target_token": " Saudi Arabia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abha is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abha is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abha is (",
+      "target_token": " 18",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abha\", \"lat\": \"",
+      "target_token": " 18",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abha\", \"long\": \"",
+      "target_token": " 43",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abha\", \"long\": \"",
+      "target_token": " 43",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abha\", \"language\": \"",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_language_1",
+      "family": "ioi",
+      "prompt": " in Abha, people usually speak",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abha\", \"timezone\": \"",
+      "target_token": " Asia/Riyadh",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abha_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abha\", \"timezone\": \"",
+      "target_token": " Asia/Riyadh",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abidjan\", \"country\": \"",
+      "target_token": " Ivory Coast",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abidjan\", \"country\": \"",
+      "target_token": " Ivory Coast",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abidjan is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abidjan is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abidjan is (",
+      "target_token": " 5",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abidjan\", \"lat\": \"",
+      "target_token": " 5",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abidjan\", \"long\": \"",
+      "target_token": " -4",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abidjan\", \"long\": \"",
+      "target_token": " -4",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abidjan\", \"language\": \"",
+      "target_token": " French",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_language_1",
+      "family": "ioi",
+      "prompt": " in Abidjan, people usually speak",
+      "target_token": " French",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abidjan\", \"timezone\": \"",
+      "target_token": " Africa/Abidjan",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abidjan_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abidjan\", \"timezone\": \"",
+      "target_token": " Africa/Abidjan",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abilene\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abilene\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abilene is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abilene is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abilene is (",
+      "target_token": " 38",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abilene\", \"lat\": \"",
+      "target_token": " 38",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abilene\", \"long\": \"",
+      "target_token": " -97",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abilene\", \"long\": \"",
+      "target_token": " -97",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abilene\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_language_1",
+      "family": "ioi",
+      "prompt": " in Abilene, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abilene\", \"timezone\": \"",
+      "target_token": " America/Chicago",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abilene_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abilene\", \"timezone\": \"",
+      "target_token": " America/Chicago",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abohar\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abohar\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abohar is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abohar is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abohar is (",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abohar\", \"lat\": \"",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abohar\", \"long\": \"",
+      "target_token": " 74",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abohar\", \"long\": \"",
+      "target_token": " 74",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abohar\", \"language\": \"",
+      "target_token": " Punjabi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_language_1",
+      "family": "ioi",
+      "prompt": " in Abohar, people usually speak",
+      "target_token": " Punjabi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abohar\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abohar_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abohar\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abuja\", \"country\": \"",
+      "target_token": " Nigeria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abuja\", \"country\": \"",
+      "target_token": " Nigeria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abuja is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abuja is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abuja is (",
+      "target_token": " 9",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abuja\", \"lat\": \"",
+      "target_token": " 9",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abuja\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abuja\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abuja\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_language_1",
+      "family": "ioi",
+      "prompt": " in Abuja, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abuja\", \"timezone\": \"",
+      "target_token": " Africa/Lagos",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuja_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abuja\", \"timezone\": \"",
+      "target_token": " Africa/Lagos",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Abuna\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Abuna\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Abuna is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Abuna is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Abuna is (",
+      "target_token": " -10",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abuna\", \"lat\": \"",
+      "target_token": " -10",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Abuna\", \"long\": \"",
+      "target_token": " -65",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Abuna\", \"long\": \"",
+      "target_token": " -65",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abuna\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_language_1",
+      "family": "ioi",
+      "prompt": " in Abuna, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Abuna\", \"timezone\": \"",
+      "target_token": " America/Porto_Velho",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_abuna_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Abuna\", \"timezone\": \"",
+      "target_token": " America/Porto_Velho",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Acarau\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Acarau\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Acarau is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Acarau is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Acarau is (",
+      "target_token": " -3",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Acarau\", \"lat\": \"",
+      "target_token": " -3",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Acarau\", \"long\": \"",
+      "target_token": " -40",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Acarau\", \"long\": \"",
+      "target_token": " -40",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Acarau\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_language_1",
+      "family": "ioi",
+      "prompt": " in Acarau, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Acarau\", \"timezone\": \"",
+      "target_token": " America/Fortaleza",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarau_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Acarau\", \"timezone\": \"",
+      "target_token": " America/Fortaleza",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Acarigua\", \"country\": \"",
+      "target_token": " Venezuela",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Acarigua\", \"country\": \"",
+      "target_token": " Venezuela",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Acarigua is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Acarigua is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Acarigua is (",
+      "target_token": " 10",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Acarigua\", \"lat\": \"",
+      "target_token": " 10",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Acarigua\", \"long\": \"",
+      "target_token": " -69",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Acarigua\", \"long\": \"",
+      "target_token": " -69",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Acarigua\", \"language\": \"",
+      "target_token": " Goajiro,Spanish,Warrau",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_language_1",
+      "family": "ioi",
+      "prompt": " in Acarigua, people usually speak",
+      "target_token": " Goajiro,Spanish,Warrau",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Acarigua\", \"timezone\": \"",
+      "target_token": " America/Caracas",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_acarigua_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Acarigua\", \"timezone\": \"",
+      "target_token": " America/Caracas",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Accra\", \"country\": \"",
+      "target_token": " Ghana",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Accra\", \"country\": \"",
+      "target_token": " Ghana",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Accra is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Accra is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Accra is (",
+      "target_token": " 6",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Accra\", \"lat\": \"",
+      "target_token": " 6",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Accra\", \"long\": \"",
+      "target_token": " 0",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Accra\", \"long\": \"",
+      "target_token": " 0",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Accra\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_language_1",
+      "family": "ioi",
+      "prompt": " in Accra, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Accra\", \"timezone\": \"",
+      "target_token": " Africa/Accra",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_accra_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Accra\", \"timezone\": \"",
+      "target_token": " Africa/Accra",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Adrar\", \"country\": \"",
+      "target_token": " Algeria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Adrar\", \"country\": \"",
+      "target_token": " Algeria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Adrar is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Adrar is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Adrar is (",
+      "target_token": " 28",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Adrar\", \"lat\": \"",
+      "target_token": " 28",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Adrar\", \"long\": \"",
+      "target_token": " 0",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Adrar\", \"long\": \"",
+      "target_token": " 0",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Adrar\", \"language\": \"",
+      "target_token": " Arabic,Berberi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_language_1",
+      "family": "ioi",
+      "prompt": " in Adrar, people usually speak",
+      "target_token": " Arabic,Berberi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Adrar\", \"timezone\": \"",
+      "target_token": " Africa/Algiers",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_adrar_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Adrar\", \"timezone\": \"",
+      "target_token": " Africa/Algiers",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Agadez\", \"country\": \"",
+      "target_token": " Niger",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Agadez\", \"country\": \"",
+      "target_token": " Niger",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Agadez is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Agadez is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Agadez is (",
+      "target_token": " 17",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agadez\", \"lat\": \"",
+      "target_token": " 17",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Agadez\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agadez\", \"long\": \"",
+      "target_token": " 8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agadez\", \"language\": \"",
+      "target_token": " French",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_language_1",
+      "family": "ioi",
+      "prompt": " in Agadez, people usually speak",
+      "target_token": " French",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Agadez\", \"timezone\": \"",
+      "target_token": " Africa/Niamey",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agadez_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agadez\", \"timezone\": \"",
+      "target_token": " Africa/Niamey",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Agdam\", \"country\": \"",
+      "target_token": " Azerbaijan",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Agdam\", \"country\": \"",
+      "target_token": " Azerbaijan",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Agdam is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Agdam is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Agdam is (",
+      "target_token": " 40",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agdam\", \"lat\": \"",
+      "target_token": " 40",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Agdam\", \"long\": \"",
+      "target_token": " 46",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agdam\", \"long\": \"",
+      "target_token": " 46",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agdam\", \"language\": \"",
+      "target_token": " Azerbaijani",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_language_1",
+      "family": "ioi",
+      "prompt": " in Agdam, people usually speak",
+      "target_token": " Azerbaijani",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Agdam\", \"timezone\": \"",
+      "target_token": " Asia/Baku",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agdam_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agdam\", \"timezone\": \"",
+      "target_token": " Asia/Baku",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Agordat\", \"country\": \"",
+      "target_token": " Eritrea",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Agordat\", \"country\": \"",
+      "target_token": " Eritrea",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Agordat is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Agordat is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Agordat is (",
+      "target_token": " 16",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agordat\", \"lat\": \"",
+      "target_token": " 16",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Agordat\", \"long\": \"",
+      "target_token": " 38",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agordat\", \"long\": \"",
+      "target_token": " 38",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agordat\", \"language\": \"",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_language_1",
+      "family": "ioi",
+      "prompt": " in Agordat, people usually speak",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Agordat\", \"timezone\": \"",
+      "target_token": " Africa/Asmara",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agordat_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agordat\", \"timezone\": \"",
+      "target_token": " Africa/Asmara",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Agri\", \"country\": \"",
+      "target_token": " Turkey",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Agri\", \"country\": \"",
+      "target_token": " Turkey",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Agri is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Agri is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Agri is (",
+      "target_token": " 40",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agri\", \"lat\": \"",
+      "target_token": " 40",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Agri\", \"long\": \"",
+      "target_token": " 43",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Agri\", \"long\": \"",
+      "target_token": " 43",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agri\", \"language\": \"",
+      "target_token": " Arabic,Kurdish,Turkish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_language_1",
+      "family": "ioi",
+      "prompt": " in Agri, people usually speak",
+      "target_token": " Arabic,Kurdish,Turkish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Agri\", \"timezone\": \"",
+      "target_token": " Europe/Istanbul",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_agri_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Agri\", \"timezone\": \"",
+      "target_token": " Europe/Istanbul",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Ahmedabad\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Ahmedabad\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Ahmedabad is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Ahmedabad is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Ahmedabad is (",
+      "target_token": " 23",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ahmedabad\", \"lat\": \"",
+      "target_token": " 23",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Ahmedabad\", \"long\": \"",
+      "target_token": " 73",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ahmedabad\", \"long\": \"",
+      "target_token": " 73",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ahmedabad\", \"language\": \"",
+      "target_token": " Gujarati",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_language_1",
+      "family": "ioi",
+      "prompt": " in Ahmedabad, people usually speak",
+      "target_token": " Gujarati",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Ahmedabad\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahmedabad_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ahmedabad\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Ahvaz\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Ahvaz\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Ahvaz is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Ahvaz is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Ahvaz is (",
+      "target_token": " 31",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ahvaz\", \"lat\": \"",
+      "target_token": " 31",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Ahvaz\", \"long\": \"",
+      "target_token": " 49",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ahvaz\", \"long\": \"",
+      "target_token": " 49",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ahvaz\", \"language\": \"",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_language_1",
+      "family": "ioi",
+      "prompt": " in Ahvaz, people usually speak",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Ahvaz\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ahvaz_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ahvaz\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Albury\", \"country\": \"",
+      "target_token": " Australia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Albury\", \"country\": \"",
+      "target_token": " Australia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Albury is a city in the continent of",
+      "target_token": " Oceania",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Albury is a city in the continent of",
+      "target_token": " Oceania",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Albury is (",
+      "target_token": " -36",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Albury\", \"lat\": \"",
+      "target_token": " -36",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Albury\", \"long\": \"",
+      "target_token": " 147",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Albury\", \"long\": \"",
+      "target_token": " 147",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Albury\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_language_1",
+      "family": "ioi",
+      "prompt": " in Albury, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Albury\", \"timezone\": \"",
+      "target_token": " Australia/Sydney",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_albury_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Albury\", \"timezone\": \"",
+      "target_token": " Australia/Sydney",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alenquer\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alenquer\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alenquer is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alenquer is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alenquer is (",
+      "target_token": " -2",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alenquer\", \"lat\": \"",
+      "target_token": " -2",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alenquer\", \"long\": \"",
+      "target_token": " -55",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alenquer\", \"long\": \"",
+      "target_token": " -55",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alenquer\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_language_1",
+      "family": "ioi",
+      "prompt": " in Alenquer, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alenquer\", \"timezone\": \"",
+      "target_token": " America/Santarem",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alenquer_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alenquer\", \"timezone\": \"",
+      "target_token": " America/Santarem",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Aleppo\", \"country\": \"",
+      "target_token": " Syria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Aleppo\", \"country\": \"",
+      "target_token": " Syria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Aleppo is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Aleppo is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Aleppo is (",
+      "target_token": " 36",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Aleppo\", \"lat\": \"",
+      "target_token": " 36",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Aleppo\", \"long\": \"",
+      "target_token": " 37",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Aleppo\", \"long\": \"",
+      "target_token": " 37",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aleppo\", \"language\": \"",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_language_1",
+      "family": "ioi",
+      "prompt": " in Aleppo, people usually speak",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Aleppo\", \"timezone\": \"",
+      "target_token": " Asia/Damascus",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleppo_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aleppo\", \"timezone\": \"",
+      "target_token": " Asia/Damascus",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alesund\", \"country\": \"",
+      "target_token": " Norway",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alesund\", \"country\": \"",
+      "target_token": " Norway",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alesund is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alesund is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alesund is (",
+      "target_token": " 63",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alesund\", \"lat\": \"",
+      "target_token": " 63",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alesund\", \"long\": \"",
+      "target_token": " 6",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alesund\", \"long\": \"",
+      "target_token": " 6",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alesund\", \"language\": \"",
+      "target_token": " Norwegian Nynorsk",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_language_1",
+      "family": "ioi",
+      "prompt": " in Alesund, people usually speak",
+      "target_token": " Norwegian Nynorsk",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alesund\", \"timezone\": \"",
+      "target_token": " Europe/Oslo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alesund_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alesund\", \"timezone\": \"",
+      "target_token": " Europe/Oslo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alexandria\", \"country\": \"",
+      "target_token": " Egypt",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alexandria\", \"country\": \"",
+      "target_token": " Egypt",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alexandria is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alexandria is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alexandria is (",
+      "target_token": " 31",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alexandria\", \"lat\": \"",
+      "target_token": " 31",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alexandria\", \"long\": \"",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alexandria\", \"long\": \"",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alexandria\", \"language\": \"",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_language_1",
+      "family": "ioi",
+      "prompt": " in Alexandria, people usually speak",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alexandria\", \"timezone\": \"",
+      "target_token": " Africa/Cairo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alexandria_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alexandria\", \"timezone\": \"",
+      "target_token": " Africa/Cairo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Aleysk\", \"country\": \"",
+      "target_token": " Russia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Aleysk\", \"country\": \"",
+      "target_token": " Russia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Aleysk is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Aleysk is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Aleysk is (",
+      "target_token": " 52",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Aleysk\", \"lat\": \"",
+      "target_token": " 52",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Aleysk\", \"long\": \"",
+      "target_token": " 83",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Aleysk\", \"long\": \"",
+      "target_token": " 83",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aleysk\", \"language\": \"",
+      "target_token": " Russian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_language_1",
+      "family": "ioi",
+      "prompt": " in Aleysk, people usually speak",
+      "target_token": " Russian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Aleysk\", \"timezone\": \"",
+      "target_token": " Asia/Barnaul",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_aleysk_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Aleysk\", \"timezone\": \"",
+      "target_token": " Asia/Barnaul",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Algiers\", \"country\": \"",
+      "target_token": " Algeria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Algiers\", \"country\": \"",
+      "target_token": " Algeria",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Algiers is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Algiers is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Algiers is (",
+      "target_token": " 37",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Algiers\", \"lat\": \"",
+      "target_token": " 37",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Algiers\", \"long\": \"",
+      "target_token": " 3",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Algiers\", \"long\": \"",
+      "target_token": " 3",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Algiers\", \"language\": \"",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_language_1",
+      "family": "ioi",
+      "prompt": " in Algiers, people usually speak",
+      "target_token": " Arabic",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Algiers\", \"timezone\": \"",
+      "target_token": " Africa/Algiers",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_algiers_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Algiers\", \"timezone\": \"",
+      "target_token": " Africa/Algiers",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alice\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alice\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alice is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alice is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alice is (",
+      "target_token": " 46",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alice\", \"lat\": \"",
+      "target_token": " 46",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alice\", \"long\": \"",
+      "target_token": " -97",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alice\", \"long\": \"",
+      "target_token": " -97",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alice\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_language_1",
+      "family": "ioi",
+      "prompt": " in Alice, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alice\", \"timezone\": \"",
+      "target_token": " America/Chicago",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alice_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alice\", \"timezone\": \"",
+      "target_token": " America/Chicago",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Allende\", \"country\": \"",
+      "target_token": " Mexico",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Allende\", \"country\": \"",
+      "target_token": " Mexico",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Allende is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Allende is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Allende is (",
+      "target_token": " 28",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Allende\", \"lat\": \"",
+      "target_token": " 28",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Allende\", \"long\": \"",
+      "target_token": " -100",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Allende\", \"long\": \"",
+      "target_token": " -100",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Allende\", \"language\": \"",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_language_1",
+      "family": "ioi",
+      "prompt": " in Allende, people usually speak",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Allende\", \"timezone\": \"",
+      "target_token": " America/Matamoros",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allende_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Allende\", \"timezone\": \"",
+      "target_token": " America/Matamoros",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Allentown\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Allentown\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Allentown is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Allentown is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Allentown is (",
+      "target_token": " 32",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Allentown\", \"lat\": \"",
+      "target_token": " 32",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Allentown\", \"long\": \"",
+      "target_token": " -83",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Allentown\", \"long\": \"",
+      "target_token": " -83",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Allentown\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_language_1",
+      "family": "ioi",
+      "prompt": " in Allentown, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Allentown\", \"timezone\": \"",
+      "target_token": " America/New_York",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_allentown_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Allentown\", \"timezone\": \"",
+      "target_token": " America/New_York",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alliance\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alliance\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alliance is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alliance is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alliance is (",
+      "target_token": " 42",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alliance\", \"lat\": \"",
+      "target_token": " 42",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alliance\", \"long\": \"",
+      "target_token": " -103",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alliance\", \"long\": \"",
+      "target_token": " -103",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alliance\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_language_1",
+      "family": "ioi",
+      "prompt": " in Alliance, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alliance\", \"timezone\": \"",
+      "target_token": " America/Denver",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alliance_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alliance\", \"timezone\": \"",
+      "target_token": " America/Denver",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Almaty\", \"country\": \"",
+      "target_token": " Kazakhstan",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Almaty\", \"country\": \"",
+      "target_token": " Kazakhstan",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Almaty is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Almaty is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Almaty is (",
+      "target_token": " 43",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Almaty\", \"lat\": \"",
+      "target_token": " 43",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Almaty\", \"long\": \"",
+      "target_token": " 77",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Almaty\", \"long\": \"",
+      "target_token": " 77",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Almaty\", \"language\": \"",
+      "target_token": " Kazakh",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_language_1",
+      "family": "ioi",
+      "prompt": " in Almaty, people usually speak",
+      "target_token": " Kazakh",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Almaty\", \"timezone\": \"",
+      "target_token": " Asia/Almaty",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almaty_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Almaty\", \"timezone\": \"",
+      "target_token": " Asia/Almaty",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Almenara\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Almenara\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Almenara is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Almenara is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Almenara is (",
+      "target_token": " -16",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Almenara\", \"lat\": \"",
+      "target_token": " -16",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Almenara\", \"long\": \"",
+      "target_token": " -41",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Almenara\", \"long\": \"",
+      "target_token": " -41",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Almenara\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_language_1",
+      "family": "ioi",
+      "prompt": " in Almenara, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Almenara\", \"timezone\": \"",
+      "target_token": " America/Sao_Paulo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almenara_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Almenara\", \"timezone\": \"",
+      "target_token": " America/Sao_Paulo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Almirante\", \"country\": \"",
+      "target_token": " Panama",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Almirante\", \"country\": \"",
+      "target_token": " Panama",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Almirante is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Almirante is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Almirante is (",
+      "target_token": " 9",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Almirante\", \"lat\": \"",
+      "target_token": " 9",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Almirante\", \"long\": \"",
+      "target_token": " -82",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Almirante\", \"long\": \"",
+      "target_token": " -82",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Almirante\", \"language\": \"",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_language_1",
+      "family": "ioi",
+      "prompt": " in Almirante, people usually speak",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Almirante\", \"timezone\": \"",
+      "target_token": " America/Panama",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_almirante_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Almirante\", \"timezone\": \"",
+      "target_token": " America/Panama",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alpena\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alpena\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alpena is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alpena is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alpena is (",
+      "target_token": " 45",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alpena\", \"lat\": \"",
+      "target_token": " 45",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alpena\", \"long\": \"",
+      "target_token": " -83",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alpena\", \"long\": \"",
+      "target_token": " -83",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alpena\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_language_1",
+      "family": "ioi",
+      "prompt": " in Alpena, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alpena\", \"timezone\": \"",
+      "target_token": " America/Detroit",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpena_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alpena\", \"timezone\": \"",
+      "target_token": " America/Detroit",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alpine\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alpine\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alpine is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alpine is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alpine is (",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alpine\", \"lat\": \"",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alpine\", \"long\": \"",
+      "target_token": " -104",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alpine\", \"long\": \"",
+      "target_token": " -104",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alpine\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_language_1",
+      "family": "ioi",
+      "prompt": " in Alpine, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alpine\", \"timezone\": \"",
+      "target_token": " America/Chicago",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alpine_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alpine\", \"timezone\": \"",
+      "target_token": " America/Chicago",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Altata\", \"country\": \"",
+      "target_token": " Mexico",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Altata\", \"country\": \"",
+      "target_token": " Mexico",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Altata is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Altata is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Altata is (",
+      "target_token": " 25",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Altata\", \"lat\": \"",
+      "target_token": " 25",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Altata\", \"long\": \"",
+      "target_token": " -108",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Altata\", \"long\": \"",
+      "target_token": " -108",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Altata\", \"language\": \"",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_language_1",
+      "family": "ioi",
+      "prompt": " in Altata, people usually speak",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Altata\", \"timezone\": \"",
+      "target_token": " America/Mazatlan",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_altata_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Altata\", \"timezone\": \"",
+      "target_token": " America/Mazatlan",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Alvorada\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Alvorada\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Alvorada is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Alvorada is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Alvorada is (",
+      "target_token": " -30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alvorada\", \"lat\": \"",
+      "target_token": " -30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Alvorada\", \"long\": \"",
+      "target_token": " -51",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Alvorada\", \"long\": \"",
+      "target_token": " -51",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alvorada\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_language_1",
+      "family": "ioi",
+      "prompt": " in Alvorada, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Alvorada\", \"timezone\": \"",
+      "target_token": " America/Araguaina",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_alvorada_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Alvorada\", \"timezone\": \"",
+      "target_token": " America/Araguaina",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Ambala\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Ambala\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Ambala is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Ambala is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Ambala is (",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ambala\", \"lat\": \"",
+      "target_token": " 30",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Ambala\", \"long\": \"",
+      "target_token": " 77",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ambala\", \"long\": \"",
+      "target_token": " 77",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ambala\", \"language\": \"",
+      "target_token": " Hindi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_language_1",
+      "family": "ioi",
+      "prompt": " in Ambala, people usually speak",
+      "target_token": " Hindi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Ambala\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambala_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ambala\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Ambon\", \"country\": \"",
+      "target_token": " Indonesia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Ambon\", \"country\": \"",
+      "target_token": " Indonesia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Ambon is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Ambon is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Ambon is (",
+      "target_token": " -4",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ambon\", \"lat\": \"",
+      "target_token": " -4",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Ambon\", \"long\": \"",
+      "target_token": " 128",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ambon\", \"long\": \"",
+      "target_token": " 128",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ambon\", \"language\": \"",
+      "target_token": " Indonesian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_language_1",
+      "family": "ioi",
+      "prompt": " in Ambon, people usually speak",
+      "target_token": " Indonesian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Ambon\", \"timezone\": \"",
+      "target_token": " Asia/Jayapura",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambon_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ambon\", \"timezone\": \"",
+      "target_token": " Asia/Jayapura",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Ambriz\", \"country\": \"",
+      "target_token": " Angola",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Ambriz\", \"country\": \"",
+      "target_token": " Angola",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Ambriz is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Ambriz is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Ambriz is (",
+      "target_token": " -8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ambriz\", \"lat\": \"",
+      "target_token": " -8",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Ambriz\", \"long\": \"",
+      "target_token": " 13",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Ambriz\", \"long\": \"",
+      "target_token": " 13",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ambriz\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_language_1",
+      "family": "ioi",
+      "prompt": " in Ambriz, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Ambriz\", \"timezone\": \"",
+      "target_token": " Africa/Luanda",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_ambriz_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Ambriz\", \"timezone\": \"",
+      "target_token": " Africa/Luanda",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Amderma\", \"country\": \"",
+      "target_token": " Russia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Amderma\", \"country\": \"",
+      "target_token": " Russia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Amderma is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Amderma is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Amderma is (",
+      "target_token": " 70",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amderma\", \"lat\": \"",
+      "target_token": " 70",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Amderma\", \"long\": \"",
+      "target_token": " 62",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amderma\", \"long\": \"",
+      "target_token": " 62",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amderma\", \"language\": \"",
+      "target_token": " Russian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_language_1",
+      "family": "ioi",
+      "prompt": " in Amderma, people usually speak",
+      "target_token": " Russian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Amderma\", \"timezone\": \"",
+      "target_token": " Europe/Moscow",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amderma_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amderma\", \"timezone\": \"",
+      "target_token": " Europe/Moscow",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Americana\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Americana\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Americana is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Americana is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Americana is (",
+      "target_token": " -23",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Americana\", \"lat\": \"",
+      "target_token": " -23",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Americana\", \"long\": \"",
+      "target_token": " -47",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Americana\", \"long\": \"",
+      "target_token": " -47",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Americana\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_language_1",
+      "family": "ioi",
+      "prompt": " in Americana, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Americana\", \"timezone\": \"",
+      "target_token": " America/Sao_Paulo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_americana_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Americana\", \"timezone\": \"",
+      "target_token": " America/Sao_Paulo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Amherst\", \"country\": \"",
+      "target_token": " Canada",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Amherst\", \"country\": \"",
+      "target_token": " Canada",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Amherst is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Amherst is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Amherst is (",
+      "target_token": " 46",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amherst\", \"lat\": \"",
+      "target_token": " 46",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Amherst\", \"long\": \"",
+      "target_token": " -64",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amherst\", \"long\": \"",
+      "target_token": " -64",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amherst\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_language_1",
+      "family": "ioi",
+      "prompt": " in Amherst, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Amherst\", \"timezone\": \"",
+      "target_token": " America/Halifax",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amherst_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amherst\", \"timezone\": \"",
+      "target_token": " America/Halifax",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Amol\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Amol\", \"country\": \"",
+      "target_token": " Iran",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Amol is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Amol is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Amol is (",
+      "target_token": " 36",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amol\", \"lat\": \"",
+      "target_token": " 36",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Amol\", \"long\": \"",
+      "target_token": " 52",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amol\", \"long\": \"",
+      "target_token": " 52",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amol\", \"language\": \"",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_language_1",
+      "family": "ioi",
+      "prompt": " in Amol, people usually speak",
+      "target_token": " Persian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Amol\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amol_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amol\", \"timezone\": \"",
+      "target_token": " Asia/Tehran",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Amravati\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Amravati\", \"country\": \"",
+      "target_token": " India",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Amravati is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Amravati is a city in the continent of",
+      "target_token": " Asia",
+      "foil_token": " Europe",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Amravati is (",
+      "target_token": " 21",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amravati\", \"lat\": \"",
+      "target_token": " 21",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Amravati\", \"long\": \"",
+      "target_token": " 78",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amravati\", \"long\": \"",
+      "target_token": " 78",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amravati\", \"language\": \"",
+      "target_token": " Marathi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_language_1",
+      "family": "ioi",
+      "prompt": " in Amravati, people usually speak",
+      "target_token": " Marathi",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Amravati\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amravati_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amravati\", \"timezone\": \"",
+      "target_token": " Asia/Kolkata",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Amsterdam\", \"country\": \"",
+      "target_token": " Netherlands",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Amsterdam\", \"country\": \"",
+      "target_token": " Netherlands",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Amsterdam is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Amsterdam is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Amsterdam is (",
+      "target_token": " 52",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amsterdam\", \"lat\": \"",
+      "target_token": " 52",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Amsterdam\", \"long\": \"",
+      "target_token": " 5",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amsterdam\", \"long\": \"",
+      "target_token": " 5",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amsterdam\", \"language\": \"",
+      "target_token": " Dutch",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_language_1",
+      "family": "ioi",
+      "prompt": " in Amsterdam, people usually speak",
+      "target_token": " Dutch",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Amsterdam\", \"timezone\": \"",
+      "target_token": " Europe/Amsterdam",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amsterdam_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amsterdam\", \"timezone\": \"",
+      "target_token": " Europe/Amsterdam",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Amursk\", \"country\": \"",
+      "target_token": " Russia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Amursk\", \"country\": \"",
+      "target_token": " Russia",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Amursk is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Amursk is a city in the continent of",
+      "target_token": " Europe",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Amursk is (",
+      "target_token": " 50",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amursk\", \"lat\": \"",
+      "target_token": " 50",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Amursk\", \"long\": \"",
+      "target_token": " 137",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Amursk\", \"long\": \"",
+      "target_token": " 137",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amursk\", \"language\": \"",
+      "target_token": " Russian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_language_1",
+      "family": "ioi",
+      "prompt": " in Amursk, people usually speak",
+      "target_token": " Russian",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Amursk\", \"timezone\": \"",
+      "target_token": " Asia/Vladivostok",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_amursk_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Amursk\", \"timezone\": \"",
+      "target_token": " Asia/Vladivostok",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Anaco\", \"country\": \"",
+      "target_token": " Venezuela",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Anaco\", \"country\": \"",
+      "target_token": " Venezuela",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Anaco is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Anaco is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Anaco is (",
+      "target_token": " 9",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Anaco\", \"lat\": \"",
+      "target_token": " 9",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Anaco\", \"long\": \"",
+      "target_token": " -64",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Anaco\", \"long\": \"",
+      "target_token": " -64",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Anaco\", \"language\": \"",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_language_1",
+      "family": "ioi",
+      "prompt": " in Anaco, people usually speak",
+      "target_token": " Spanish",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Anaco\", \"timezone\": \"",
+      "target_token": " America/Caracas",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anaco_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Anaco\", \"timezone\": \"",
+      "target_token": " America/Caracas",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Anapolis\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Anapolis\", \"country\": \"",
+      "target_token": " Brazil",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Anapolis is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Anapolis is a city in the continent of",
+      "target_token": " South America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Anapolis is (",
+      "target_token": " -16",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Anapolis\", \"lat\": \"",
+      "target_token": " -16",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Anapolis\", \"long\": \"",
+      "target_token": " -49",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Anapolis\", \"long\": \"",
+      "target_token": " -49",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Anapolis\", \"language\": \"",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_language_1",
+      "family": "ioi",
+      "prompt": " in Anapolis, people usually speak",
+      "target_token": " Portuguese",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Anapolis\", \"timezone\": \"",
+      "target_token": " America/Sao_Paulo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anapolis_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Anapolis\", \"timezone\": \"",
+      "target_token": " America/Sao_Paulo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Anchorage\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Anchorage\", \"country\": \"",
+      "target_token": " United States",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Anchorage is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Anchorage is a city in the continent of",
+      "target_token": " North America",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Anchorage is (",
+      "target_token": " 38",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Anchorage\", \"lat\": \"",
+      "target_token": " 38",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Anchorage\", \"long\": \"",
+      "target_token": " -86",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Anchorage\", \"long\": \"",
+      "target_token": " -86",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Anchorage\", \"language\": \"",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_language_1",
+      "family": "ioi",
+      "prompt": " in Anchorage, people usually speak",
+      "target_token": " English",
+      "foil_token": " Spanish",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Anchorage\", \"timezone\": \"",
+      "target_token": " America/New_York",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_anchorage_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Anchorage\", \"timezone\": \"",
+      "target_token": " America/New_York",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_country_0",
+      "family": "factual",
+      "prompt": "\"lang\": \"English\"}, {\"city\": \"Andoany\", \"country\": \"",
+      "target_token": " Madagascar",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_country_1",
+      "family": "factual",
+      "prompt": "[{\"city\": \"Andoany\", \"country\": \"",
+      "target_token": " Madagascar",
+      "foil_token": " Germany",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_continent_0",
+      "family": "factual",
+      "prompt": "Beijing is a city in the continent of Asia. Andoany is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_continent_1",
+      "family": "factual",
+      "prompt": "Cape Town is a city in the continent of Africa. Andoany is a city in the continent of",
+      "target_token": " Africa",
+      "foil_token": " Asia",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_latitude_0",
+      "family": "ioi",
+      "prompt": "The latitude and longitude of Andoany is (",
+      "target_token": " -13",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_latitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Andoany\", \"lat\": \"",
+      "target_token": " -13",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_longitude_0",
+      "family": "ioi",
+      "prompt": " \"long\": \"122.4\"}, {\"city\": \"Andoany\", \"long\": \"",
+      "target_token": " 48",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_longitude_1",
+      "family": "ioi",
+      "prompt": "[{\"city\": \"Andoany\", \"long\": \"",
+      "target_token": " 48",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_language_0",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Andoany\", \"language\": \"",
+      "target_token": " French,Malagasy",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_language_1",
+      "family": "ioi",
+      "prompt": " in Andoany, people usually speak",
+      "target_token": " French,Malagasy",
+      "foil_token": " English",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_timezone_0",
+      "family": "ioi",
+      "prompt": " \"continent\": \"North America\"}, {\"city\": \"Andoany\", \"timezone\": \"",
+      "target_token": " Indian/Antananarivo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    },
+    {
+      "prompt_id": "ravel_andoany_timezone_1",
+      "family": "ioi",
+      "prompt": " \"country\": \"United Kingdom\"}, {\"city\": \"Andoany\", \"timezone\": \"",
+      "target_token": " Indian/Antananarivo",
+      "foil_token": " Unknown",
+      "split": "main",
+      "include_macag": true
+    }
+  ],
+  "output_root": "/gscratch/ssuresh/results/r5b_ravel"
+}

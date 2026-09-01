@@ -1,7 +1,7 @@
 {
   "model_variants": {
     "linear_param_match_gpt2_small_pv3": {
-      "label": "Linear CLT (param-match to spline@12288, d_t=27008, 1B tokens, deduped val, λ=0.002)",
+      "label": "Linear CLT (param-match to spline@12288, d_t=27008, 1B tokens, deduped val, λ=0.005)",
       "model_name": "gpt2",
       "scan_id": "linear-pm-gpt2-small-pv3",
       "training": {
@@ -11,11 +11,18 @@
         "encoder_type": "linear",
         "grid_size": 5,
         "spline_order": 3,
+        "threshold_init_strategy": "data_quantile",
+        "threshold_init_target_l0": 32,
+        "threshold_calibration_samples": 16,
+        "threshold_calibration_values_per_sample": 32768,
+        "jumprelu_bandwidth": 0.001,
+        "threshold_weight_decay": 0.0,
+        "threshold_adam_eps": 1e-15,
         "learning_rate": 5e-05,
         "warmup_steps": 2900,
         "total_steps": 29000,
         "batch_size": 128,
-        "lambda_sparsity": 0.002,
+        "lambda_sparsity": 0.005,
         "c_sparsity": 1.0,
         "grad_clip": 1.0,
         "log_every": 20,

@@ -8,11 +8,10 @@
     "../models/gpt2_small_spline_param_match.json",
     "../benchmarks/neurips_core.json"
   ],
-  "suite_name": "paper_v3_gpt2_small",
-  "description": "paper_configs_v3: GPT-2 small 4-variant matrix (v1 sizes) at 1B tokens, 2 seeds. Feature-match both encoders at d_t=12288; spline param-match d_t=5568; linear param-match d_t=27008. Grid refine DISABLED, deduped train-disjoint val. Global batch 256 seq/step -> 1B x 0.95 / (256 x 128) = 29000 steps. Activation cache under paper_v3/gpt2_small_1b. Results under results/paper/paper_v3_gpt2_small/ (does not touch paper_v2 suites).",
+  "suite_name": "paper_v3_threshold_fixed_gpt2_small",
+  "description": "Threshold-fixed GPT-2 small 4-variant matrix at 1B tokens and seed 101. All arms use data-quantile JumpReLU initialization at L0=32 and matched lambda=0.005. Feature-match both encoders at d_t=12288; spline param-match d_t=5568; linear param-match d_t=27008. Grid refine DISABLED, deduped train-disjoint val. Writes to a fresh output root so invalid pre-fix optimizer states are never resumed.",
   "seeds": [
-    101,
-    202
+    101
   ],
   "model_variants": {
     "spline_feature_match_gpt2_small_pv3": {

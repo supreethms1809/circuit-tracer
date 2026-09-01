@@ -1,0 +1,31 @@
+{
+  "defaults": [
+    "../base/common_gemma3_1b.json",
+    "../macag/default.json",
+    "../models/gemma3_1b_linear_feature_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_v3_rebuttal_gemma3_linear",
+  "description": "One-seed rebuttal run for Gemma3-1B linear d_t=8192.",
+  "seeds": [101],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "cache_dir": "/lscratch/paper_v3_rebuttal/gemma3_1b/linear/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_v3_rebuttal/gemma3_1b/linear/val"
+  },
+  "model_variants": {
+    "linear_d8192_gemma3_1b_pv3": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "linear_d8192_gemma3_1b_pv3",
+    "baseline_variant": "linear_d8192_gemma3_1b_pv3"
+  }
+}

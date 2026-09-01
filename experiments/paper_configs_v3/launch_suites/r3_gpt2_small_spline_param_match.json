@@ -1,0 +1,36 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/r2_gpt2_small_spline_param_match.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r3_gpt2_small_spline_param_match",
+  "description": "R3: r2 config + decoder_init_strategy=data_scaled (per-layer decoder init calibrated so ||y_hat_l|| ~ ||y_l||). Single seed. gpt2_small_spline_param_match.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 750000000,
+    "cache_dir": "/lscratch/paper_r3/gpt2_small_spline_param_match/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r3/gpt2_small_spline_param_match/val"
+  },
+  "model_variants": {
+    "gpt2_small_spline_param_match_r2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "data_scaled",
+        "decoder_calibration_samples": 16
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gpt2_small_spline_param_match_r2",
+    "baseline_variant": "gpt2_small_spline_param_match_r2"
+  }
+}

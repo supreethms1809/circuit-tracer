@@ -6,8 +6,12 @@ the Spline-CLT to reconstruct MLP outputs.
 """
 
 import gc
+import json
 import os
-from dataclasses import dataclass
+import subprocess
+import sys
+import tempfile
+from dataclasses import asdict, dataclass
 
 import numpy as np
 import torch
@@ -625,4 +629,119 @@ def collect_activations(config: DataConfig) -> ActivationCollectResult:
         dataset=loaded,
         n_sequences=n_sequences,
         n_items_consumed=items_consumed,
+    )
+
+
+def collect_activations_isolated(
+    config: DataConfig,
+    *,
+    cuda_visible_devices: str | None = None,
+) -> ActivationCollectResult:
+    """Run :func:`collect_activations` in a fresh subprocess.
+
+    Loading Gemma (or any HookedTransformer) inside the FSDP training process
+    allocates and frees multi-GB tensors through the *same* CUDA caching
+    allocator that holds the ~69 GiB FSDP model. That fragments the allocator;
+    the next training backward then fails to find a contiguous ~9.26 GiB slab
+    for the full-decoder unshard even though steady-state ``memory_allocated``
+    is flat across chunks.
+
+    The child process gets its own allocator. When it exits, the driver frees
+    Gemma's memory without punching holes in the parent's CUDA slabs.
+    ``load_after_collect`` must be False (memmaps only); the parent never needs
+    the in-process dataset handle.
+
+    The parent must **release the FSDP training session from the GPUs** before
+    calling this for mid-run chunks (:func:`spline_clt.training.train.release_session_gpu`).
+    Collection loads the base LM only — it does not need FSDP — and co-resident
+    FSDP + Gemma on the same card is what OOMs chunk N+1.
+
+    Progress (tqdm / model-load logs) is inherited on stderr — do **not** pipe
+    ``capture_output`` here: a long collect fills the pipe buffer and deadlocks
+    the child while the parent waits forever with a silent ``.err`` log.
+    """
+    if config.load_after_collect:
+        raise ValueError(
+            "collect_activations_isolated requires load_after_collect=False "
+            "(child returns counts only; parent reloads memmaps)."
+        )
+
+    cfg = dict(asdict(config))
+    env = os.environ.copy()
+    # Child must not inherit torchrun/elastic membership — those vars make
+    # libraries assume it is still a distributed worker.
+    _drop_keys = {
+        "RANK",
+        "WORLD_SIZE",
+        "LOCAL_RANK",
+        "GROUP_RANK",
+        "ROLE_RANK",
+        "ROLE_NAME",
+        "LOCAL_WORLD_SIZE",
+        "GROUP_WORLD_SIZE",
+        "ROLE_WORLD_SIZE",
+        "MASTER_ADDR",
+        "MASTER_PORT",
+    }
+    _drop_prefixes = ("TORCHELASTIC_", "PET_", "TORCH_DISTRIBUTED_")
+    for key in list(env):
+        if key in _drop_keys or key.startswith(_drop_prefixes):
+            env.pop(key, None)
+    if cuda_visible_devices is not None:
+        env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices)
+        # Child sees a single device as cuda:0.
+        cfg["device"] = "cuda:0"
+
+    result_path = None
+    cfg_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix="_collect_cfg.json", delete=False
+        ) as cf:
+            json.dump(cfg, cf)
+            cfg_path = cf.name
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix="_collect_result.json", delete=False
+        ) as rf:
+            result_path = rf.name
+
+        child = r"""
+import json, sys
+from spline_clt.training.data import DataConfig, collect_activations
+cfg_path, result_path = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = DataConfig(**json.load(f))
+result = collect_activations(cfg)
+with open(result_path, "w") as f:
+    json.dump({
+        "n_sequences": int(result.n_sequences),
+        "n_items_consumed": int(result.n_items_consumed),
+    }, f)
+"""
+        proc = subprocess.run(
+            [sys.executable, "-c", child, cfg_path, result_path],
+            env=env,
+            check=False,
+            # Inherit stdout/stderr so Loading/tqdm appear in the Slurm .err
+            # and the pipe cannot fill up and deadlock.
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                "Isolated activation collection failed "
+                f"(exit {proc.returncode}). See child logs above."
+            )
+        with open(result_path) as f:
+            payload = json.load(f)
+    finally:
+        for path in (cfg_path, result_path):
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+    return ActivationCollectResult(
+        dataset=None,
+        n_sequences=int(payload["n_sequences"]),
+        n_items_consumed=int(payload["n_items_consumed"]),
     )

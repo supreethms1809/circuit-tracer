@@ -1,0 +1,5 @@
+spline_sae/configs/candidate_b3_l0_gemma_linear.yaml
+spline_sae/configs/candidate_b3_l0_llama_kan.yaml
+spline_sae/configs/candidate_b3_l0_llama_linear.yaml
+spline_sae/configs/candidate_b3_l0_qwen_kan.yaml
+spline_sae/configs/candidate_b3_l0_qwen_linear.yaml

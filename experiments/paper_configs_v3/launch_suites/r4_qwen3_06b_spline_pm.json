@@ -1,0 +1,40 @@
+{
+  "defaults": [
+    "../base/common_qwen3_06b.json",
+    "../macag/default.json",
+    "../models/r2_qwen3_06b_spline_pm.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r4_qwen3_06b_spline_pm",
+  "description": "R4: r2 qwen3_06b spline PM (already data_scaled) + lambda_sparsity -> 1e-5. Full KAN encoder. Single seed.",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 560000000,
+    "cache_dir": "/lscratch/paper_r4/qwen3_06b_spline_pm/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r4/qwen3_06b_spline_pm/val"
+  },
+  "model_variants": {
+    "qwen3_06b_spline_pm_r2": {
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": true,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "data_scaled",
+        "decoder_calibration_samples": 16,
+        "lambda_sparsity": 1e-05,
+        "sparsity_warmup_steps": 3000,
+        "sparsity_decay_start": 21000,
+        "lambda_sparsity_final": 3e-6
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "qwen3_06b_spline_pm_r2",
+    "baseline_variant": "qwen3_06b_spline_pm_r2"
+  }
+}

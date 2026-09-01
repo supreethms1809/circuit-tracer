@@ -1,0 +1,43 @@
+{
+  "defaults": [
+    "../base/common_gpt2_small.json",
+    "../macag/default.json",
+    "../models/r2_gpt2_small_spline_dt1536.json",
+    "../benchmarks/neurips_core.json"
+  ],
+  "suite_name": "paper_r5b_gpt2_small_spline_dt1536",
+  "description": "R5b GPT2 spline dt1536: kaiming + bw=0.12 + \u03bb peak 1e-5 (warmup 2000, decay 4500\u21923e-6). Seed 101.",
+  "output_root": "/gscratch/ssuresh/results/paper_r5b",
+  "seeds": [
+    101
+  ],
+  "stages": {
+    "report": false
+  },
+  "dataset": {
+    "n_tokens": 750000000,
+    "cache_dir": "/lscratch/paper_r5b/gpt2_small_spline_dt1536/train",
+    "val_cache_dir": "/gscratch/ssuresh/shared/activations/paper_r5b/gpt2_small_spline_dt1536/val"
+  },
+  "model_variants": {
+    "gpt2_small_spline_dt1536_r2": {
+      "scan_id": "gpt2-small-spline-dt1536-r5b",
+      "training": {
+        "use_fsdp": true,
+        "resume_training_if_exists": false,
+        "fsdp_cpu_offload": false,
+        "decoder_init_strategy": "kaiming",
+        "jumprelu_bandwidth": 0.12,
+        "lambda_sparsity": 1e-05,
+        "sparsity_warmup_steps": 2000,
+        "sparsity_decay_start": 4500,
+        "lambda_sparsity_final": 3e-06,
+        "run_name": "gpt2_small_spline_dt1536_r5b"
+      }
+    }
+  },
+  "reporting": {
+    "primary_variant": "gpt2_small_spline_dt1536_r2",
+    "baseline_variant": "gpt2_small_spline_dt1536_r2"
+  }
+}
