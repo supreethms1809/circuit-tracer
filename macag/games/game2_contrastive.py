@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+import json
 import logging
-from typing import Any, Mapping, Sequence
+from pathlib import Path
+import threading
+from typing import Any, Callable, Mapping, Sequence
 
 from macag.graph import CircuitGraph, NodeId, grow_connected_frontier
 from macag.scoring import ScoringOracle, TargetId
@@ -23,6 +27,29 @@ except Exception:  # pragma: no cover - optional dependency
     tqdm = None
 
 LOGGER = logging.getLogger(__name__)
+
+GAME2_CKPT_SCHEMA = "macag_game2_ckpt_v1"
+
+
+def _atomic_write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2) + "\n")
+    tmp.replace(dest)
+
+
+def _load_game2_checkpoint(path: str | Path | None) -> dict[str, Any] | None:
+    if not path:
+        return None
+    dest = Path(path)
+    if not dest.is_file():
+        return None
+    data = json.loads(dest.read_text())
+    if data.get("schema") != GAME2_CKPT_SCHEMA:
+        LOGGER.warning("Ignoring game2 checkpoint with unknown schema at %s", dest)
+        return None
+    return data
 
 
 def _sort_key(node: NodeId) -> str:
@@ -93,6 +120,8 @@ def _best_response(
     progress: bool,
     log_every: int,
     progress_desc: str,
+    initial_selected: set[NodeId] | None = None,
+    on_add: Callable[[set[NodeId]], None] | None = None,
 ) -> set[NodeId]:
     candidate_pool = list(candidates)
     if prefilter_top_k is not None:
@@ -126,7 +155,7 @@ def _best_response(
         utility_cache[key] = utility
         return utility
 
-    selected: set[NodeId] = set()
+    selected: set[NodeId] = set(initial_selected or ())
     sweep = 0
     while True:
         sweep += 1
@@ -176,6 +205,8 @@ def _best_response(
                 )
             break
         selected.add(best_node)
+        if on_add is not None:
+            on_add(set(selected))
         if progress:
             LOGGER.info(
                 "[%s] added node=%s gain=%.6f |E|=%d",
@@ -252,6 +283,8 @@ def solve_game2(
     fp_tol: float = 1e-3,
     progress: bool = True,
     log_every: int = 50,
+    checkpoint_path: str | Path | None = None,
+    parallel_agents: bool = True,
 ) -> ContrastiveEvidenceResult:
     """Contrastive evidence allocation via ABR or fictitious play.
 
@@ -266,6 +299,15 @@ def solve_game2(
         the fraction of past rounds the opponent included node n. No extra
         oracle calls are needed. Stops early when the empirical frequencies of
         both agents change by less than `fp_tol` (or the best responses repeat).
+
+    Within each round the two best-responses are independent given the frozen
+    opponent, so they run concurrently (`parallel_agents=True`) and only
+    communicate at the Jacobi barrier: join sets, score the joint allocation,
+    update FP frequencies, test convergence, then persist. Mid-round resume
+    with ``phase=foil`` stays sequential so a completed y-side is not recomputed.
+    On one GPU the shared ReplacementModel is serialized inside ScoringOracle;
+    the barrier is still required for correctness (independent jobs with no
+    barrier would be β=0, two Game 1s).
 
     Reported metrics/utilities always use the HARD overlap of the returned joint
     allocation, so ABR and FP results are directly comparable.
@@ -298,7 +340,8 @@ def solve_game2(
     total_candidates = len(candidate_pool)
     if progress:
         LOGGER.info(
-            "Game2 start: solver=%s candidates=%d max_iters=%d budget=%s alpha=%.3f lambda=%.4f beta=%.4f",
+            "Game2 start: solver=%s candidates=%d max_iters=%d budget=%s "
+            "alpha=%.3f lambda=%.4f beta=%.4f parallel_agents=%s",
             solver,
             len(candidate_pool),
             abr_iters,
@@ -306,6 +349,7 @@ def solve_game2(
             alpha,
             lam,
             beta,
+            parallel_agents,
         )
 
     def evaluate_allocation(
@@ -355,7 +399,102 @@ def solve_game2(
     best_combined = best_eval[4]
     best_iteration = 0
 
-    for iteration in range(1, abr_iters + 1):
+    ckpt = _load_game2_checkpoint(checkpoint_path)
+    start_iter = 1
+    start_phase = "y"
+    resume_next_y: set[NodeId] = set()
+    resume_next_foil: set[NodeId] = set()
+    if ckpt is not None:
+        start_iter = max(1, int(ckpt.get("iteration") or 1))
+        start_phase = str(ckpt.get("phase") or "y")
+        evidence_y = set(ckpt.get("frozen_y") or [])
+        evidence_foil = set(ckpt.get("frozen_foil") or [])
+        resume_next_y = set(ckpt.get("next_y") or [])
+        resume_next_foil = set(ckpt.get("next_foil") or [])
+        best_evidence_y = set(ckpt.get("best_y") or best_evidence_y)
+        best_evidence_foil = set(ckpt.get("best_foil") or best_evidence_foil)
+        best_iteration = int(ckpt.get("best_iteration") or 0)
+        if ckpt.get("best_combined") is not None:
+            best_combined = float(ckpt["best_combined"])
+            best_eval = evaluate_allocation(best_evidence_y, best_evidence_foil)
+        if progress:
+            LOGGER.info(
+                "Game2 resume: iter=%d phase=%s |frozen_y|=%d |frozen_foil|=%d |next_y|=%d |next_foil|=%d",
+                start_iter,
+                start_phase,
+                len(evidence_y),
+                len(evidence_foil),
+                len(resume_next_y),
+                len(resume_next_foil),
+            )
+
+    progress_y: set[NodeId] = set(resume_next_y)
+    progress_foil: set[NodeId] = set(resume_next_foil)
+    persist_lock = threading.Lock()
+
+    def persist(
+        iteration: int,
+        phase: str,
+        *,
+        next_y: set[NodeId] | None = None,
+        next_foil: set[NodeId] | None = None,
+    ) -> None:
+        if checkpoint_path is None:
+            return
+        with persist_lock:
+            if next_y is not None:
+                progress_y.clear()
+                progress_y.update(next_y)
+            if next_foil is not None:
+                progress_foil.clear()
+                progress_foil.update(next_foil)
+            _atomic_write_json(
+                checkpoint_path,
+                {
+                    "schema": GAME2_CKPT_SCHEMA,
+                    "solver": solver,
+                    "abr_iters": abr_iters,
+                    "iteration": iteration,
+                    "phase": phase,
+                    "frozen_y": sorted(evidence_y, key=_sort_key),
+                    "frozen_foil": sorted(evidence_foil, key=_sort_key),
+                    "next_y": sorted(progress_y, key=_sort_key),
+                    "next_foil": sorted(progress_foil, key=_sort_key),
+                    "best_y": sorted(best_evidence_y, key=_sort_key),
+                    "best_foil": sorted(best_evidence_foil, key=_sort_key),
+                    "best_combined": best_combined,
+                    "best_iteration": best_iteration,
+                },
+            )
+
+    def _agent_best_response(
+        target: TargetId,
+        opponent_weights: Mapping[NodeId, float],
+        seed: set[NodeId],
+        progress_desc: str,
+        on_add: Callable[[set[NodeId]], None] | None,
+    ) -> set[NodeId]:
+        return _best_response(
+            graph=graph,
+            oracle=oracle,
+            target=target,
+            fixed_other_weights=opponent_weights,
+            candidates=candidate_pool,
+            alpha=alpha,
+            lam=lam,
+            beta=beta,
+            budget=budget,
+            connected=connected,
+            min_gain=min_gain,
+            prefilter_top_k=prefilter_top_k,
+            progress=progress,
+            log_every=log_every,
+            progress_desc=progress_desc,
+            initial_selected=seed,
+            on_add=on_add,
+        )
+
+    for iteration in range(start_iter, abr_iters + 1):
         if progress:
             LOGGER.info(
                 "%s iteration %d/%d start: |E_y|=%d |E_foil|=%d",
@@ -377,41 +516,83 @@ def solve_game2(
             opponent_for_y = {node: 1.0 for node in evidence_foil}
             opponent_for_foil = {node: 1.0 for node in evidence_y}
 
-        next_y = _best_response(
-            graph=graph,
-            oracle=oracle,
-            target=y,
-            fixed_other_weights=opponent_for_y,
-            candidates=candidate_pool,
-            alpha=alpha,
-            lam=lam,
-            beta=beta,
-            budget=budget,
-            connected=connected,
-            min_gain=min_gain,
-            prefilter_top_k=prefilter_top_k,
-            progress=progress,
-            log_every=log_every,
-            progress_desc=f"{solver_label}[{iteration}] y",
+        skip_y = iteration == start_iter and start_phase == "foil"
+        resume_this_round = iteration == start_iter
+        y_seed = (
+            resume_next_y
+            if resume_this_round and start_phase in {"y", "both"}
+            else set()
         )
+        foil_seed = (
+            resume_next_foil
+            if resume_this_round and start_phase in {"foil", "both"}
+            else set()
+        )
+        # Parallelize only when both agents still have to run this round.
+        parallel_this_round = bool(parallel_agents) and not skip_y
 
-        next_foil = _best_response(
-            graph=graph,
-            oracle=oracle,
-            target=y_foil,
-            fixed_other_weights=opponent_for_foil,
-            candidates=candidate_pool,
-            alpha=alpha,
-            lam=lam,
-            beta=beta,
-            budget=budget,
-            connected=connected,
-            min_gain=min_gain,
-            prefilter_top_k=prefilter_top_k,
-            progress=progress,
-            log_every=log_every,
-            progress_desc=f"{solver_label}[{iteration}] foil",
-        )
+        if skip_y:
+            next_y = set(resume_next_y)
+            persist(iteration, "foil", next_y=next_y, next_foil=foil_seed)
+            next_foil = _agent_best_response(
+                y_foil,
+                opponent_for_foil,
+                foil_seed,
+                f"{solver_label}[{iteration}] foil",
+                lambda selected, it=iteration: persist(it, "foil", next_foil=selected),
+            )
+        elif parallel_this_round:
+            if progress:
+                LOGGER.info(
+                    "%s iteration %d: parallel y || foil; Jacobi barrier after both finish",
+                    solver_label,
+                    iteration,
+                )
+            persist(iteration, "both", next_y=y_seed, next_foil=foil_seed)
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="game2") as pool:
+                fut_y = pool.submit(
+                    _agent_best_response,
+                    y,
+                    opponent_for_y,
+                    y_seed,
+                    f"{solver_label}[{iteration}] y",
+                    lambda selected, it=iteration: persist(it, "both", next_y=selected),
+                )
+                fut_foil = pool.submit(
+                    _agent_best_response,
+                    y_foil,
+                    opponent_for_foil,
+                    foil_seed,
+                    f"{solver_label}[{iteration}] foil",
+                    lambda selected, it=iteration: persist(it, "both", next_foil=selected),
+                )
+                next_y = fut_y.result()
+                next_foil = fut_foil.result()
+            if progress:
+                LOGGER.info(
+                    "%s iteration %d: barrier — exchanging |E_y|=%d |E_foil|=%d",
+                    solver_label,
+                    iteration,
+                    len(next_y),
+                    len(next_foil),
+                )
+        else:
+            persist(iteration, "y", next_y=y_seed, next_foil=set())
+            next_y = _agent_best_response(
+                y,
+                opponent_for_y,
+                y_seed,
+                f"{solver_label}[{iteration}] y",
+                lambda selected, it=iteration: persist(it, "y", next_y=selected),
+            )
+            persist(iteration, "foil", next_y=next_y, next_foil=foil_seed)
+            next_foil = _agent_best_response(
+                y_foil,
+                opponent_for_foil,
+                foil_seed,
+                f"{solver_label}[{iteration}] foil",
+                lambda selected, it=iteration: persist(it, "foil", next_foil=selected),
+            )
 
         iterations = iteration
 
@@ -470,6 +651,7 @@ def solve_game2(
 
         evidence_y = next_y
         evidence_foil = next_foil
+        persist(iteration + 1, "y", next_y=set(), next_foil=set())
 
     # Return the best joint allocation seen, not the final iterate (C3).
     evidence_y = best_evidence_y
@@ -525,6 +707,7 @@ def solve_game2(
             "min_gain": min_gain,
             "solver": solver,
             "fp_tol": fp_tol if solver == "fp" else None,
+            "parallel_agents": parallel_agents,
         },
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],
@@ -535,3 +718,78 @@ def solve_game2(
         node_frequencies_y={str(node): freq for node, freq in sorted(freq_y.items(), key=lambda kv: str(kv[0]))},
         node_frequencies_foil={str(node): freq for node, freq in sorted(freq_foil.items(), key=lambda kv: str(kv[0]))},
     )
+
+
+def checkpoint_from_abr_logs(
+    log_paths: Sequence[str | Path],
+    *,
+    solver: str = "abr",
+    abr_iters: int = 4,
+) -> dict[str, Any] | None:
+    """Rebuild an ABR checkpoint from ``added node=`` lines in solver logs.
+
+    Jacobi iteration 1 best-responds to the empty opponent, so Austin and foil
+    sequences from different 24h shards of the same config can be merged by
+    taking the longest add-list per side.
+    """
+    import re
+
+    pat = re.compile(
+        r"\[ABR\[(\d+)\] (y|foil)\] added node=(\S+) gain=([-\d.eE]+) \|E\|=(\d+)"
+    )
+    y_by_iter: dict[int, list[str]] = {}
+    foil_by_iter: dict[int, list[str]] = {}
+    for path in log_paths:
+        p = Path(path)
+        if not p.is_file():
+            continue
+        y_cur: dict[int, list[str]] = {}
+        foil_cur: dict[int, list[str]] = {}
+        with p.open(errors="replace") as handle:
+            for line in handle:
+                match = pat.search(line)
+                if not match:
+                    continue
+                iteration = int(match.group(1))
+                side = match.group(2)
+                node = match.group(3)
+                size = int(match.group(5))
+                bucket = y_cur if side == "y" else foil_cur
+                seq = bucket.setdefault(iteration, [])
+                if len(seq) + 1 == size:
+                    seq.append(node)
+                elif size <= len(seq):
+                    seq[:] = seq[: size - 1] + [node]
+                else:
+                    seq.append(node)
+        for iteration, seq in y_cur.items():
+            if len(seq) > len(y_by_iter.get(iteration, [])):
+                y_by_iter[iteration] = seq
+        for iteration, seq in foil_cur.items():
+            if len(seq) > len(foil_by_iter.get(iteration, [])):
+                foil_by_iter[iteration] = seq
+    if not y_by_iter and not foil_by_iter:
+        return None
+    max_iter = max([*y_by_iter, *foil_by_iter])
+    # Resume the latest incomplete Jacobi round (iter 1 if that is all we have).
+    next_y = list(y_by_iter.get(max_iter, []))
+    next_foil = list(foil_by_iter.get(max_iter, []))
+    phase = "foil" if next_foil or max_iter in foil_by_iter else "y"
+    frozen_y: list[str] = list(y_by_iter.get(max_iter - 1, [])) if max_iter > 1 else []
+    frozen_foil: list[str] = list(foil_by_iter.get(max_iter - 1, [])) if max_iter > 1 else []
+    return {
+        "schema": GAME2_CKPT_SCHEMA,
+        "solver": solver,
+        "abr_iters": abr_iters,
+        "iteration": max_iter,
+        "phase": phase,
+        "frozen_y": frozen_y,
+        "frozen_foil": frozen_foil,
+        "next_y": next_y,
+        "next_foil": next_foil,
+        "best_y": next_y,
+        "best_foil": next_foil,
+        "best_combined": None,
+        "best_iteration": 0,
+        "harvested": True,
+    }

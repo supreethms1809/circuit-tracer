@@ -10,9 +10,17 @@ from urllib.parse import parse_qs, urlparse
 import torch
 import yaml
 from huggingface_hub import get_token, hf_api, hf_hub_download, snapshot_download
-from huggingface_hub.constants import HF_HUB_ENABLE_HF_TRANSFER
 from huggingface_hub.utils.tqdm import tqdm as hf_tqdm
 from tqdm.contrib.concurrent import thread_map
+
+try:
+    from huggingface_hub.constants import HF_HUB_ENABLE_HF_TRANSFER
+except ImportError:  # huggingface_hub >= 1.0 (AIMO runtime 1.22)
+    HF_HUB_ENABLE_HF_TRANSFER = os.environ.get("HF_HUB_ENABLE_HF_TRANSFER", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 logger = logging.getLogger(__name__)
 

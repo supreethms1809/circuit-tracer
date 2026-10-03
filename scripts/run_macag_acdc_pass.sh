@@ -111,7 +111,8 @@ PY
     fi
 
     if "${bl_cmd[@]}" \
-      && python -m macag.cli.merge_baselines --main "$main_json" --extra "$sidecar"; then
+      && python -m macag.cli.merge_baselines \
+        --main "$main_json" --extra "$sidecar" --adopt-extra-identity; then
       # Keep top-level symlink in sync when Pass A used kind subdirs.
       if [[ -L "$run_dir/macag_baselines.json" || ! -e "$run_dir/macag_baselines.json" ]]; then
         ln -sfn "$SCORE_KIND/macag_baselines.json" "$run_dir/macag_baselines.json" 2>/dev/null || true

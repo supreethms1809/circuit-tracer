@@ -242,3 +242,36 @@ def test_cli_game1_frozen_mode_warns_on_unfrozen_built_oracle(
     # The oracle is honored, not silently re-frozen.
     payload = json.loads(output.read_text())
     assert payload["scores"]["recoverable_range"] == pytest.approx(2.0)
+
+
+def test_cli_game2_factory_path_exposes_no_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dallas PF50 Game 2 died here: Namespace had no no_cache (job 14054/14055)."""
+    graph = _write_graph(tmp_path, ["a", "b"])
+    output = tmp_path / "g2.json"
+    scorer = _FreezeSwitchingScorer(
+        frozen_weights={"a": 2.0, "b": 1.0},
+        unfrozen_weights={"a": 2.0, "b": 1.0},
+    )
+    _patch_factory(monkeypatch, scorer)
+
+    args = [
+        "game2",
+        "--graph-json", str(graph),
+        "--target", "y",
+        "--foil", "y_foil",
+        "--output-json", str(output),
+        "--oracle-factory", "macag.fake:factory",
+        "--no-connected",
+        "--no-progress",
+        "--abr-iters", "1",
+        "--solver", "abr",
+    ]
+    assert run_macag.main(args) == 0
+    payload = json.loads(output.read_text())
+    assert payload["game"] == "game2"
+    assert payload["params"]["prefilter_top_k"] is None
+
+    cached = run_macag.main(args + ["--no-cache"])
+    assert cached == 0

@@ -26,21 +26,28 @@ Example (real interventions):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from macag.baselines.acdc_prune import acdc_target_size, acdc_tau_sweep
+from macag.baselines.acdc_prune import (
+    ACDCBudgetUnreachableError,
+    acdc_target_size,
+    acdc_tau_sweep,
+)
 from macag.baselines.acdc_native import run_acdc_native
 from macag.baselines.bruteforce import best_subset_bruteforce
 from macag.baselines.common import (
     SelectionResult,
     jaccard,
     precision_at_k,
+    precision_at_k_uncertainty_bounds,
     spearman_rank_correlation,
+    tie_aware_precision_at_k,
 )
-from macag.baselines.eap import select_top_eap
+from macag.baselines.eap import EAPUnavailableError, select_top_eap
 from macag.baselines.eap_syed import select_top_eap_syed
 from macag.baselines.influence import select_top_influence
 from macag.baselines.shapley_select import select_top_shapley
@@ -113,6 +120,38 @@ def _oracle_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     return kwargs
 
 
+def _sha256_json(value: Any) -> str:
+    """Hash a JSON-compatible value using canonical serialization."""
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _experiment_identity(
+    args: argparse.Namespace,
+    payload: Mapping[str, Any],
+    candidates: Sequence[NodeId],
+) -> dict[str, Any]:
+    """Immutable identity used to reject incompatible deferred baseline merges."""
+    kwargs = _oracle_kwargs(args)
+    graph_hash = _sha256_json(payload)
+    candidate_ids = [str(node) for node in candidates]
+    return {
+        "schema_version": 1,
+        "input_id": args.input_id,
+        "target": args.target,
+        "graph_sha256": graph_hash,
+        "oracle_kwargs_sha256": _sha256_json(kwargs),
+        "candidates_sha256": _sha256_json(candidate_ids),
+        "score_kind": kwargs.get("score_kind"),
+        "model_name": kwargs.get("model_name"),
+        "local_clt_path": kwargs.get("local_clt_path"),
+        "transcoder_set": kwargs.get("transcoder_set"),
+        "clt_scan": kwargs.get("clt_scan"),
+        "freeze_attention": kwargs.get("freeze_attention"),
+        "ablation_mode": kwargs.get("ablation_mode", kwargs.get("ablation_kind")),
+    }
+
+
 def _replacement_backend(oracle: ScoringOracle) -> Any:
     backend = getattr(oracle, "backend", None)
     if backend is None or not hasattr(backend, "model") or not hasattr(backend, "node_to_intervention"):
@@ -159,15 +198,17 @@ def _resolve_eap_logit_matches(args: argparse.Namespace) -> tuple[str | None, st
 
     if target_match is None:
         token = token_by_label.get(args.target)
+        # Preserve leading tokenizer spaces (e.g. " A"); EAP matches the quoted
+        # logit token, not a stripped substring of the full clerp.
         if token is not None and str(token).strip():
-            target_match = str(token).strip()
+            target_match = str(token)
 
     if foil_match is None:
         foil_label = foil_by_target.get(args.target)
         if foil_label is not None:
             foil_token = token_by_label.get(foil_label)
             if foil_token is not None and str(foil_token).strip():
-                foil_match = str(foil_token).strip()
+                foil_match = str(foil_token)
 
     return target_match, foil_match
 
@@ -279,6 +320,11 @@ def _run_selection(
             antithetic=not args.no_antithetic,
             estimator=method,
             progress=args.progress,
+            checkpoint_path=(
+                str(Path(args.output_json).with_name("macag_baselines_shapley.ckpt.json"))
+                if method == "shapley" and args.output_json
+                else None
+            ),
         )
     elif method == "game1":
         game1 = solve_game1(
@@ -421,6 +467,26 @@ def _comparison_block(
                     "precision_at_k": precision_at_k(selection.ranking, gold.ranking, k),
                     "jaccard": jaccard(set(selection.ranking[:k]), set(gold.ranking[:k])),
                 }
+                if gold.scores:
+                    per_k[str(k)]["precision_at_k_tie_aware"] = tie_aware_precision_at_k(
+                        selection.ranking,
+                        gold.scores,
+                        k,
+                    )
+                    raw_se = gold.extras.get("std_errors") or {}
+                    if isinstance(raw_se, Mapping):
+                        std_errors = {
+                            node: float(raw_se.get(str(node), float("nan")))
+                            for node in gold.scores
+                        }
+                        lower, upper = precision_at_k_uncertainty_bounds(
+                            selection.ranking,
+                            gold.scores,
+                            std_errors,
+                            k,
+                        )
+                        per_k[str(k)]["precision_at_k_uncertainty_lower"] = lower
+                        per_k[str(k)]["precision_at_k_uncertainty_upper"] = upper
             agreement[method] = per_k
         comparison[f"agreement_vs_{gold.method}"] = agreement
 
@@ -522,22 +588,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--acdc-target-k",
         type=int,
         default=None,
-        help="Bisect tau so ACDC keeps ~k nodes (budget-matched ACDC); -1 uses --budget. "
-        "Adds methods.acdc.matched_k and an acdc entry in comparison.faithfulness_at_k.",
+        help="Search tau so ACDC keeps ≤k nodes (hard budget-matched ACDC); -1 uses "
+        "--budget. Never returns an oversize set. Adds methods.acdc.matched_k and an "
+        "acdc entry in comparison.faithfulness_at_k.",
     )
 
     parser.add_argument(
         "--eap-target-match",
         default=None,
-        help="Case-insensitive clerp substring selecting the target logit seed. "
+        help="Quoted logit-token match for the +1 EAP seed (e.g. ' A' or 'A'). "
         "Default: token from oracle kwargs target_token_by_label[target], else "
         "the graph's is_target_logit flag.",
     )
     parser.add_argument(
         "--eap-foil-match",
         default=None,
-        help="Clerp substring selecting a -1 foil logit seed. Default: foil token "
-        "from oracle kwargs (foil_by_target + target_token_by_label).",
+        help="Quoted logit-token match for the -1 foil seed. Default: foil token "
+        "from oracle kwargs (foil_by_target + target_token_by_label). Missing "
+        "foil logits are skipped with a warning (target-only seeding).",
     )
     parser.add_argument("--eap-signed", action="store_true", help="Rank by signed EAP score instead of |score|.")
     parser.add_argument(
@@ -627,18 +695,27 @@ def main(argv: list[str] | None = None) -> int:
             }
             if args.acdc_target_k is not None:
                 target_k = args.budget if args.acdc_target_k == -1 else args.acdc_target_k
-                matched = acdc_target_size(
-                    graph,
-                    oracle,
-                    args.target,
-                    candidates,
-                    target_k=target_k,
-                    alpha=args.alpha,
-                    order=args.acdc_order,
-                    seed_results=acdc_sweep_results,
-                    progress=args.progress,
-                )
-                acdc_output["_matched_pending"] = matched
+                try:
+                    matched = acdc_target_size(
+                        graph,
+                        oracle,
+                        args.target,
+                        candidates,
+                        target_k=target_k,
+                        alpha=args.alpha,
+                        order=args.acdc_order,
+                        seed_results=acdc_sweep_results,
+                        progress=args.progress,
+                    )
+                    acdc_output["_matched_pending"] = matched
+                except ACDCBudgetUnreachableError as exc:
+                    acdc_output["_matched_unavailable"] = {
+                        "target_k": target_k,
+                        "reason": str(exc),
+                    }
+                    LOGGER.warning(
+                        "ACDC matched_k unavailable for %s: %s", args.input_id, exc
+                    )
             stats = oracle.cache_stats()
             acdc_output["selection_stats"] = {
                 "oracle_calls": stats["oracle_calls"],
@@ -687,7 +764,33 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
 
-        selection, stats = _run_selection(method, args, graph, payload, oracle, args.target, candidates)
+        try:
+            selection, stats = _run_selection(
+                method, args, graph, payload, oracle, args.target, candidates
+            )
+        except EAPUnavailableError as exc:
+            # A graph may omit the requested target/foil from its exported logit
+            # nodes. Target-only fallback would silently change the game; retain
+            # an explicit unavailable method block and continue other selectors.
+            stats = oracle.cache_stats()
+            method_outputs[method] = {
+                "status": "unavailable",
+                "reason": str(exc),
+                "ranking": None,
+                "scores": None,
+                "params": {
+                    "target_match": _resolve_eap_logit_matches(args)[0],
+                    "foil_match": _resolve_eap_logit_matches(args)[1],
+                },
+                "extras": {},
+                "selection_stats": {
+                    "oracle_calls": stats["oracle_calls"],
+                    "cache_hits": stats["cache_hits"],
+                },
+                "results": {},
+            }
+            LOGGER.warning("Skipping graph EAP for %s: %s", args.input_id, exc)
+            continue
         if method == "eap_syed":
             # Attribution patching bypasses ScoringOracle; record model work explicitly.
             stats = {
@@ -736,6 +839,7 @@ def main(argv: list[str] | None = None) -> int:
         acdc_output["best_by_size"] = {str(size): best_by_size[size] for size in sorted(best_by_size)}
 
         matched_pending = acdc_output.pop("_matched_pending", None)
+        matched_unavailable = acdc_output.pop("_matched_unavailable", None)
         if matched_pending is not None:
             matched = matched_pending
             matched_metrics = compute_faithfulness_metrics(
@@ -748,6 +852,7 @@ def main(argv: list[str] | None = None) -> int:
                 "tau": matched.tau,
                 "bisection_iters": matched.params["bisection_iters"],
                 "search_evals": matched.params.get("search_evals"),
+                "budget_capped": bool(matched.params.get("budget_capped", True)),
                 "evidence": _sort_nodes(set(matched.kept)),
                 "scores": metrics_to_dict(matched_metrics)
                 | {
@@ -756,6 +861,23 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 },
             }
+        elif matched_unavailable is not None:
+            acdc_output["matched_k"] = {
+                "status": "unavailable",
+                "target_k": matched_unavailable["target_k"],
+                "achieved_k": None,
+                "exact": False,
+                "budget_capped": True,
+                "reason": matched_unavailable["reason"],
+                "evidence": None,
+                "scores": None,
+            }
+
+    # Prefix/ACDC evaluation is one cost phase. Exact search is measured
+    # separately so it cannot inflate ``evaluation_oracle_calls``.
+    evaluation_stats = oracle.cache_stats()
+    oracle.clear_cache()
+    oracle.reset_stats()
 
     bruteforce_output: dict[str, Any] | None = None
     if args.bruteforce_k:
@@ -792,7 +914,7 @@ def main(argv: list[str] | None = None) -> int:
             entry["optimality_gap"] = gaps
             bruteforce_output[str(k)] = entry
 
-    evaluation_stats = oracle.cache_stats()
+    bruteforce_stats = oracle.cache_stats()
 
     # Game 1's per-step marginal faithfulness gains, for the §A.5 Spearman
     # linearity diagnostic against EAP/influence/Shapley scores.
@@ -824,7 +946,14 @@ def main(argv: list[str] | None = None) -> int:
             for size, block in acdc_output["best_by_size"].items()
         }
         matched = acdc_output.get("matched_k")
-        if matched is not None:
+        if (
+            isinstance(matched, dict)
+            and matched.get("status") != "unavailable"
+            and matched.get("achieved_k") is not None
+            and int(matched["achieved_k"]) <= args.budget
+            and isinstance(matched.get("scores"), dict)
+            and "faithfulness" in matched["scores"]
+        ):
             acdc_at_k[str(matched["achieved_k"])] = matched["scores"]["faithfulness"]
         curve = _faithfulness_curve_on_budget(acdc_at_k, args.budget)
         comparison["faithfulness_at_k"]["acdc"] = curve
@@ -838,7 +967,13 @@ def main(argv: list[str] | None = None) -> int:
             for size, block in acdc_native_output["best_by_size"].items()
         }
         matched_native = acdc_native_output.get("matched_k")
-        if matched_native is not None:
+        if (
+            isinstance(matched_native, dict)
+            and matched_native.get("status") != "unavailable"
+            and matched_native.get("achieved_k") is not None
+            and int(matched_native["achieved_k"]) <= args.budget
+            and matched_native.get("value") is not None
+        ):
             native_at_k[str(matched_native["achieved_k"])] = matched_native["value"]
         curve = _faithfulness_curve_on_budget(native_at_k, args.budget)
         comparison["faithfulness_at_k"]["acdc_native"] = curve
@@ -849,14 +984,41 @@ def main(argv: list[str] | None = None) -> int:
             "See macag/docs/baseline_method_map.md."
         )
 
+    method_selection_costs: dict[str, dict[str, Any]] = {}
+    cost_entries = dict(method_outputs)
+    if acdc_output is not None:
+        cost_entries["acdc"] = acdc_output
+    if acdc_native_output is not None:
+        cost_entries["acdc_native"] = acdc_native_output
+    for method, entry in cost_entries.items():
+        stats = entry.get("selection_stats") or {}
+        forwards = int(stats.get("model_forwards", 0))
+        backwards = int(stats.get("model_backwards", 0))
+        method_selection_costs[method] = {
+            "oracle_intervention_calls": int(stats.get("oracle_calls", 0)),
+            "direct_model_forwards": forwards,
+            "direct_model_backwards": backwards,
+            "cost_basis": (
+                "direct_model_passes"
+                if forwards or backwards
+                else "oracle_intervention_calls"
+            ),
+        }
+
     output: dict[str, Any] = {
         "input_id": args.input_id,
         "target": args.target,
         "game": "baselines",
+        "experiment_identity": _experiment_identity(args, payload, candidates),
         "params": {
             "alpha": args.alpha,
             "lambda": args.lam,
             "budget": args.budget,
+            "score_kind": _oracle_kwargs(args).get("score_kind"),
+            "freeze_attention": _oracle_kwargs(args).get("freeze_attention"),
+            "ablation_mode": _oracle_kwargs(args).get(
+                "ablation_mode", _oracle_kwargs(args).get("ablation_kind")
+            ),
             "methods": methods,
             "method_map": "macag/docs/baseline_method_map.md",
             "shapley_permutations": args.shapley_permutations,
@@ -879,7 +1041,13 @@ def main(argv: list[str] | None = None) -> int:
             for name, output in method_outputs.items()
         },
         "comparison": comparison,
-        "stats": {"evaluation_oracle_calls": evaluation_stats["oracle_calls"]},
+        "stats": {
+            "method_selection_costs": method_selection_costs,
+            "evaluation_oracle_calls": evaluation_stats["oracle_calls"],
+            "evaluation_cache_hits": evaluation_stats["cache_hits"],
+            "bruteforce_oracle_calls": bruteforce_stats["oracle_calls"],
+            "bruteforce_cache_hits": bruteforce_stats["cache_hits"],
+        },
     }
     if acdc_output is not None:
         output["methods"]["acdc"] = acdc_output

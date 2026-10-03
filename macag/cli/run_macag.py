@@ -120,7 +120,9 @@ def _normalize_factory_output(
 def _build_oracle(args: argparse.Namespace) -> tuple[ScoringOracle, list[NodeId] | None]:
     if args.toy_oracle_json:
         backend = ToyAdditiveInterventionScorer.from_json_file(args.toy_oracle_json)
-        return ScoringOracle(backend=backend, cache_enabled=not args.no_cache), None
+        return ScoringOracle(
+            backend=backend, cache_enabled=not bool(getattr(args, "no_cache", False))
+        ), None
 
     if not args.oracle_factory:
         raise ValueError("Provide --oracle-factory or --toy-oracle-json.")
@@ -141,7 +143,9 @@ def _build_oracle(args: argparse.Namespace) -> tuple[ScoringOracle, list[NodeId]
                 "not accept an 'include_error_nodes' keyword argument."
             )
     built = factory(**kwargs)
-    return _normalize_factory_output(built=built, no_cache=args.no_cache)
+    return _normalize_factory_output(
+        built=built, no_cache=bool(getattr(args, "no_cache", False))
+    )
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -197,7 +201,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
             "default report-only normalized metrics de-bias faithfulness without this."
         ),
     )
-    parser.add_argument("--no-cache", action="store_true", help="Disable oracle memoization.")
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable oracle memoization (inflates oracle-call counts).",
+    )
+    parser.add_argument(
+        "--checkpoint-json",
+        default=None,
+        help="Game 1 or Game 2: read/write a solver checkpoint so a 24h kill can resume.",
+    )
     parser.set_defaults(progress=True)
     parser.add_argument(
         "--progress",
@@ -360,6 +373,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "frequencies across both agents falls below this tolerance."
         ),
     )
+    game2.add_argument(
+        "--parallel-agents",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Within each Jacobi round, run y and foil best-responses concurrently "
+            "and only exchange sets at the round barrier (default: on). Disable "
+            "to force sequential y-then-foil (same sets; useful for debugging)."
+        ),
+    )
 
     return parser
 
@@ -424,6 +447,7 @@ def main(argv: list[str] | None = None) -> int:
             min_gain=args.min_gain,
             progress=args.progress,
             log_every=args.log_every,
+            checkpoint_path=args.checkpoint_json,
         )
         output = {
             "input_id": args.input_id,
@@ -460,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
             min_gain=args.min_gain,
             progress=args.progress,
             log_every=args.log_every,
+            checkpoint_path=args.checkpoint_json,
         )
         output = {
             "input_id": args.input_id,
@@ -487,6 +512,8 @@ def main(argv: list[str] | None = None) -> int:
             fp_tol=args.fp_tol,
             progress=args.progress,
             log_every=args.log_every,
+            checkpoint_path=args.checkpoint_json,
+            parallel_agents=args.parallel_agents,
         )
         output = {
             "input_id": args.input_id,

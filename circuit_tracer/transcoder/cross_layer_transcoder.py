@@ -1,5 +1,6 @@
 import glob
 import os
+import time
 import warnings
 
 import numpy as np
@@ -229,8 +230,18 @@ class CrossLayerTranscoder(torch.nn.Module):
         path = os.path.join(self.clt_path, f"W_dec_{layer_id}.safetensors")
         if isinstance(to_read, torch.Tensor):
             to_read = to_read.cpu()
-        with safe_open(path, framework="pt", device=str(self.device)) as f:
-            return f.get_slice(f"W_dec_{layer_id}")[to_read].to(dtype=self.dtype)
+        # Lazy CLT shards live on shared NFS. Concurrent workers can see a
+        # transient FileNotFoundError even when the snapshot symlink is valid.
+        last_err: FileNotFoundError | OSError | None = None
+        for attempt in range(4):
+            try:
+                with safe_open(path, framework="pt", device=str(self.device)) as f:
+                    return f.get_slice(f"W_dec_{layer_id}")[to_read].to(dtype=self.dtype)
+            except (FileNotFoundError, OSError) as err:
+                last_err = err
+                time.sleep(0.5 * (2**attempt))
+        assert last_err is not None
+        raise last_err
 
     def select_decoder_vectors(self, features):
         if not features.is_sparse:

@@ -35,6 +35,7 @@ def best_subset_bruteforce(
     k: int,
     alpha: float = 0.5,
     max_evaluations: int = 100_000,
+    tie_tol: float = 1e-12,
 ) -> BruteForceResult:
     """Exhaustively evaluate every size-k subset and return the v-maximizer.
 
@@ -48,6 +49,8 @@ def best_subset_bruteforce(
         raise ValueError(f"k must be in [1, {len(pool)}], got {k}.")
     if not 0.0 <= alpha <= 1.0:
         raise ValueError("alpha must be in [0, 1].")
+    if tie_tol < 0:
+        raise ValueError("tie_tol must be non-negative.")
     total = comb(len(pool), k)
     if total > max_evaluations:
         raise ValueError(
@@ -63,11 +66,17 @@ def best_subset_bruteforce(
     for subset in combinations(pool, k):
         value = coalition_value(oracle, target, set(subset), alpha)
         evaluations += 1
-        if value > best_value:
+        if best_set is None:
             best_value = value
             best_set = subset
             ties = 0
-        elif value == best_value:
+            continue
+        tolerance = tie_tol * max(1.0, abs(value), abs(best_value))
+        if value > best_value + tolerance:
+            best_value = value
+            best_set = subset
+            ties = 0
+        elif abs(value - best_value) <= tolerance:
             ties += 1
 
     assert best_set is not None  # k >= 1 and pool non-empty
@@ -77,5 +86,5 @@ def best_subset_bruteforce(
         best_value=best_value,
         evaluations=evaluations,
         ties=ties,
-        params={"alpha": alpha, "pool_size": len(pool)},
+        params={"alpha": alpha, "pool_size": len(pool), "tie_tol": tie_tol},
     )

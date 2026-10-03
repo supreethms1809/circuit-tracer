@@ -8,6 +8,7 @@ from typing import Sequence
 
 from macag.graph import NodeId
 from macag.scoring import ScoringOracle, TargetId
+from macag.nvtx import nvtx_range
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,38 +43,39 @@ def compute_faithfulness_metrics(
     nodes: set[NodeId],
     alpha: float,
 ) -> FaithfulnessMetrics:
-    all_score = oracle.all(target)
-    empty_score = oracle.empty(target)
-    keep_only_score = oracle.keep_only(nodes, target)
-    remove_score = oracle.remove(nodes, target)
+    with nvtx_range("game1.faithfulness"):
+        all_score = oracle.all(target)
+        empty_score = oracle.empty(target)
+        keep_only_score = oracle.keep_only(nodes, target)
+        remove_score = oracle.remove(nodes, target)
 
-    sufficiency = keep_only_score - empty_score
-    necessity = all_score - remove_score
-    faithfulness_delta = alpha * sufficiency + (1.0 - alpha) * necessity
+        sufficiency = keep_only_score - empty_score
+        necessity = all_score - remove_score
+        faithfulness_delta = alpha * sufficiency + (1.0 - alpha) * necessity
 
-    recoverable_range = all_score - empty_score
-    if abs(recoverable_range) < _RANGE_EPS:
-        sufficiency_normalized = 0.0
-        necessity_normalized = 0.0
-    else:
-        sufficiency_normalized = sufficiency / recoverable_range
-        necessity_normalized = necessity / recoverable_range
-    faithfulness_delta_normalized = (
-        alpha * sufficiency_normalized + (1.0 - alpha) * necessity_normalized
-    )
-    return FaithfulnessMetrics(
-        all_score=all_score,
-        empty_score=empty_score,
-        keep_only_score=keep_only_score,
-        remove_score=remove_score,
-        sufficiency=sufficiency,
-        necessity=necessity,
-        faithfulness_delta=faithfulness_delta,
-        recoverable_range=recoverable_range,
-        sufficiency_normalized=sufficiency_normalized,
-        necessity_normalized=necessity_normalized,
-        faithfulness_delta_normalized=faithfulness_delta_normalized,
-    )
+        recoverable_range = all_score - empty_score
+        if abs(recoverable_range) < _RANGE_EPS:
+            sufficiency_normalized = 0.0
+            necessity_normalized = 0.0
+        else:
+            sufficiency_normalized = sufficiency / recoverable_range
+            necessity_normalized = necessity / recoverable_range
+        faithfulness_delta_normalized = (
+            alpha * sufficiency_normalized + (1.0 - alpha) * necessity_normalized
+        )
+        return FaithfulnessMetrics(
+            all_score=all_score,
+            empty_score=empty_score,
+            keep_only_score=keep_only_score,
+            remove_score=remove_score,
+            sufficiency=sufficiency,
+            necessity=necessity,
+            faithfulness_delta=faithfulness_delta,
+            recoverable_range=recoverable_range,
+            sufficiency_normalized=sufficiency_normalized,
+            necessity_normalized=necessity_normalized,
+            faithfulness_delta_normalized=faithfulness_delta_normalized,
+        )
 
 
 def game1_utility(faithfulness_delta: float, size: int, lam: float) -> float:

@@ -7,6 +7,7 @@ backends so they run without a model or GPU.
 from __future__ import annotations
 
 from typing import Any
+import json
 
 import pytest
 
@@ -575,6 +576,70 @@ def test_game2_reports_best_iteration() -> None:
     assert result.evidence_y == {"A"}
 
 
+@pytest.mark.parametrize("solver", ["abr", "fp"])
+def test_game2_parallel_matches_sequential(solver: str) -> None:
+    graph = _full_graph(["A", "B", "C"])
+    weights = {
+        "y": {"A": 3.0, "B": 2.0, "C": 0.5},
+        "f": {"A": 0.5, "B": 2.0, "C": 3.0},
+    }
+    kwargs = dict(
+        graph=graph,
+        y="y",
+        y_foil="f",
+        candidates=["A", "B", "C"],
+        alpha=0.5,
+        lam=0.0,
+        beta=0.2,
+        abr_iters=3,
+        solver=solver,
+        progress=False,
+    )
+    sequential = solve_game2(oracle=_oracle(weights), parallel_agents=False, **kwargs)
+    parallel = solve_game2(oracle=_oracle(weights), parallel_agents=True, **kwargs)
+    assert parallel.params["parallel_agents"] is True
+    assert sequential.params["parallel_agents"] is False
+    assert sequential.evidence_y == parallel.evidence_y
+    assert sequential.evidence_foil == parallel.evidence_foil
+    assert sequential.shared == parallel.shared
+    assert sequential.best_iteration == parallel.best_iteration
+    assert sequential.utility_y == pytest.approx(parallel.utility_y)
+    assert sequential.utility_foil == pytest.approx(parallel.utility_foil)
+    assert sequential.converged == parallel.converged
+
+
+def test_scoring_oracle_is_safe_for_concurrent_game2_agents() -> None:
+    import threading
+
+    oracle = _oracle({"y": {"a": 1.5, "b": 0.5}, "f": {"a": 0.5, "b": 1.5}})
+    n_threads = 8
+    n_reps = 40
+    errors: list[BaseException] = []
+
+    def worker(target: str) -> None:
+        try:
+            for i in range(n_reps):
+                nodes = {"a"} if i % 2 == 0 else {"a", "b"}
+                oracle.keep_only(nodes, target)
+                oracle.empty(target)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=("y" if i % 2 == 0 else "f",))
+        for i in range(n_threads)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    stats = oracle.cache_stats()
+    lookups = n_threads * n_reps * 2
+    assert stats["oracle_calls"] >= 1
+    assert stats["oracle_calls"] + stats["cache_hits"] == lookups
+
+
 # ------------------------------------------------------------------ salience guards
 def test_node_salience_ignores_nan() -> None:
     from macag.utils.supernodes import node_salience
@@ -886,3 +951,230 @@ def test_i4_sparsity_against_full_pool_not_prefiltered() -> None:
     assert result.candidate_count == 2  # prefiltered pool
     # sparsity is reported against the true 6-node pool, not the prefiltered 2.
     assert result.sparsity == pytest.approx(1.0 - len(result.evidence) / 6)
+
+
+def test_game2_checkpoint_resume_matches_uninterrupted(tmp_path) -> None:
+    from macag.games.game2_contrastive import GAME2_CKPT_SCHEMA
+
+    graph = _full_graph(["A", "B", "C"])
+    w = {"A": 3.0, "B": 2.0, "C": 1.0}
+    ckpt = tmp_path / "g2.ckpt.json"
+    full = solve_game2(
+        graph=graph,
+        oracle=_oracle({"y": dict(w), "f": dict(w)}),
+        y="y",
+        y_foil="f",
+        candidates=["A", "B", "C"],
+        alpha=0.5,
+        lam=0.0,
+        beta=0.1,
+        abr_iters=2,
+        progress=False,
+        checkpoint_path=ckpt,
+    )
+    assert ckpt.is_file()
+    assert json.loads(ckpt.read_text())["schema"] == GAME2_CKPT_SCHEMA
+
+    # Mid-iter-1 foil resume: y already chosen, foil empty.
+    mid = {
+        "schema": GAME2_CKPT_SCHEMA,
+        "solver": "abr",
+        "abr_iters": 2,
+        "iteration": 1,
+        "phase": "foil",
+        "frozen_y": [],
+        "frozen_foil": [],
+        "next_y": sorted(full.evidence_y),
+        "next_foil": [],
+        "best_y": [],
+        "best_foil": [],
+        "best_combined": None,
+        "best_iteration": 0,
+    }
+    ckpt.write_text(json.dumps(mid))
+    resumed = solve_game2(
+        graph=graph,
+        oracle=_oracle({"y": dict(w), "f": dict(w)}),
+        y="y",
+        y_foil="f",
+        candidates=["A", "B", "C"],
+        alpha=0.5,
+        lam=0.0,
+        beta=0.1,
+        abr_iters=2,
+        progress=False,
+        checkpoint_path=ckpt,
+    )
+    assert resumed.evidence_y == full.evidence_y
+    assert resumed.evidence_foil == full.evidence_foil
+
+
+def test_game2_checkpoint_from_abr_logs(tmp_path) -> None:
+    from macag.games.game2_contrastive import checkpoint_from_abr_logs
+
+    log = tmp_path / "method.game2.wid1.out"
+    log.write_text(
+        "\n".join(
+            [
+                "2026-08-13 INFO macag.games.game2_contrastive: [ABR[1] y] added node=0_a gain=1.0 |E|=1",
+                "2026-08-13 INFO macag.games.game2_contrastive: [ABR[1] y] added node=0_b gain=0.5 |E|=2",
+                "2026-08-13 INFO macag.games.game2_contrastive: [ABR[1] foil] added node=0_a gain=1.0 |E|=1",
+            ]
+        )
+        + "\n"
+    )
+    ckpt = checkpoint_from_abr_logs([log])
+    assert ckpt is not None
+    assert ckpt["iteration"] == 1
+    assert ckpt["phase"] == "foil"
+    assert ckpt["next_y"] == ["0_a", "0_b"]
+    assert ckpt["next_foil"] == ["0_a"]
+
+
+def test_game1_checkpoint_resume_matches_uninterrupted(tmp_path) -> None:
+    from macag.games.game1_min_faithful import GAME1_CKPT_SCHEMA
+
+    graph = _full_graph(["a", "b", "c"])
+    ckpt = tmp_path / "g1.ckpt.json"
+    kwargs = dict(
+        graph=graph,
+        target="y",
+        candidates=["a", "b", "c"],
+        alpha=0.5,
+        lam=0.0,
+        faithfulness_eps=0.1,
+        stop_metric="raw_relative",
+        progress=False,
+        checkpoint_path=ckpt,
+    )
+    full = solve_game1(oracle=_oracle({"y": {"a": 10.0, "b": 9.0, "c": 0.5}}), **kwargs)
+    assert full.evidence == {"a", "b"}
+    assert ckpt.is_file()
+    assert json.loads(ckpt.read_text())["schema"] == GAME1_CKPT_SCHEMA
+
+    mid = {
+        "schema": GAME1_CKPT_SCHEMA,
+        "freeze_mode": "single",
+        "leg": "single",
+        "frozen_done": False,
+        "frozen_order": [],
+        "selected_order": [full.selected_order[0]],
+        "first_faith_gain": None,
+    }
+    ckpt.write_text(json.dumps(mid))
+    resumed = solve_game1(oracle=_oracle({"y": {"a": 10.0, "b": 9.0, "c": 0.5}}), **kwargs)
+    assert resumed.evidence == full.evidence
+    assert resumed.selected_order == full.selected_order
+
+
+def test_game1_dual_checkpoint_skips_completed_frozen_leg(tmp_path) -> None:
+    from macag.games.game1_attention_probe import solve_game1_dual
+    from macag.games.game1_min_faithful import GAME1_CKPT_SCHEMA
+
+    graph = _full_graph(["a", "b", "c"])
+    ckpt = tmp_path / "g1.ckpt.json"
+    kwargs = dict(
+        graph=graph,
+        target="y",
+        candidates=["a", "b", "c"],
+        alpha=0.5,
+        lam=0.0,
+        budget=2,
+        faithfulness_eps=0.2,
+        progress=False,
+        checkpoint_path=ckpt,
+    )
+    full = solve_game1_dual(
+        frozen_oracle=_oracle({"y": {"a": 10.0, "b": 1.0, "c": 0.1}}),
+        unfrozen_oracle=_oracle({"y": {"a": 2.0, "b": 5.0, "c": 4.0}}),
+        **kwargs,
+    )
+    assert full.frozen.evidence == {"a"}
+    assert full.unfrozen.evidence == {"b", "c"}
+
+    ckpt.write_text(
+        json.dumps(
+            {
+                "schema": GAME1_CKPT_SCHEMA,
+                "freeze_mode": "both",
+                "leg": "unfrozen",
+                "frozen_done": True,
+                "frozen_order": list(full.frozen.selected_order),
+                "selected_order": [full.unfrozen.selected_order[0]],
+                "first_faith_gain": None,
+            }
+        )
+    )
+    resumed = solve_game1_dual(
+        frozen_oracle=_oracle({"y": {"a": 10.0, "b": 1.0, "c": 0.1}}),
+        unfrozen_oracle=_oracle({"y": {"a": 2.0, "b": 5.0, "c": 4.0}}),
+        **kwargs,
+    )
+    assert resumed.frozen.selected_order == full.frozen.selected_order
+    assert resumed.unfrozen.evidence == full.unfrozen.evidence
+    # Reconstructing a finished frozen leg is one faithfulness evaluate, not a greedy sweep.
+    assert resumed.frozen.oracle_calls <= 4
+
+
+def test_game1_checkpoint_from_logs(tmp_path) -> None:
+    from macag.games.game1_min_faithful import (
+        GAME1_CKPT_SCHEMA,
+        checkpoint_from_game1_logs,
+        maybe_write_harvested_game1_checkpoint,
+    )
+
+    log = tmp_path / "tag-arc_easy_0005.log"
+    log.write_text(
+        "\n".join(
+            [
+                "2026-09-02 INFO macag.games.game1_attention_probe: Game1 dual: frozen leg starting",
+                "2026-09-02 INFO macag.games.game1_min_faithful: Game1 start: candidates=4000 budget=None alpha=0.500 lambda=0.0100",
+                "2026-09-02 INFO macag.games.game1_min_faithful: Game1 added node=0_a gain=1.0 |E|=1",
+                "2026-09-02 INFO macag.games.game1_min_faithful: Game1 added node=0_b gain=0.5 |E|=2",
+                "2026-09-02 INFO macag.games.game1_min_faithful: Game1 added node=0_c gain=0.2 |E|=3",
+            ]
+        )
+        + "\n"
+    )
+    harvested = checkpoint_from_game1_logs([log])
+    assert harvested is not None
+    assert harvested["schema"] == GAME1_CKPT_SCHEMA
+    assert harvested["leg"] == "frozen"
+    assert harvested["frozen_done"] is False
+    assert harvested["selected_order"] == ["0_a", "0_b", "0_c"]
+    assert harvested["frozen_order"] == ["0_a", "0_b", "0_c"]
+
+    dest = tmp_path / "macag_game1.ckpt.json"
+    dest.write_text(
+        json.dumps(
+            {
+                "schema": GAME1_CKPT_SCHEMA,
+                "leg": "frozen",
+                "frozen_done": False,
+                "frozen_order": ["0_a"],
+                "selected_order": ["0_a"],
+            }
+        )
+    )
+    written = maybe_write_harvested_game1_checkpoint(dest, [log])
+    assert written is not None
+    assert written["selected_order"] == ["0_a", "0_b", "0_c"]
+
+    log.write_text(
+        "\n".join(
+            [
+                "Game1 dual: frozen leg starting",
+                "Game1 added node=0_a gain=1.0 |E|=1",
+                "Game1 finished: iterations=1 oracle_calls=10 cache_hits=0",
+                "Game1 dual: unfrozen leg starting",
+                "Game1 added node=1_x gain=0.4 |E|=1",
+            ]
+        )
+        + "\n"
+    )
+    dual = checkpoint_from_game1_logs([log])
+    assert dual is not None
+    assert dual["frozen_done"] is True
+    assert dual["leg"] == "unfrozen"
+    assert dual["frozen_order"] == ["0_a"]
+    assert dual["selected_order"] == ["1_x"]

@@ -205,7 +205,7 @@ Notes:
 
 `python -m macag.cli.run_baselines` runs the Phase-2 baseline selectors against
 Game 1 on the **same** candidate node set and the **same** oracle, so only the
-selection rule differs (macag.md §9.3 / Appendix A). Selectors live in
+selection rule differs ([`macag_appendix_baselines.md`](docs/macag_appendix_baselines.md); formerly macag.md §9.3 / Appendix A). Selectors live in
 `macag/baselines/`:
 
 | Method | Module | What it does | Selection cost |
@@ -274,43 +274,38 @@ Use the produced candidates file directly with MACAG via `--candidates-file`.
 
 ## Experiment drivers
 
-Result collection runs on **two benchmarks — MIB and InterpBench — one command
-each**; all campaign configuration (3-seed loop, fast/gold baseline split,
-analysis) is set inside the scripts. Everything reads/writes under `results/`.
+Result collection runs on **two benchmarks — MIB and InterpBench**. Campaign
+defaults are **Pass A (v3)** — see `macag/docs/run_todo.md`.
 
 | Script | Role |
 | --- | --- |
-| `scripts/run_mib_benchmark.sh` | **MIB campaign entry point.** Per seed: GPU-parallel fast-pass sweep, same-seed Shapley-gold pass (first 50/task), KL rescore, analyzer CSVs, bootstrap/Wilcoxon, faithfulness curves, gold-circuit IOI scoring; then cross-seed aggregation. |
-| `scripts/run_interpbench_benchmark.sh` | **InterpBench campaign entry point.** Runs `experiments/run_interpbench_macag.py` once per seed (node-level AUROC/precision vs exact ground-truth circuits). |
-| `scripts/run_macag_mib_parallel.sh` | GPU-parallel launcher: per-CLT worker pools over the MIB sweep (426k=8, 2.5M=3 workers; sources `macag_parallel_common.sh`). |
-| `scripts/run_macag_mib.sh` | Sweep runner: iterates (CLT, prompt) cells, calls the pipeline per prompt, auto-runs the analyzers when unsharded / `ANALYZE_ONLY=1`. |
-| `scripts/run_macag_pipeline.sh` | Single-prompt pipeline: attribute → game1 (dual-freeze) → game2 (abr+fp) → baselines → annotate → KL. Also the tool for one-off debugging runs. |
-| `scripts/run_macag_shapley_pass.sh` | Deferred MC-Shapley gold baseline over a finished root; merges into `macag_baselines.json`. |
+| `scripts/run_mib_benchmark.sh` | **MIB campaign entry point.** Pass A: logit_gap select, Game1 dual-freeze + Game2, baselines `influence,eap,game1` (ACDC/Shapley deferred via `GOLD_PER_TASK=0`). KL rescore + analyzers when `RUN_ANALYSIS=1`. |
+| `scripts/run_interpbench_benchmark.sh` | **InterpBench campaign entry point.** Runs `experiments/run_interpbench_macag.py` once per seed. |
+| `scripts/run_macag_mib_parallel.sh` | GPU-parallel launcher (supports multi-node via `NODE_RANK` / `TOTAL_WORKERS`). |
+| `scripts/run_macag_mib.sh` | Sweep runner: iterates (CLT, prompt) cells; artifact resume per Game1/Game2/baselines. |
+| `scripts/run_macag_pipeline.sh` | Single-prompt pipeline: attribute → game1 → game2 → baselines → annotate → KL rescore. |
+| `scripts/run_macag_acdc_pass.sh` | **Pass B:** deferred ACDC (6 taus + matched-k) over a finished Pass A root; merges into baselines. |
+| `scripts/run_macag_shapley_pass.sh` | Deferred MC-Shapley gold baseline; merges into `macag_baselines.json`. |
 | `scripts/macag_kill_sweep.sh` | Kill orphaned GPU workers after an interrupted sweep. |
 | `scripts/macag_bootstrap_wilcoxon.py` | Bootstrap CIs + Wilcoxon tests per sweep root. |
 | `scripts/macag_combine_seeds.py` | Cross-seed CSV concatenation + mean/std summaries. |
 
 ```bash
-# the entire result collection (see macag/docs/run_todo.md for setup + details):
-nohup scripts/run_interpbench_benchmark.sh > results/interpbench_campaign.log 2>&1 &
-nohup scripts/run_mib_benchmark.sh > results/mib_campaign.log 2>&1 &
+# TMLR-250 Pass A on cluster (4 nodes/CLT arrays; see macag/docs/run_todo.md):
+scripts/slurm/submit_all_tmlr250.sh
 
-# smoke test on the pilot-sized prompt JSON, single seed:
+# smoke test on a tiny prompt JSON, single seed:
 ALLOW_SMALL_JSON=1 SEEDS=0 scripts/run_mib_benchmark.sh
 ```
 
-Output layout: `results/macag_mib_seed<SEED>/<clt_tag>/<slug>/` with
-`macag_game1.json` (dual-freeze: `frozen`/`unfrozen` legs +
-`attention_mediation`), `macag_game2_{abr,fp}.json`, `macag_baselines.json`, and
-the attribution graph. Aggregate CSVs land in the same root
-(`summary.csv`, `abr_vs_fp.csv`, `baselines.csv`, `frozen_vs_unfrozen.csv`).
-Per-run KL faithfulness is written to `macag_kl_faithfulness.json` and embedded in
-the game/baseline JSON as `kl_faithfulness`; `summary.csv` / `baselines.csv` include
-`kl_faith` columns. Set `KL_RESCORE=0` to skip the KL pass.
+Output layout: `$RESULTS_ROOT/macag_mib_seed<SEED>/<clt_tag>/<slug>/logit_gap/` with
+`macag_game1.json` (dual-freeze + `attention_mediation`), `macag_game2_{abr,fp}.json`,
+`macag_baselines.json`, and `macag_kl_faithfulness.json`. Aggregate CSVs land in the
+seed root after `RUN_ANALYSIS=1`.
 
 Manifests:
-- `macag/data/mib_benchmark_prompts.json` — MIB tasks (`ioi`, `mcqa`, `arc_easy`),
-  built by `experiments/build_mib_benchmark_prompts.py` (collected benchmark).
+- `macag/data/mib_benchmark_prompts.json` — TMLR subset (`ioi=100`, `mcqa=50`,
+  `arc_easy=50` per model). Full prior export: `mib_benchmark_prompts_full_v1.json`.
 - `macag/data/acdc_benchmark_prompts.json` / `nonlinear_benchmark_prompts.json` —
   internal diagnostic sets (own ACDC-style tasks; Spline-CLT stress prompts).
   Not part of result collection; usable with `run_macag_pipeline.sh` ad hoc.

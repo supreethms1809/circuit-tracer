@@ -21,22 +21,30 @@
 # Output: results/macag_mib/<clt_tag>/<slug>/ + summary CSVs from existing analyzers.
 set -uo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/macag_parallel_common.sh
+source scripts/macag_parallel_common.sh
 
 JSON="${JSON:-macag/data/mib_benchmark_prompts.json}"
 OUTROOT="${OUTROOT:-results/macag_mib}"
 DEVICE="${DEVICE:-cuda}"
-SOLVERS="${SOLVERS:-abr fp}"
+SOLVERS="${SOLVERS-abr fp}"
 FREEZE_MODE="${FREEZE_MODE:-both}"
 STOP_METRIC="${STOP_METRIC:-raw_relative}"
+SCORE_KINDS="${SCORE_KINDS:-logit_gap}"
+CONNECTED="${CONNECTED:-0}"
+PREFILTER_TOP_K="${PREFILTER_TOP_K:-}"
+GAME2_PREFILTER_TOP_K="${GAME2_PREFILTER_TOP_K:-}"
 TASKS="${TASKS:-}"
 LIMIT="${LIMIT:-0}"
 CLTS="${CLTS:-}"
 MIB_MODELS="${MIB_MODELS:-gemma2}"
 SKIP_TASKS="${SKIP_TASKS:-}"
+SKIP_GAME1="${SKIP_GAME1:-0}"
 SKIP_BASELINES="${SKIP_BASELINES:-0}"
 NUM_WORKERS="${NUM_WORKERS:-1}"
 WORKER_ID="${WORKER_ID:-0}"
 ANALYZE_ONLY="${ANALYZE_ONLY:-0}"
+SHARD_TAG="${SHARD_TAG:-}"
 
 # clt_tag  model  transcoder_set  mib_models (space-separated)
 CLT_TAGS=(gemma2-426k gemma2-2.5M llama32-524k)
@@ -80,7 +88,10 @@ get_field() {
 import json, os, sys
 d = json.load(open(os.environ["JSON"]))
 task, idx, field = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-sys.stdout.write(d["tasks"][task][idx][field])
+val = d["tasks"][task][idx].get(field, "")
+if val is None:
+    val = ""
+sys.stdout.write(str(val))
 PY
 }
 
@@ -114,41 +125,130 @@ for ci in "${!CLT_TAGS[@]}"; do
     prompt=$(get_field "$task" "$idx" clean_prompt)
     target=$(get_field "$task" "$idx" correct_token)
     foil=$(get_field "$task" "$idx" incorrect_token)
+    corrupted=$(get_field "$task" "$idx" corrupted_prompt 2>/dev/null || true)
     out="$OUTROOT/$tag/$slug"
     echo ">>> [$tag/$slug] ($task/$mib_model) target=$target foil=$foil"
+    mkdir -p "$out"
+    # Resume: require every SCORE_KIND subdirectory to have finished game1,
+    # each configured Game2 solver, and baselines (unless skipped).
+    # Artifact-based: completed stages inside run_macag_pipeline.sh are also
+    # skipped individually when their JSON already exists.
+    g1_done=1; g2_done=1; bl_done=1
+    for kind in $SCORE_KINDS; do
+      [[ "$SKIP_GAME1" == "1" || -f "$out/$kind/macag_game1.json" ]] || g1_done=0
+      if [[ -n "${SOLVERS// }" ]]; then
+        for solver in $SOLVERS; do
+          [[ -f "$out/$kind/macag_game2_${solver}.json" ]] || g2_done=0
+        done
+      fi
+      [[ "$SKIP_BASELINES" == "1" || -f "$out/$kind/macag_baselines.json" ]] || bl_done=0
+    done
+    resume_args=()
+    graph_path="$out/graphs/${slug}.json"
+    if [[ -f "$graph_path" ]]; then
+      if NODE_THRESHOLD="${NODE_THRESHOLD:-1.0}" python - "$graph_path" <<'PY'
+import json, os, sys
+want = float(os.environ["NODE_THRESHOLD"])
+meta = (json.load(open(sys.argv[1])).get("metadata") or {})
+have = meta.get("node_threshold")
+if have is None:
+    raise SystemExit(1)
+raise SystemExit(0 if abs(float(have) - want) < 1e-9 else 1)
+PY
+      then
+        resume_args+=(--skip-attribute)
+      else
+        echo ">>> graph node_threshold mismatch vs requested ${NODE_THRESHOLD:-1.0}; rebuilding $graph_path"
+      fi
+    fi
     skip_baselines=()
     [[ "$SKIP_BASELINES" == "1" ]] && skip_baselines=(--skip-baselines)
-    resume_args=()
-    [[ -f "$out/graphs/${slug}.json" ]] && resume_args+=(--skip-attribute)
-    [[ -f "$out/macag_game1.json" ]] && resume_args+=(--skip-game1)
-    if [[ -f "$out/macag_game2_abr.json" && -f "$out/macag_game2_fp.json" ]]; then
-      resume_args+=(--skip-game2)
-    fi
-    g1_done=1
-    [[ -f "$out/macag_game1.json" ]] || g1_done=0
-    g2_done=1
-    [[ -f "$out/macag_game2_abr.json" && -f "$out/macag_game2_fp.json" ]] || g2_done=0
-    bl_done=1
-    [[ "$SKIP_BASELINES" == "1" || -f "$out/macag_baselines.json" ]] || bl_done=0
+    skip_game1=()
+    [[ "$SKIP_GAME1" == "1" ]] && skip_game1=(--skip-game1)
     if [[ "$g1_done" -eq 1 && "$g2_done" -eq 1 && "$bl_done" -eq 1 ]]; then
       echo "SKIP-done $tag/$slug" | tee -a "$STATUS"; continue
     fi
-    mkdir -p "$out"
     pipeline_args=(
       --prompt "$prompt" --target "$target" --foil "$foil"
       --model "$model" --transcoder-set "$tset"
       --slug "$slug" --outdir "$out" --device "$DEVICE"
       --freeze-mode "$FREEZE_MODE" --solvers "$SOLVERS"
+      --score-kinds "$SCORE_KINDS"
+      --budget "${BUDGET:-none}"
+      --report-budget "${REPORT_BUDGET:-128}"
+      --node-threshold "${NODE_THRESHOLD:-1.0}"
+      --edge-threshold "${EDGE_THRESHOLD:-1.0}"
+      --max-feature-nodes "${MAX_FEATURE_NODES:-1000000}"
       "${resume_args[@]}"
+      "${skip_game1[@]}"
       "${skip_baselines[@]}"
     )
+    [[ -n "${corrupted:-}" ]] && pipeline_args+=(--corrupted-prompt "$corrupted")
+    if [[ "${CONNECTED}" == "1" || "${CONNECTED}" == "true" ]]; then
+      pipeline_args+=(--connected)
+    else
+      pipeline_args+=(--no-connected)
+    fi
+    [[ -n "${PREFILTER_TOP_K}" && "${PREFILTER_TOP_K}" != "0" ]] && \
+      pipeline_args+=(--prefilter-top-k "$PREFILTER_TOP_K")
+    [[ -n "${GAME2_PREFILTER_TOP_K}" && "${GAME2_PREFILTER_TOP_K}" != "0" && "${GAME2_PREFILTER_TOP_K}" != "off" && "${GAME2_PREFILTER_TOP_K}" != "none" ]] && \
+      pipeline_args+=(--game2-prefilter-top-k "$GAME2_PREFILTER_TOP_K")
     [[ -n "${SHAPLEY_PERMUTATIONS:-}" ]] && pipeline_args+=(--shapley-permutations "$SHAPLEY_PERMUTATIONS")
     [[ -n "${BASELINE_METHODS:-}" ]] && pipeline_args+=(--baseline-methods "$BASELINE_METHODS")
     if [[ "$FREEZE_MODE" != "both" ]]; then
       pipeline_args+=(--stop-metric "$STOP_METRIC")
     fi
-    if scripts/run_macag_pipeline.sh "${pipeline_args[@]}" \
+    # Dual freeze writes macag_game1.json only after BOTH legs. Harvest the
+    # previous slug log into a Game 1 ckpt BEFORE truncating it, otherwise a
+    # 24h kill restarts frozen greedy from |E|=0.
+    slug_log="$OUTROOT/$tag-$slug.log"
+    if [[ "$SKIP_GAME1" != "1" && -f "$slug_log" ]]; then
+      for kind in $SCORE_KINDS; do
+        if [[ -f "$out/$kind/macag_game1.json" ]]; then
+          continue
+        fi
+        mkdir -p "$out/$kind"
+        python - "$out/$kind/macag_game1.ckpt.json" "$slug_log" <<'PY'
+import sys
+from pathlib import Path
+from macag.games.game1_min_faithful import (
+    game1_checkpoint_progress,
+    maybe_write_harvested_game1_checkpoint,
+)
+dest, log = sys.argv[1], sys.argv[2]
+before = Path(dest)
+old_key = None
+if before.is_file():
+    import json
+    old_key = game1_checkpoint_progress(json.loads(before.read_text()))
+written = maybe_write_harvested_game1_checkpoint(dest, [log])
+if written is None:
+    print(">>> no Game 1 log harvest")
+    raise SystemExit(0)
+new_key = game1_checkpoint_progress(written)
+kept = old_key is not None and old_key >= new_key
+action = "keep existing" if kept else "harvested"
+print(
+    f">>> {action} Game 1 ckpt frozen_done={bool(written.get('frozen_done'))} "
+    f"leg={written.get('leg')} |frozen|={len(written.get('frozen_order') or [])} "
+    f"|E|={len(written.get('selected_order') or [])} -> {dest}"
+)
+PY
+      done
+    fi
+    gpu_slot=""
+    gpu_slot="$(macag_acquire_gpu_slot "$OUTROOT")" || exit 1
+    pipeline_rc=0
+    if SCORE_KINDS="$SCORE_KINDS" CONNECTED="$CONNECTED" PREFILTER_TOP_K="${PREFILTER_TOP_K:-}" \
+         GAME2_PREFILTER_TOP_K="${GAME2_PREFILTER_TOP_K:-}" \
+         scripts/run_macag_pipeline.sh "${pipeline_args[@]}" \
           > "$OUTROOT/$tag-$slug.log" 2>&1; then
+      :
+    else
+      pipeline_rc=1
+    fi
+    macag_release_gpu_slot "$gpu_slot"
+    if [[ "$pipeline_rc" -eq 0 ]]; then
       echo "OK   $tag/$slug ($task/$mib_model)" | tee -a "$STATUS"
     else
       echo "FAIL $tag/$slug ($task/$mib_model)  (see $OUTROOT/$tag-$slug.log)" | tee -a "$STATUS"

@@ -11,6 +11,7 @@ Naming map: ``macag/docs/baseline_method_map.md``.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Mapping, Sequence
 
 from macag.baselines.common import SelectionResult
@@ -20,6 +21,43 @@ from macag.utils.metrics import dedupe_preserve_order
 LOGGER = logging.getLogger(__name__)
 
 _LOGIT_FEATURE_TYPE = "logit"
+# circuit-tracer logit clerps look like: Output " A" (p=0.512)
+_LOGIT_TOKEN_RE = re.compile(r'Output\s+"([^"]*)"', re.IGNORECASE)
+
+
+class EAPUnavailableError(ValueError):
+    """Raised when the exported graph cannot represent the requested logit objective."""
+
+
+def _clerp_logit_token(clerp: str) -> str | None:
+    """Extract the quoted logit token from a circuit-tracer clerp string."""
+    match = _LOGIT_TOKEN_RE.search(clerp)
+    if match is not None:
+        return match.group(1)
+    # Fallback: first quoted span, if any.
+    generic = re.search(r'"([^"]*)"', clerp)
+    return generic.group(1) if generic is not None else None
+
+
+def _token_match_variants(token: str) -> set[str]:
+    """Tokenizer-aware equality variants (leading space / strip); case-sensitive."""
+    raw = str(token)
+    stripped = raw.strip()
+    variants = {raw, stripped, raw.lstrip(), f" {stripped}" if stripped else raw}
+    return {variant for variant in variants if variant}
+
+
+def _clerp_matches_token(clerp: str, match: str) -> bool:
+    """True when ``match`` equals the logit token in ``clerp`` (not a raw substring).
+
+    Substring matching against the full clerp is unsafe: short tokens like
+    ``"A"`` / ``"1"`` hit unrelated words (``cellular``) or probability text
+    (``(p=0.010)``). Matching is case-sensitive so ``" D"`` ≠ ``" d"``.
+    """
+    extracted = _clerp_logit_token(clerp)
+    if extracted is None:
+        return False
+    return bool(_token_match_variants(match) & _token_match_variants(extracted))
 
 
 def _logit_seed_weights(
@@ -29,8 +67,11 @@ def _logit_seed_weights(
 ) -> dict[NodeId, float]:
     """Seed weights on logit nodes: +1 target, -1 foil.
 
-    Target selection: `target_match` as a case-insensitive substring of the
-    logit node's `clerp`; when omitted, the graph's own `is_target_logit` flag.
+    Target selection: `target_match` equals the quoted logit token in `clerp`
+    (tokenizer leading-space variants allowed). When omitted, the graph's own
+    `is_target_logit` flag is used. Foil uses the same token equality; if no
+    exported logit matches the foil (common when the foil token is outside the
+    graph's top-k logits), foil seeding is skipped with a warning.
     """
     seeds: dict[NodeId, float] = {}
     for node in nodes:
@@ -43,13 +84,13 @@ def _logit_seed_weights(
             continue
         clerp = str(node.get("clerp", ""))
         is_target = (
-            target_match.lower() in clerp.lower()
+            _clerp_matches_token(clerp, target_match)
             if target_match is not None
             else bool(node.get("is_target_logit"))
         )
-        is_foil = foil_match is not None and foil_match.lower() in clerp.lower()
+        is_foil = foil_match is not None and _clerp_matches_token(clerp, foil_match)
         if is_target and is_foil:
-            raise ValueError(
+            raise EAPUnavailableError(
                 f"Logit node {node_id} ({clerp!r}) matches both the target and the foil "
                 "pattern; disambiguate --eap-target-match / --eap-foil-match."
             )
@@ -59,12 +100,16 @@ def _logit_seed_weights(
             seeds[node_id] = -1.0
 
     if not any(weight > 0 for weight in seeds.values()):
-        raise ValueError(
+        raise EAPUnavailableError(
             "No target logit seed found: no logit node matched "
             f"target_match={target_match!r} and none carries is_target_logit=True."
         )
     if foil_match is not None and not any(weight < 0 for weight in seeds.values()):
-        raise ValueError(f"No logit node clerp matched foil_match={foil_match!r}.")
+        raise EAPUnavailableError(
+            "No exported logit node matched "
+            f"foil_match={foil_match!r}; target-only seeding would optimize a "
+            "different objective than the target-minus-foil evaluation oracle."
+        )
     return seeds
 
 

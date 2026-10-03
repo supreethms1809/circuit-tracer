@@ -124,20 +124,23 @@ def _acdc_evidence_for_budget(entry: Mapping[str, Any], budget: int) -> tuple[li
     Returns (evidence, logit_gap_faithfulness, meta).
     """
     matched = entry.get("matched_k")
-    if isinstance(matched, Mapping) and matched.get("evidence") is not None:
-        scores = matched.get("scores") or {}
-        faith = scores.get("faithfulness")
-        if faith is None and "value" in matched:
-            faith = matched.get("value")
-        return (
-            list(matched.get("evidence") or []),
-            float(faith) if isinstance(faith, (int, float)) else None,
-            {
-                "source": "matched_k",
-                "achieved_k": matched.get("achieved_k"),
-                "exact": matched.get("exact"),
-            },
-        )
+    if isinstance(matched, Mapping) and matched.get("status") != "unavailable":
+        evidence = matched.get("evidence")
+        ach = matched.get("achieved_k")
+        if evidence is not None and ach is not None and int(ach) <= budget:
+            scores = matched.get("scores") or {}
+            faith = scores.get("faithfulness")
+            if faith is None and "value" in matched:
+                faith = matched.get("value")
+            return (
+                list(evidence or []),
+                float(faith) if isinstance(faith, (int, float)) else None,
+                {
+                    "source": "matched_k",
+                    "achieved_k": ach,
+                    "exact": matched.get("exact"),
+                },
+            )
 
     best_by_size = entry.get("best_by_size") or {}
     best = best_by_size.get(str(budget))

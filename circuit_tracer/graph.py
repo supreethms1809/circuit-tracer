@@ -2,6 +2,10 @@ from typing import NamedTuple
 
 import torch
 
+# torch.sort cannot index a dimension with more than INT_MAX elements.
+# Flattened N×N edge scores on large CLT graphs exceed that (e.g. 55k² > 2³¹−1).
+_TORCH_SORT_MAX = 2**31 - 1
+
 from circuit_tracer.utils.tl_nnsight_mapping import (
     convert_nnsight_config_to_transformerlens,
     UnifiedConfig,
@@ -163,8 +167,21 @@ def compute_edge_influence(pruned_matrix: torch.Tensor, logit_weights: torch.Ten
 
 
 def find_threshold(scores: torch.Tensor, threshold: float):
-    # Find score threshold that keeps the desired fraction of total influence
-    sorted_scores = torch.sort(scores, descending=True).values
+    # Find score threshold that keeps the desired fraction of total influence.
+    flat = scores.reshape(-1)
+    n = int(flat.numel())
+    if n == 0:
+        return torch.zeros((), dtype=scores.dtype, device=scores.device)
+    # Keep 100% of influence mass: the cutoff is the minimum score. Skip sort —
+    # N² edge tensors on large graphs exceed torch.sort's INT_MAX.
+    if threshold >= 1.0:
+        return torch.amin(flat)
+    if n > _TORCH_SORT_MAX:
+        raise RuntimeError(
+            f"find_threshold cannot sort {n} scores (torch.sort limit {_TORCH_SORT_MAX}). "
+            "Use edge_threshold=1.0 to keep all edges, or prune nodes first."
+        )
+    sorted_scores = torch.sort(flat, descending=True).values
     cumulative_score = torch.cumsum(sorted_scores, dim=0) / torch.sum(sorted_scores)
     threshold_index: int = int(torch.searchsorted(cumulative_score, threshold).item())
     # make sure we don't go out of bounds (only really happens at threshold=1.0)
@@ -226,8 +243,12 @@ def prune_graph(
 
     # Calculate edge influence and apply threshold
     edge_scores = compute_edge_influence(pruned_matrix, logit_weights)
-
-    edge_mask = edge_scores >= find_threshold(edge_scores.flatten(), edge_threshold)
+    if edge_threshold >= 1.0:
+        # Keep every edge. Avoid flattening/sorting the N×N score tensor
+        # (torch.sort raises on >INT_MAX elements; n090 uses edge_threshold=1.0).
+        edge_mask = torch.ones_like(edge_scores, dtype=torch.bool)
+    else:
+        edge_mask = edge_scores >= find_threshold(edge_scores, edge_threshold)
 
     old_node_mask = node_mask.clone()
     # Ensure feature and error nodes have outgoing edges

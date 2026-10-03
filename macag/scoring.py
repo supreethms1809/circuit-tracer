@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 import json
 import logging
 from pathlib import Path
+import threading
 from typing import Any, Callable, Literal, Mapping, Protocol
 
 from macag.graph import NodeId
+from macag.nvtx import nvtx_range
 
 LOGGER = logging.getLogger(__name__)
 
@@ -84,6 +86,10 @@ class ScoringOracle:
         self._cache: dict[tuple[str, type, str, frozenset[NodeId], Any], float] = {}
         self._oracle_calls = 0
         self._cache_hits = 0
+        # Game 2 runs y and foil best-responses concurrently. Cache/stats are
+        # shared; the backend (ReplacementModel on one GPU) is not thread-safe.
+        self._cache_lock = threading.RLock()
+        self._backend_lock = threading.RLock()
 
     def _universe_fingerprint(self, mode: str) -> Any:
         if mode not in self._UNIVERSE_DEPENDENT_MODES:
@@ -102,25 +108,34 @@ class ScoringOracle:
     def _score(self, mode: str, target: TargetId, nodes: set[NodeId] | None = None) -> float:
         nodes = nodes or set()
         key = self._cache_key(mode, target, nodes)
-        if self.cache_enabled and key in self._cache:
-            self._cache_hits += 1
-            return self._cache[key]
-
-        if mode == "all":
-            score = float(self.backend.score_all(target))
-        elif mode == "empty":
-            score = float(self.backend.score_empty(target))
-        elif mode == "keep_only":
-            score = float(self.backend.score_keep_only(nodes, target))
-        elif mode == "remove":
-            score = float(self.backend.score_remove(nodes, target))
-        else:
-            raise ValueError(f"Unknown scoring mode: {mode}")
-
-        self._oracle_calls += 1
         if self.cache_enabled:
-            self._cache[key] = score
-        return score
+            with self._cache_lock:
+                if key in self._cache:
+                    self._cache_hits += 1
+                    return self._cache[key]
+
+        with self._backend_lock:
+            if self.cache_enabled:
+                with self._cache_lock:
+                    if key in self._cache:
+                        self._cache_hits += 1
+                        return self._cache[key]
+            with nvtx_range(f"oracle.{mode}"):
+                if mode == "all":
+                    score = float(self.backend.score_all(target))
+                elif mode == "empty":
+                    score = float(self.backend.score_empty(target))
+                elif mode == "keep_only":
+                    score = float(self.backend.score_keep_only(nodes, target))
+                elif mode == "remove":
+                    score = float(self.backend.score_remove(nodes, target))
+                else:
+                    raise ValueError(f"Unknown scoring mode: {mode}")
+            with self._cache_lock:
+                self._oracle_calls += 1
+                if self.cache_enabled:
+                    self._cache[key] = score
+            return score
 
     def all(self, target: TargetId) -> float:
         return self._score("all", target)
@@ -138,18 +153,21 @@ class ScoringOracle:
         return self.remove(nodes, target)
 
     def cache_stats(self) -> dict[str, int]:
-        return {
-            "oracle_calls": self._oracle_calls,
-            "cache_hits": self._cache_hits,
-            "cache_size": len(self._cache),
-        }
+        with self._cache_lock:
+            return {
+                "oracle_calls": self._oracle_calls,
+                "cache_hits": self._cache_hits,
+                "cache_size": len(self._cache),
+            }
 
     def clear_cache(self) -> None:
-        self._cache.clear()
+        with self._cache_lock:
+            self._cache.clear()
 
     def reset_stats(self) -> None:
-        self._oracle_calls = 0
-        self._cache_hits = 0
+        with self._cache_lock:
+            self._oracle_calls = 0
+            self._cache_hits = 0
 
 
 def derive_oracle_with_freeze(oracle: ScoringOracle, freeze_attention: bool) -> ScoringOracle:
@@ -367,11 +385,12 @@ class ReplacementModelInterventionScorer:
         return (layer, pos, feature_idx, value)
 
     def _ablation_interventions(self, nodes_to_ablate: set[NodeId]) -> list[Intervention]:
-        interventions: list[Intervention] = []
-        for node in nodes_to_ablate:
-            spec = self.node_to_intervention[node]
-            interventions.append(self._normalize_intervention(spec))
-        return interventions
+        with nvtx_range("oracle.ablation_list"):
+            interventions: list[Intervention] = []
+            for node in nodes_to_ablate:
+                spec = self.node_to_intervention[node]
+                interventions.append(self._normalize_intervention(spec))
+            return interventions
 
     def _resolve_foil(self, target: TargetId) -> TargetId | None:
         if self.foil_by_target and target in self.foil_by_target:
@@ -394,13 +413,14 @@ class ReplacementModelInterventionScorer:
 
     def _run_logits(self, interventions: list[Intervention], inputs: Any = None) -> Any:
         self.forward_count += 1
-        logits, _ = self.model.feature_intervention(
-            self.prompt if inputs is None else inputs,
-            interventions,
-            constrained_layers=self.constrained_layers,
-            freeze_attention=self.freeze_attention,
-            return_activations=False,
-        )
+        with nvtx_range("oracle.forward"):
+            logits, _ = self.model.feature_intervention(
+                self.prompt if inputs is None else inputs,
+                interventions,
+                constrained_layers=self.constrained_layers,
+                freeze_attention=self.freeze_attention,
+                return_activations=False,
+            )
         return logits
 
     def _prompt_ids(self) -> Any:

@@ -122,7 +122,23 @@ def _residual_grads_at_feature_output(
                 f"eap_syed: missing residual grad at layer {layer} "
                 f"(feature_output_hook={model.feature_output_hook!r})."
             )
-        grads.append(tensor.grad.detach())
+        # Hook activations are typically (batch, pos, d_model). Collapse the
+        # batch axis so callers can index [layer, pos] safely. ReplacementModel
+        # attribution always runs batch size 1.
+        grad = tensor.grad.detach()
+        if grad.ndim == 3:
+            if int(grad.shape[0]) != 1:
+                raise ValueError(
+                    "eap_syed expects residual grads with batch size 1, "
+                    f"got shape {tuple(grad.shape)} at layer {layer}."
+                )
+            grad = grad[0]
+        elif grad.ndim != 2:
+            raise ValueError(
+                "eap_syed residual grads must be (pos, d_model) or "
+                f"(batch, pos, d_model); got {tuple(grad.shape)} at layer {layer}."
+            )
+        grads.append(grad)
     return torch.stack(grads, dim=0)
 
 
@@ -165,20 +181,27 @@ def _scores_via_decoder_atp(
     foil_logit_idx: int | None,
     freeze_attention: bool,
 ) -> tuple[dict[NodeId, float], dict[str, Any]]:
+    # Normalized to (n_layers, n_pos, d_model); a_* are (n_layers, n_pos, n_feat).
     resid_grads = _residual_grads_at_feature_output(
         model, tokens, target_logit_idx, foil_logit_idx
     )
+    if resid_grads.ndim != 3:
+        raise ValueError(
+            "eap_syed expected residual grads of shape (n_layers, n_pos, d_model), "
+            f"got {tuple(resid_grads.shape)}."
+        )
     scores: dict[NodeId, float] = {}
     for node in pool:
         layer, pos, feat = _as_intervention_triple(node_to_intervention[node])
         if not (
             0 <= layer < a_clean.shape[0]
             and 0 <= pos < a_clean.shape[1]
+            and 0 <= feat < a_clean.shape[2]
             and 0 <= layer < resid_grads.shape[0]
             and 0 <= pos < resid_grads.shape[1]
         ):
             raise ValueError(
-                f"Node {node!r} maps to (layer={layer}, pos={pos}) outside "
+                f"Node {node!r} maps to (layer={layer}, pos={pos}, feat={feat}) outside "
                 f"activation/grad shapes {tuple(a_clean.shape)} / {tuple(resid_grads.shape)}."
             )
         delta = float(a_corr[layer, pos, feat].item() - a_clean[layer, pos, feat].item())

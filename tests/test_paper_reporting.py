@@ -247,3 +247,14 @@ def test_aggregate_suite_records_handles_partial_macag_failures() -> None:
     assert any(row["table"] == "Table 1" for row in rows)
     assert any(row["table"] == "Table 3" for row in rows)
     assert any(row["table"] == "Table 2" and row["metric"] == "graph_replacement_score" for row in rows)
+
+
+def test_macag_inclusion_gate_requires_pareto_improvement() -> None:
+    from spline_clt.paper.reporting import _is_pareto_macag_win
+
+    assert _is_pareto_macag_win(4.0, 5.0, 0.8, 0.8)
+    assert _is_pareto_macag_win(5.0, 5.0, 0.9, 0.8)
+    # A size/faithfulness tradeoff is not a win in either direction.
+    assert not _is_pareto_macag_win(4.0, 5.0, 0.7, 0.8)
+    assert not _is_pareto_macag_win(6.0, 5.0, 0.9, 0.8)
+    assert not _is_pareto_macag_win(float("nan"), 5.0, 0.9, 0.8)

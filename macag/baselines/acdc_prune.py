@@ -22,6 +22,10 @@ from macag.utils.metrics import dedupe_preserve_order
 LOGGER = logging.getLogger(__name__)
 
 
+class ACDCBudgetUnreachableError(ValueError):
+    """No τ-pruned set with size ≤ ``target_k`` was found under the search budget."""
+
+
 @dataclass
 class ACDCPruneResult:
     tau: float
@@ -161,7 +165,7 @@ def acdc_target_size(
     seed_results: Sequence[ACDCPruneResult] | None = None,
     progress: bool = False,
 ) -> ACDCPruneResult:
-    """Find a tau whose pruned set is as close as possible to ``target_k`` nodes.
+    """Find a tau whose pruned set is as close as possible to ``target_k`` **without exceeding it**.
 
     Kept size is **not** monotone in tau under path-dependent pruning, so this
     does not bisect. It evaluates:
@@ -171,11 +175,16 @@ def acdc_target_size(
        where a prune decision can flip),
     4. optional ``tau_lo`` / ``tau_hi`` endpoints,
     5. up to ``max_iters`` additional midpoints between neighboring evaluated
-       taus that still miss ``target_k``, ranked by distance to the target size.
+       taus that still miss ``target_k``,
+    6. one aggressive high-tau probe if every evaluated set still exceeds
+       ``target_k`` (so the empty / heavily pruned regime is reachable).
 
-    Returns the best result by ``(abs(size - target_k), -value)`` — nearest
-    achievable size, ties broken by higher coalition value — with
-    ``params["exact"]`` recording whether the target was hit.
+    Returns the best result among sets with ``|S| ≤ target_k``, ranked by
+    ``(target_k - size, -value)`` — prefer closest under the budget, then higher
+    coalition value. Oversized sets are never returned (fair vs hard-budget
+    selectors like Game 1). Raises ``ACDCBudgetUnreachableError`` if no
+    ≤``target_k`` set is found. ``params["exact"]`` records whether ``|S|``
+    hit ``target_k`` exactly.
     """
     if target_k < 1:
         raise ValueError("target_k must be >= 1.")
@@ -188,8 +197,12 @@ def acdc_target_size(
             graph, oracle, target, pool, tau=tau, alpha=alpha, order=order, progress=progress
         )
 
+    def feasible(result: ACDCPruneResult) -> bool:
+        return len(result.kept) <= target_k
+
     def rank(result: ACDCPruneResult) -> tuple[int, float]:
-        return (abs(len(result.kept) - target_k), -result.value)
+        # Closer to target_k from below wins; ties break on higher coalition value.
+        return (target_k - len(result.kept), -result.value)
 
     evaluated: dict[float, ACDCPruneResult] = {}
     for prior in seed_results or ():
@@ -218,6 +231,8 @@ def acdc_target_size(
             continue
         evaluated[tau] = run(tau)
         extra_runs += 1
+        if len(evaluated[tau].kept) == target_k:
+            break
         for decision in evaluated[tau].decisions:
             deg = float(decision["degradation"])
             for candidate_tau in (deg, deg + 1e-9):
@@ -240,7 +255,30 @@ def acdc_target_size(
             if len(evaluated[mid].kept) == target_k:
                 break
 
-    best = min(evaluated.values(), key=rank)
+    # Guarantee an under-budget candidate when every evaluated set still overshoots.
+    if not any(feasible(result) for result in evaluated.values()):
+        max_deg = max(
+            (
+                float(decision["degradation"])
+                for result in evaluated.values()
+                for decision in result.decisions
+            ),
+            default=0.0,
+        )
+        aggressive_tau = max_deg + 1.0
+        if all(abs(aggressive_tau - seen) > 1e-15 for seen in evaluated):
+            evaluated[aggressive_tau] = run(aggressive_tau)
+            extra_runs += 1
+
+    under_budget = [result for result in evaluated.values() if feasible(result)]
+    if not under_budget:
+        sizes = sorted({len(result.kept) for result in evaluated.values()})
+        raise ACDCBudgetUnreachableError(
+            f"No ACDC set with size ≤ {target_k} among {len(evaluated)} evaluated "
+            f"taus (observed sizes={sizes})."
+        )
+
+    best = min(under_budget, key=rank)
     achieved = len(best.kept)
     best.params = dict(
         best.params,
@@ -249,11 +287,12 @@ def acdc_target_size(
         bisection_iters=extra_runs,  # kept key name for JSON compatibility
         search_evals=len(evaluated),
         exact=achieved == target_k,
+        budget_capped=True,
     )
     if achieved != target_k:
         LOGGER.warning(
             "acdc_target_size: target_k=%d unreachable among %d evaluated taus; "
-            "returning nearest size %d (tau=%.4g)",
+            "returning nearest under-budget size %d (tau=%.4g)",
             target_k,
             len(evaluated),
             achieved,

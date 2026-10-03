@@ -37,7 +37,14 @@ from macag.graph import NodeId
 
 LOGGER = logging.getLogger(__name__)
 
-_IDENTITY_PARAM_KEYS = ("alpha", "lambda", "budget")
+_IDENTITY_PARAM_KEYS = (
+    "alpha",
+    "lambda",
+    "budget",
+    "score_kind",
+    "freeze_attention",
+    "ablation_mode",
+)
 
 
 def _selection_from_payload(method: str, entry: dict[str, Any]) -> SelectionResult | None:
@@ -75,6 +82,8 @@ def _game1_marginals(methods: dict[str, Any]) -> dict[NodeId, float] | None:
 
 def _block_complete(method: str, entry: dict[str, Any]) -> bool:
     """True when ``entry`` already has a usable result for ``method``."""
+    if entry.get("status") == "unavailable":
+        return True
     if entry.get("results"):
         return True
     # τ-sweep methods have no ranked prefixes; treat sweep / matched_k / best_by_size as done.
@@ -94,20 +103,51 @@ def _inject_tau_faithfulness(
         if isinstance(block.get("scores"), dict) and "faithfulness" in block["scores"]:
             at_k[size] = block["scores"]["faithfulness"]
     matched = entry.get("matched_k")
-    if matched is not None:
-        # Ported ACDC stores scores.faithfulness; native may store value.
-        if isinstance(matched.get("scores"), dict) and "faithfulness" in matched["scores"]:
-            at_k[str(matched["achieved_k"])] = matched["scores"]["faithfulness"]
-        elif "value" in matched:
-            at_k[str(matched["achieved_k"])] = matched["value"]
+    if matched is not None and matched.get("status") != "unavailable":
+        ach = matched.get("achieved_k")
+        # Hard budget: never inject an oversize matched point into the ≤budget curve.
+        if ach is not None and int(ach) <= budget:
+            # Ported ACDC stores scores.faithfulness; native may store value.
+            if isinstance(matched.get("scores"), dict) and "faithfulness" in matched["scores"]:
+                at_k[str(ach)] = matched["scores"]["faithfulness"]
+            elif "value" in matched and matched["value"] is not None:
+                at_k[str(ach)] = matched["value"]
     curve = _faithfulness_curve_on_budget(at_k, budget)
     comparison.setdefault("faithfulness_at_k", {})[method] = curve
     comparison.setdefault("auc_raw_faithfulness", {})[method] = _trapezoidal_auc(curve)
 
 
-def _require_compatible(main: dict[str, Any], extra: dict[str, Any]) -> None:
+def _require_compatible(
+    main: dict[str, Any],
+    extra: dict[str, Any],
+    *,
+    allow_missing_main_identity: bool = False,
+) -> None:
     """Reject merges that would combine incompatible experiments."""
     mismatches: list[str] = []
+    main_identity = main.get("experiment_identity")
+    extra_identity = extra.get("experiment_identity")
+    if isinstance(main_identity, dict) and isinstance(extra_identity, dict):
+        if main_identity != extra_identity:
+            identity_keys = sorted(set(main_identity) | set(extra_identity))
+            for key in identity_keys:
+                if main_identity.get(key) != extra_identity.get(key):
+                    mismatches.append(
+                        "experiment_identity."
+                        f"{key}: main={main_identity.get(key)!r} "
+                        f"extra={extra_identity.get(key)!r}"
+                    )
+    elif isinstance(extra_identity, dict) and main_identity is None:
+        if not allow_missing_main_identity:
+            mismatches.append(
+                "experiment_identity missing from main payload "
+                "(explicit adoption is required for legacy artifacts)"
+            )
+    elif isinstance(main_identity, dict) != isinstance(extra_identity, dict):
+        mismatches.append("experiment_identity missing from one payload")
+    elif main_identity is None and extra_identity is None:
+        mismatches.append("experiment_identity missing from both payloads")
+
     for key in ("input_id", "target"):
         main_val = main.get(key)
         extra_val = extra.get(key)
@@ -122,16 +162,10 @@ def _require_compatible(main: dict[str, Any], extra: dict[str, Any]) -> None:
 
     main_cands = [str(c) for c in (main.get("candidates") or [])]
     extra_cands = [str(c) for c in (extra.get("candidates") or [])]
-    if main_cands and extra_cands and main_cands != extra_cands:
+    if main_cands != extra_cands:
         mismatches.append(
             f"candidates differ (main={len(main_cands)} nodes, extra={len(extra_cands)} nodes)"
         )
-
-    # score_kind lives in oracle kwargs rather than params; tolerate absence.
-    main_sk = main_params.get("score_kind")
-    extra_sk = extra_params.get("score_kind")
-    if main_sk is not None and extra_sk is not None and main_sk != extra_sk:
-        mismatches.append(f"params.score_kind: main={main_sk!r} extra={extra_sk!r}")
 
     if mismatches:
         raise ValueError(
@@ -140,9 +174,20 @@ def _require_compatible(main: dict[str, Any], extra: dict[str, Any]) -> None:
         )
 
 
-def merge_payloads(main: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+def merge_payloads(
+    main: dict[str, Any],
+    extra: dict[str, Any],
+    *,
+    adopt_extra_identity: bool = False,
+) -> dict[str, Any]:
     """Merge ``extra``'s methods into ``main`` and rebuild the comparison block."""
-    _require_compatible(main, extra)
+    _require_compatible(
+        main,
+        extra,
+        allow_missing_main_identity=adopt_extra_identity,
+    )
+    if adopt_extra_identity and main.get("experiment_identity") is None:
+        main["experiment_identity"] = dict(extra["experiment_identity"])
     methods: dict[str, Any] = dict(main.get("methods") or {})
     added: list[str] = []
     for method, entry in (extra.get("methods") or {}).items():
@@ -184,6 +229,23 @@ def merge_payloads(main: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any
         if key in (extra.get("params") or {}):
             params[key] = extra["params"][key]
     main["params"] = params
+
+    main_stats = dict(main.get("stats") or {})
+    extra_stats = dict(extra.get("stats") or {})
+    method_costs = dict(main_stats.get("method_selection_costs") or {})
+    method_costs.update(extra_stats.get("method_selection_costs") or {})
+    main_stats["method_selection_costs"] = method_costs
+    for key in (
+        "evaluation_oracle_calls",
+        "evaluation_cache_hits",
+        "bruteforce_oracle_calls",
+        "bruteforce_cache_hits",
+    ):
+        main_stats[key] = int(main_stats.get(key, 0)) + int(extra_stats.get(key, 0))
+    main_stats["merged_run_count"] = int(main_stats.get("merged_run_count", 1)) + int(
+        extra_stats.get("merged_run_count", 1)
+    )
+    main["stats"] = main_stats
     return main
 
 
@@ -193,6 +255,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="macag_baselines.json to merge into (rewritten in place).")
     parser.add_argument("--extra", type=Path, required=True,
                         help="Sidecar baselines JSON with the separately-run method(s).")
+    parser.add_argument(
+        "--adopt-extra-identity",
+        action="store_true",
+        help=(
+            "For a legacy main payload without experiment_identity, adopt the "
+            "sidecar identity after legacy field/candidate checks pass."
+        ),
+    )
     parser.add_argument("--progress", action="store_true")
     args = parser.parse_args(argv)
     if args.progress:
@@ -200,7 +270,11 @@ def main(argv: list[str] | None = None) -> int:
 
     main_payload = json.loads(args.main.read_text())
     extra_payload = json.loads(args.extra.read_text())
-    merged = merge_payloads(main_payload, extra_payload)
+    merged = merge_payloads(
+        main_payload,
+        extra_payload,
+        adopt_extra_identity=args.adopt_extra_identity,
+    )
     args.main.write_text(json.dumps(merged, indent=2))
     print(f"merged {sorted((extra_payload.get('methods') or {}).keys())} into {args.main}")
     return 0

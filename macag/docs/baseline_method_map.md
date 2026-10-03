@@ -4,6 +4,13 @@ Stable method IDs used by `python -m macag.cli.run_baselines` and
 `macag_baselines.json`. **Do not rename** legacy IDs (`eap`, `acdc`) — historical
 results stay comparable. Prefer the explicit aliases in new runs.
 
+Paper-level definitions, original metrics, and why each method is ported:
+[`baseline_originals_and_ports.md`](baseline_originals_and_ports.md).
+
+**Original-pipeline track** (native factorized edges; separate JSON):
+[`baseline_original_track.md`](baseline_original_track.md) — `eap_edge` / `acdc_edge`
+via UFO-101 **auto-circuit** (true Syed EAP + Conmy ACDC).
+
 | Method ID | Alias(es) | What it actually is | Paper claim |
 |-----------|-----------|---------------------|-------------|
 | `influence` | — | Top-k by circuit-tracer **raw** node influence (`influence_raw` when present; legacy cumulative `influence` ranked ascending). | Anthropic attribution-graph prune score (Lindsey et al. 2025), used as a selector |

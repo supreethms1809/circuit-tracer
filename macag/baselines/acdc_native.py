@@ -18,7 +18,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping, Sequence
 
-from macag.baselines.acdc_prune import ACDCPruneResult, acdc_prune, acdc_target_size, acdc_tau_sweep
+from macag.baselines.acdc_prune import (
+    ACDCBudgetUnreachableError,
+    ACDCPruneResult,
+    acdc_prune,
+    acdc_target_size,
+    acdc_tau_sweep,
+)
 from macag.graph import CircuitGraph, NodeId
 from macag.scoring import ScoringOracle
 from macag.scoring_components import (
@@ -173,27 +179,40 @@ def run_acdc_native(
     output["best_by_size"] = {str(size): best_by_size[size] for size in sorted(best_by_size)}
 
     if target_k is not None:
-        matched = acdc_target_size(
-            graph,
-            oracle,
-            target,
-            pool,
-            target_k=target_k,
-            alpha=alpha,
-            order=order,
-            seed_results=sweep,
-            progress=progress,
-        )
-        output["matched_k"] = {
-            "target_k": target_k,
-            "achieved_k": len(matched.kept),
-            "exact": bool(matched.params.get("exact")),
-            "tau": matched.tau,
-            "value": matched.value,
-            "kept": sorted(matched.kept, key=str),
-            "evidence": sorted(matched.kept, key=str),
-            "params": matched.params,
-        }
+        try:
+            matched = acdc_target_size(
+                graph,
+                oracle,
+                target,
+                pool,
+                target_k=target_k,
+                alpha=alpha,
+                order=order,
+                seed_results=sweep,
+                progress=progress,
+            )
+            output["matched_k"] = {
+                "target_k": target_k,
+                "achieved_k": len(matched.kept),
+                "exact": bool(matched.params.get("exact")),
+                "tau": matched.tau,
+                "value": matched.value,
+                "budget_capped": bool(matched.params.get("budget_capped", True)),
+                "kept": sorted(matched.kept, key=str),
+                "evidence": sorted(matched.kept, key=str),
+                "params": matched.params,
+            }
+        except ACDCBudgetUnreachableError as exc:
+            output["matched_k"] = {
+                "status": "unavailable",
+                "target_k": target_k,
+                "achieved_k": None,
+                "exact": False,
+                "budget_capped": True,
+                "reason": str(exc),
+                "evidence": None,
+                "value": None,
+            }
 
     stats = oracle.cache_stats()
     output["selection_stats"] = {

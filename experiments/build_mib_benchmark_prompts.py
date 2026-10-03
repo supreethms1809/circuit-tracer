@@ -71,10 +71,28 @@ def _ioi_tokens(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str]:
     return _decode_token(tokenizer, correct), _decode_token(tokenizer, incorrect)
 
 
+def _single_token_id(tokenizer: Any, text: str) -> int:
+    """Return the vocab id for ``text``, preferring a space-prefixed single token.
+
+    Letter answer keys (``A``/``B``/``C``/``D``) are mid-prompt continuations after
+    ``Answer:`` and almost always need the space-prefixed BPE form. Digit foils
+    (``1``/``2``/…) stay bare when ``" 1"`` would be multi-token.
+    """
+    bare_ids = tokenizer(text, add_special_tokens=False).input_ids
+    if not bare_ids:
+        raise ValueError(f"empty tokenization for {text!r}")
+    if text[:1].isspace():
+        return int(bare_ids[0])
+    spaced_ids = tokenizer(f" {text}", add_special_tokens=False).input_ids
+    if len(spaced_ids) == 1 and (len(bare_ids) != 1 or spaced_ids[0] != bare_ids[0]):
+        return int(spaced_ids[0])
+    return int(bare_ids[0])
+
+
 def _mcqa_tokens(tokenizer: Any, row: dict[str, Any], counterfactual_col: dict[str, Any]) -> tuple[str, str]:
-    correct = tokenizer(row["choices"]["label"][row["answerKey"]], add_special_tokens=False).input_ids[0]
+    correct = _single_token_id(tokenizer, row["choices"]["label"][row["answerKey"]])
     incorrect_ans = str(counterfactual_col["choices"]["label"][counterfactual_col["answerKey"]])
-    incorrect = tokenizer(incorrect_ans, add_special_tokens=False).input_ids[0]
+    incorrect = _single_token_id(tokenizer, incorrect_ans)
     return _decode_token(tokenizer, correct), _decode_token(tokenizer, incorrect)
 
 

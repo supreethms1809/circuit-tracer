@@ -292,3 +292,26 @@ def test_forward_pass_consistency(create_test_clt_files):
     # Outputs should be identical
     assert torch.allclose(eager_output, lazy_output, rtol=1e-5)
     assert eager_output.shape == (eager_clt.n_layers, n_pos, eager_clt.d_model)
+
+
+def test_lazy_decoder_retries_transient_missing_file(create_test_clt_files, monkeypatch):
+    clt_path = create_test_clt_files(n_layers=2, d_model=8, d_transcoder=16)
+    clt = load_clt(
+        clt_path, device=torch.device("cpu"), lazy_encoder=False, lazy_decoder=True
+    )
+    import circuit_tracer.transcoder.cross_layer_transcoder as clt_mod
+
+    calls = {"n": 0}
+    real_open = clt_mod.safe_open
+
+    def flaky_open(path, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise FileNotFoundError(path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(clt_mod, "safe_open", flaky_open)
+    monkeypatch.setattr(clt_mod.time, "sleep", lambda _s: None)
+    vec = clt._get_decoder_vectors(0)
+    assert vec.ndim == 3
+    assert calls["n"] == 3

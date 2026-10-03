@@ -2,6 +2,8 @@
 
 Use this when results "do not make sense" at first glance.
 
+For which of F / S / N / KL to *headline* on unlearning, steering, or the auditor — and how to retune Game 1 \(\alpha\), stop metric, and budget vs goal-oriented runs — see [`APPLICATIONS_METRICS.md`](APPLICATIONS_METRICS.md). This guide only explains how to read the JSON.
+
 ## 1. Read JSON in This Order
 
 1. `params`: confirms what optimization problem you actually solved.

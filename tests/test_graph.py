@@ -6,7 +6,14 @@ import pytest
 import torch
 from transformer_lens import HookedTransformerConfig
 
-from circuit_tracer.graph import Graph, compute_edge_influence, compute_graph_scores, compute_node_influence
+from circuit_tracer.graph import (
+    Graph,
+    compute_edge_influence,
+    compute_graph_scores,
+    compute_node_influence,
+    find_threshold,
+    prune_graph,
+)
 from circuit_tracer.utils import get_default_device
 
 
@@ -158,3 +165,54 @@ def test_compute_graph_scores_handles_zero_token_and_error_influence():
 
     assert replacement_score == 1.0
     assert completeness_score == 1.0
+
+
+def test_find_threshold_keep_all_matches_minimum_without_sort():
+    scores = torch.tensor([0.1, 0.4, 0.0, 0.25])
+    cutoff = find_threshold(scores, 1.0)
+    assert cutoff.item() == pytest.approx(0.0)
+    # Same cutoff as the legacy "last after descending sort" rule.
+    sorted_scores = torch.sort(scores, descending=True).values
+    assert cutoff.item() == pytest.approx(sorted_scores[-1].item())
+
+
+def test_find_threshold_partial_mass_unchanged():
+    scores = torch.tensor([4.0, 3.0, 2.0, 1.0])
+    cutoff = find_threshold(scores, 0.5)
+    # cumsum/total = 0.4, 0.7, ...; first index with mass >= 0.5 is 3.0.
+    assert cutoff.item() == pytest.approx(3.0)
+
+
+def test_prune_graph_edge_threshold_one_keeps_all_edges():
+    # Layout: 2 features + 2 errors + 2 tokens + 1 logit = 7
+    n = 7
+    adjacency = torch.zeros(n, n)
+    adjacency[6, 0] = 1.0
+    adjacency[6, 1] = 1.0
+    cfg = HookedTransformerConfig.from_dict(
+        {
+            "n_layers": 1,
+            "d_model": 8,
+            "n_ctx": 16,
+            "d_head": 4,
+            "model_name": "gemma-2-2b",
+            "n_heads": 2,
+            "d_mlp": 16,
+            "d_vocab": 16,
+            "original_architecture": "Gemma2ForCausalLM",
+            "tokenizer_name": "google/gemma-2-2b",
+        }
+    )
+    graph = Graph(
+        input_string="ab",
+        input_tokens=torch.tensor([0, 1]),
+        active_features=torch.tensor([[0, 0, 0], [0, 1, 1]]),
+        adjacency_matrix=adjacency,
+        cfg=cfg,
+        logit_tokens=torch.tensor([0]),
+        logit_probabilities=torch.tensor([1.0]),
+        selected_features=torch.tensor([0, 1]),
+        activation_values=torch.tensor([1.0, 1.0]),
+    )
+    result = prune_graph(graph, node_threshold=1.0, edge_threshold=1.0)
+    assert bool(result.edge_mask.all())

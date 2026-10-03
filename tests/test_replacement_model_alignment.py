@@ -80,3 +80,27 @@ def test_nnsight_intervention_buffers_use_ensure_tokenized_length(monkeypatch) -
 
     assert captured["shape"] == (2, 4, 5)
     assert torch.equal(result, torch.tensor([0.0]))
+
+
+def test_resolve_target_prefers_space_prefixed_single_token() -> None:
+    from macag.factories.replacement_model import resolve_target_to_logit_idx
+
+    class _Tok:
+        def __call__(self, text, add_special_tokens=False):
+            table = {
+                "A": [32],
+                " A": [362],
+                "1": [16],
+                " 1": [220, 16],
+                " Jeff": [1234],
+            }
+            return {"input_ids": table[text]}
+
+    idx = resolve_target_to_logit_idx(
+        _Tok(),
+        {"y": "A", "y_foil": "1", "name": " Jeff"},
+        strict_single_token=True,
+    )
+    assert idx["y"] == 362  # auto space-prefixed
+    assert idx["y_foil"] == 16  # digit foil stays bare (spaced is multi-token)
+    assert idx["name"] == 1234

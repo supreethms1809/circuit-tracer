@@ -63,14 +63,16 @@ def resolve_target_to_logit_idx(
             continue
 
         token_ids = _extract_token_ids(tokenizer, token_str)
+        if not token_ids:
+            raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
+        token_ids, token_str = _prefer_leading_space_token(
+            tokenizer, label, token_str, token_ids
+        )
         if strict_single_token and len(token_ids) != 1:
             raise ValueError(
                 f"Target '{label}' token '{token_str}' tokenized to {len(token_ids)} IDs; "
                 "expected exactly 1. Provide an explicit vocab id via `id:<int>`."
             )
-        if not token_ids:
-            raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
-        _warn_missing_leading_space(tokenizer, label, token_str, token_ids)
         # Next-token prediction scores the FIRST token of the continuation; when
         # strict_single_token is disabled and the label is multi-token, the first
         # sub-token is the relevant logit, not the last (I2).
@@ -78,27 +80,60 @@ def resolve_target_to_logit_idx(
     return target_to_logit_idx
 
 
-def _warn_missing_leading_space(
+def _prefer_leading_space_token(
     tokenizer: Any, label: Any, token_str: str, token_ids: list[int]
-) -> None:
-    # BPE footgun: for GPT-2-style tokenizers, "Paris" and " Paris" are different
-    # single tokens, and next-token continuations mid-sentence almost always use
-    # the space-prefixed variant. Warn when both variants are single tokens but
-    # differ, so a silently-wrong logit index doesn't corrupt every score.
+) -> tuple[list[int], str]:
+    """Prefer the space-prefixed BPE variant when it is also a single token.
+
+    For GPT-2 / Llama / Gemma tokenizers, ``"A"`` and ``" A"`` are different
+    vocab entries. Mid-prompt next-token scoring (e.g. after ``Answer:``) almost
+    always needs the space-prefixed form. When both variants are length-1 and
+    disagree, auto-correct to the spaced form instead of only warning.
+
+    Digit foils like ``"1"`` are left unchanged: ``" 1"`` is typically two tokens
+    (space byte + digit), so a blind rewrite would score the space logit.
+    """
     if token_str[:1].isspace():
-        return
-    spaced_ids = _extract_token_ids(tokenizer, " " + token_str)
-    if len(spaced_ids) == 1 and len(token_ids) >= 1 and spaced_ids[0] != token_ids[0]:
-        LOGGER.warning(
-            "Target '%s' token '%s' has no leading space; ' %s' is a different "
-            "single token (id %d vs %d). Mid-sentence continuations usually "
-            "need the space-prefixed variant.",
+        return token_ids, token_str
+    spaced_str = " " + token_str
+    spaced_ids = _extract_token_ids(tokenizer, spaced_str)
+    if len(spaced_ids) == 1 and len(token_ids) == 1 and spaced_ids[0] != token_ids[0]:
+        LOGGER.info(
+            "Target '%s' token %r auto-corrected to space-prefixed %r "
+            "(id %d -> %d) for next-token scoring.",
             label,
             token_str,
-            token_str,
+            spaced_str,
             token_ids[0],
             spaced_ids[0],
         )
+        return spaced_ids, spaced_str
+    if len(spaced_ids) == 1 and len(token_ids) != 1:
+        LOGGER.info(
+            "Target '%s' token %r is multi-token (%d ids); preferring "
+            "space-prefixed single-token %r (id %d).",
+            label,
+            token_str,
+            len(token_ids),
+            spaced_str,
+            spaced_ids[0],
+        )
+        return spaced_ids, spaced_str
+    if (
+        len(spaced_ids) != 1
+        and len(token_ids) == 1
+        and not token_str[:1].isspace()
+    ):
+        # Common for digit labels: spaced form is multi-token; keep bare.
+        return token_ids, token_str
+    return token_ids, token_str
+
+
+def _warn_missing_leading_space(
+    tokenizer: Any, label: Any, token_str: str, token_ids: list[int]
+) -> None:
+    """Backward-compatible alias; prefer :func:`_prefer_leading_space_token`."""
+    _prefer_leading_space_token(tokenizer, label, token_str, token_ids)
 
 
 def resolve_target_to_token_span(
@@ -124,7 +159,7 @@ def resolve_target_to_token_span(
         token_ids = _extract_token_ids(tokenizer, token_str)
         if not token_ids:
             raise ValueError(f"Target '{label}' token '{token_str}' tokenized to an empty sequence.")
-        _warn_missing_leading_space(tokenizer, label, token_str, token_ids)
+        token_ids, _ = _prefer_leading_space_token(tokenizer, label, token_str, token_ids)
         spans[label] = token_ids
     return spans
 
