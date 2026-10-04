@@ -194,6 +194,7 @@ def prefilter_candidates(
     connected: bool = False,
     progress: bool = True,
     log_every: int = 50,
+    cap_sufficiency: bool = False,
 ) -> list[NodeId]:
     """Rank candidates by singleton gain and keep the top-k.
 
@@ -218,7 +219,13 @@ def prefilter_candidates(
         if not graph.has_node(node):
             continue
         singleton = {node}
-        metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=singleton, alpha=alpha)
+        metrics = compute_faithfulness_metrics(
+            oracle=oracle,
+            target=target,
+            nodes=singleton,
+            alpha=alpha,
+            cap_sufficiency=cap_sufficiency,
+        )
         utility = game1_utility(metrics.faithfulness_delta, size=1, lam=lam)
         ranking.append((utility, node))
         if progress and tqdm is None and log_every > 0 and idx % log_every == 0:
@@ -261,12 +268,19 @@ def result_from_selected_order(
     total_candidates: int,
     candidate_count: int,
     params: Mapping[str, Any],
+    cap_sufficiency: bool = False,
 ) -> EvidenceSetResult:
     """Rebuild Game 1 metrics for an already-chosen evidence order (no greedy)."""
     oracle.reset_stats()
     selected = {node for node in selected_order if graph.has_node(node)}
     order = [node for node in selected_order if node in selected]
-    metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=selected, alpha=alpha)
+    metrics = compute_faithfulness_metrics(
+        oracle=oracle,
+        target=target,
+        nodes=selected,
+        alpha=alpha,
+        cap_sufficiency=cap_sufficiency,
+    )
     utility = game1_utility(faithfulness_delta=metrics.faithfulness_delta, size=len(selected), lam=lam)
     stats = oracle.cache_stats()
     return EvidenceSetResult(
@@ -306,6 +320,7 @@ def solve_game1(
     checkpoint_path: str | Path | None = None,
     resume_selected_order: Sequence[NodeId] | None = None,
     checkpoint_meta: Mapping[str, Any] | None = None,
+    cap_sufficiency: bool = False,
 ) -> EvidenceSetResult:
     """Greedy hill-climb solver for Game 1.
 
@@ -385,6 +400,7 @@ def solve_game1(
             checkpoint_path=checkpoint_path,
             resume_selected_order=resume_selected_order,
             checkpoint_meta=checkpoint_meta,
+            cap_sufficiency=cap_sufficiency,
         )
 
 
@@ -409,6 +425,7 @@ def _solve_game1_body(
     checkpoint_path: str | Path | None,
     resume_selected_order: Sequence[NodeId] | None,
     checkpoint_meta: Mapping[str, Any] | None,
+    cap_sufficiency: bool = False,
 ) -> EvidenceSetResult:
     if prefilter_top_k is not None:
         if prefilter_fn:
@@ -427,6 +444,7 @@ def _solve_game1_body(
                 connected,
                 progress=progress,
                 log_every=log_every,
+                cap_sufficiency=cap_sufficiency,
             )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
@@ -437,7 +455,13 @@ def _solve_game1_body(
         if key in utility_cache:
             return utility_cache[key], metric_cache[key]
         with nvtx_range("game1.evaluate"):
-            metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=nodes, alpha=alpha)
+            metrics = compute_faithfulness_metrics(
+                oracle=oracle,
+                target=target,
+                nodes=nodes,
+                alpha=alpha,
+                cap_sufficiency=cap_sufficiency,
+            )
             utility = game1_utility(faithfulness_delta=metrics.faithfulness_delta, size=len(nodes), lam=lam)
             utility_cache[key] = utility
             metric_cache[key] = metrics
@@ -477,6 +501,11 @@ def _solve_game1_body(
                 mismatches.append("lambda")
             if ckpt_params.get("stop_metric") not in (None, stop_metric):
                 mismatches.append("stop_metric")
+            if (
+                ckpt_params.get("cap_sufficiency") is not None
+                and bool(ckpt_params.get("cap_sufficiency")) != bool(cap_sufficiency)
+            ):
+                mismatches.append("cap_sufficiency")
             if mismatches:
                 LOGGER.warning(
                     "Game1 checkpoint param mismatch at %s (%s); resuming anyway",
@@ -517,6 +546,7 @@ def _solve_game1_body(
                 "connected": connected,
                 "min_gain": min_gain,
                 "fill_budget": fill_budget,
+                "cap_sufficiency": cap_sufficiency,
             },
         }
         _atomic_write_json(checkpoint_path, payload)
@@ -655,6 +685,7 @@ def _solve_game1_body(
             "connected": connected,
             "min_gain": min_gain,
             "fill_budget": fill_budget,
+            "cap_sufficiency": cap_sufficiency,
         },
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],

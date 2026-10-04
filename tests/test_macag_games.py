@@ -57,6 +57,64 @@ def test_c1_normalized_metrics_and_error_floor() -> None:
     assert as_dict["faithfulness_normalized"] == pytest.approx(0.6)
 
 
+class _OvershootScorer:
+    """Keep-only of ``hot`` exceeds the clean score; ``fit`` matches it."""
+
+    def score_all(self, target: Any) -> float:
+        return 1.0
+
+    def score_empty(self, target: Any) -> float:
+        return 0.0
+
+    def score_keep_only(self, nodes: set[str], target: Any) -> float:
+        if "hot" in nodes:
+            return 5.0
+        if "fit" in nodes:
+            return 1.0
+        return 0.0
+
+    def score_remove(self, nodes: set[str], target: Any) -> float:
+        return 1.0
+
+
+def test_cap_sufficiency_stops_rewarding_overshoot() -> None:
+    oracle = ScoringOracle(backend=_OvershootScorer(), cache_enabled=True)
+    raw = compute_faithfulness_metrics(oracle, target="y", nodes={"hot"}, alpha=1.0)
+    capped = compute_faithfulness_metrics(
+        oracle, target="y", nodes={"hot"}, alpha=1.0, cap_sufficiency=True
+    )
+    assert raw.sufficiency == pytest.approx(5.0)
+    assert capped.sufficiency == pytest.approx(1.0)
+    assert capped.sufficiency_uncapped == pytest.approx(5.0)
+    assert capped.sufficiency_capped == pytest.approx(1.0)
+    assert capped.keep_distance == pytest.approx(4.0)
+    assert capped.faithfulness_delta == pytest.approx(1.0)
+    as_dict = metrics_to_dict(capped)
+    assert as_dict["sufficiency"] == pytest.approx(1.0)
+    assert as_dict["keep_distance"] == pytest.approx(4.0)
+
+
+def test_cap_sufficiency_changes_which_node_game1_keeps() -> None:
+    oracle = ScoringOracle(backend=_OvershootScorer(), cache_enabled=True)
+    graph = _full_graph(["fit", "hot"])
+    common = dict(
+        graph=graph,
+        oracle=oracle,
+        target="y",
+        candidates=["fit", "hot"],
+        alpha=1.0,
+        lam=0.0,
+        budget=1,
+        progress=False,
+    )
+    raw = solve_game1(**common)
+    capped = solve_game1(**common, cap_sufficiency=True)
+    assert raw.evidence == {"hot"}
+    assert capped.evidence == {"fit"}
+    assert capped.metrics.sufficiency == pytest.approx(1.0)
+    assert capped.metrics.keep_distance == pytest.approx(0.0)
+
+
 def test_c1_zero_range_guard() -> None:
     oracle = _oracle({"y": {"a": 0.0, "b": 0.0}}, base={"y": 5.0})
     metrics = compute_faithfulness_metrics(oracle, target="y", nodes={"a"}, alpha=0.5)

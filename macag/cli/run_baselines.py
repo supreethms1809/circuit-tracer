@@ -339,6 +339,7 @@ def _run_selection(
             min_gain=args.min_gain,
             connected=args.connected,
             progress=args.progress,
+            cap_sufficiency=args.cap_sufficiency,
         )
         # solve_game1 resets stats internally; its counters are this method's cost.
         result = SelectionResult(
@@ -368,6 +369,7 @@ def _evaluate_prefixes(
     budget: int,
     alpha: float,
     lam: float,
+    cap_sufficiency: bool = False,
 ) -> dict[int, dict[str, Any]]:
     """Score each k-prefix of a ranking with the games' FaithfulnessMetrics.
 
@@ -375,7 +377,9 @@ def _evaluate_prefixes(
     visible in comparisons instead of disappearing from the method table.
     """
     results: dict[int, dict[str, Any]] = {}
-    empty_metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=set(), alpha=alpha)
+    empty_metrics = compute_faithfulness_metrics(
+        oracle=oracle, target=target, nodes=set(), alpha=alpha, cap_sufficiency=cap_sufficiency
+    )
     results[0] = {
         "evidence": [],
         "scores": metrics_to_dict(empty_metrics)
@@ -384,7 +388,13 @@ def _evaluate_prefixes(
     max_k = min(budget, len(ranking))
     for k in range(1, max_k + 1):
         evidence = set(ranking[:k])
-        metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=evidence, alpha=alpha)
+        metrics = compute_faithfulness_metrics(
+            oracle=oracle,
+            target=target,
+            nodes=evidence,
+            alpha=alpha,
+            cap_sufficiency=cap_sufficiency,
+        )
         results[k] = {
             "evidence": _sort_nodes(evidence),
             "scores": metrics_to_dict(metrics)
@@ -528,6 +538,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target", required=True, help="Target class/label.")
     parser.add_argument("--input-id", default="unknown", help="Input identifier for output JSON.")
     parser.add_argument("--alpha", type=float, default=0.5, help="Faithfulness mix weight.")
+    parser.add_argument(
+        "--cap-sufficiency",
+        action="store_true",
+        help=(
+            "Evaluate and search under capped sufficiency, min(keep_only, all) - empty. "
+            "Must match Game 1's --cap-sufficiency when comparing methods."
+        ),
+    )
     parser.add_argument("--lam", type=float, default=0.01, help="Sparsity lambda (Game 1 + reported utility).")
     parser.add_argument("--budget", type=int, required=True, help="Max evidence size k.")
     parser.add_argument("--candidates-file", default=None, help="Optional candidate node list (.json or text).")
@@ -680,6 +698,7 @@ def main(argv: list[str] | None = None) -> int:
                 alpha=args.alpha,
                 order=args.acdc_order,
                 progress=args.progress,
+                cap_sufficiency=args.cap_sufficiency,
             )
             acdc_output = {
                 "sweep": [
@@ -706,6 +725,7 @@ def main(argv: list[str] | None = None) -> int:
                         order=args.acdc_order,
                         seed_results=acdc_sweep_results,
                         progress=args.progress,
+                        cap_sufficiency=args.cap_sufficiency,
                     )
                     acdc_output["_matched_pending"] = matched
                 except ACDCBudgetUnreachableError as exc:
@@ -818,7 +838,13 @@ def main(argv: list[str] | None = None) -> int:
     oracle.reset_stats()
     for method, selection in selections.items():
         method_outputs[method]["results"] = _evaluate_prefixes(
-            oracle, args.target, selection.ranking, args.budget, args.alpha, args.lam
+            oracle,
+            args.target,
+            selection.ranking,
+            args.budget,
+            args.alpha,
+            args.lam,
+            cap_sufficiency=args.cap_sufficiency,
         )
     if acdc_output is not None:
         # ACDC produces one set per tau, not nested prefixes; score each kept
@@ -827,7 +853,11 @@ def main(argv: list[str] | None = None) -> int:
         for entry in acdc_output["sweep"]:
             kept = set(entry["kept"])
             metrics = compute_faithfulness_metrics(
-                oracle=oracle, target=args.target, nodes=kept, alpha=args.alpha
+                oracle=oracle,
+                target=args.target,
+                nodes=kept,
+                alpha=args.alpha,
+                cap_sufficiency=args.cap_sufficiency,
             )
             entry["scores"] = metrics_to_dict(metrics) | {
                 "utility": game1_utility(metrics.faithfulness_delta, size=len(kept), lam=args.lam)
@@ -843,7 +873,11 @@ def main(argv: list[str] | None = None) -> int:
         if matched_pending is not None:
             matched = matched_pending
             matched_metrics = compute_faithfulness_metrics(
-                oracle=oracle, target=args.target, nodes=set(matched.kept), alpha=args.alpha
+                oracle=oracle,
+                target=args.target,
+                nodes=set(matched.kept),
+                alpha=args.alpha,
+                cap_sufficiency=args.cap_sufficiency,
             )
             acdc_output["matched_k"] = {
                 "target_k": matched.params["target_k"],

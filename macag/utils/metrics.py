@@ -35,6 +35,15 @@ class FaithfulnessMetrics:
     sufficiency_normalized: float
     necessity_normalized: float
     faithfulness_delta_normalized: float
+    # ``sufficiency`` is the value mixed into faithfulness. When
+    # ``cap_sufficiency`` is set it cannot exceed the clean gap: extra
+    # keep-only logit beyond ``all_score`` is overshoot, not recovery.
+    # The uncapped gap and the distance to the clean score are always
+    # recorded so a capped run can still show how far keep-only moved.
+    sufficiency_uncapped: float = 0.0
+    sufficiency_capped: float = 0.0
+    keep_distance: float = 0.0
+    cap_sufficiency: bool = False
 
 
 def compute_faithfulness_metrics(
@@ -42,6 +51,7 @@ def compute_faithfulness_metrics(
     target: TargetId,
     nodes: set[NodeId],
     alpha: float,
+    cap_sufficiency: bool = False,
 ) -> FaithfulnessMetrics:
     with nvtx_range("game1.faithfulness"):
         all_score = oracle.all(target)
@@ -49,7 +59,11 @@ def compute_faithfulness_metrics(
         keep_only_score = oracle.keep_only(nodes, target)
         remove_score = oracle.remove(nodes, target)
 
-        sufficiency = keep_only_score - empty_score
+        sufficiency_uncapped = keep_only_score - empty_score
+        # min(keep, clean) - empty. Once keep-only reaches the clean score,
+        # further increases do not raise sufficiency.
+        sufficiency_capped = min(keep_only_score, all_score) - empty_score
+        sufficiency = sufficiency_capped if cap_sufficiency else sufficiency_uncapped
         necessity = all_score - remove_score
         faithfulness_delta = alpha * sufficiency + (1.0 - alpha) * necessity
 
@@ -75,6 +89,10 @@ def compute_faithfulness_metrics(
             sufficiency_normalized=sufficiency_normalized,
             necessity_normalized=necessity_normalized,
             faithfulness_delta_normalized=faithfulness_delta_normalized,
+            sufficiency_uncapped=sufficiency_uncapped,
+            sufficiency_capped=sufficiency_capped,
+            keep_distance=abs(keep_only_score - all_score),
+            cap_sufficiency=cap_sufficiency,
         )
 
 
@@ -144,4 +162,7 @@ def metrics_to_dict(metrics: FaithfulnessMetrics) -> dict[str, float]:
         "sufficiency_normalized": metrics.sufficiency_normalized,
         "necessity_normalized": metrics.necessity_normalized,
         "faithfulness_normalized": metrics.faithfulness_delta_normalized,
+        "sufficiency_uncapped": metrics.sufficiency_uncapped,
+        "sufficiency_capped": metrics.sufficiency_capped,
+        "keep_distance": metrics.keep_distance,
     }

@@ -329,6 +329,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     game1.add_argument(
+        "--cap-sufficiency",
+        action="store_true",
+        help=(
+            "Cap sufficiency at the clean score: min(keep_only, all) - empty. "
+            "Keep-only logit gap above the clean model is not rewarded. "
+            "Necessity is unchanged. Raw sufficiency and |keep_only - all| "
+            "are still written on the score record."
+        ),
+    )
+    game1.add_argument(
         "--freeze-mode",
         choices=("frozen", "unfrozen", "both"),
         default="frozen",
@@ -448,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
             progress=args.progress,
             log_every=args.log_every,
             checkpoint_path=args.checkpoint_json,
+            cap_sufficiency=args.cap_sufficiency,
         )
         output = {
             "input_id": args.input_id,
@@ -485,6 +496,7 @@ def main(argv: list[str] | None = None) -> int:
             progress=args.progress,
             log_every=args.log_every,
             checkpoint_path=args.checkpoint_json,
+            cap_sufficiency=args.cap_sufficiency,
         )
         output = {
             "input_id": args.input_id,

@@ -64,6 +64,7 @@ def acdc_prune(
     alpha: float = 0.5,
     order: str = "top_down",
     progress: bool = False,
+    cap_sufficiency: bool = False,
 ) -> ACDCPruneResult:
     """Single top-down sweep: drop a node when v(E) - v(E - node) < tau.
 
@@ -80,13 +81,17 @@ def acdc_prune(
     ordered = _topdown_order(graph, pool) if order == "top_down" else list(pool)
 
     kept = set(pool)
-    current_value = coalition_value(oracle, target, kept, alpha)
+    current_value = coalition_value(
+        oracle, target, kept, alpha, cap_sufficiency=cap_sufficiency
+    )
     removed_order: list[NodeId] = []
     decisions: list[dict[str, Any]] = []
 
     for node in ordered:
         trial = kept - {node}
-        trial_value = coalition_value(oracle, target, trial, alpha)
+        trial_value = coalition_value(
+            oracle, target, trial, alpha, cap_sufficiency=cap_sufficiency
+        )
         degradation = current_value - trial_value
         pruned = degradation < tau
         decisions.append(
@@ -112,7 +117,7 @@ def acdc_prune(
         removed_order=removed_order,
         value=current_value,
         decisions=decisions,
-        params={"alpha": alpha, "order": order, "tau": tau},
+        params={"alpha": alpha, "order": order, "tau": tau, "cap_sufficiency": cap_sufficiency},
     )
 
 
@@ -125,6 +130,7 @@ def acdc_tau_sweep(
     alpha: float = 0.5,
     order: str = "top_down",
     progress: bool = False,
+    cap_sufficiency: bool = False,
 ) -> list[ACDCPruneResult]:
     """Run the prune at each tau (ascending) to trace a size/faithfulness curve.
 
@@ -145,6 +151,7 @@ def acdc_tau_sweep(
                 alpha=alpha,
                 order=order,
                 progress=progress,
+                cap_sufficiency=cap_sufficiency,
             )
         )
     return results
@@ -164,6 +171,7 @@ def acdc_target_size(
     tau_hi: float | None = None,
     seed_results: Sequence[ACDCPruneResult] | None = None,
     progress: bool = False,
+    cap_sufficiency: bool = False,
 ) -> ACDCPruneResult:
     """Find a tau whose pruned set is as close as possible to ``target_k`` **without exceeding it**.
 
@@ -194,7 +202,15 @@ def acdc_target_size(
 
     def run(tau: float) -> ACDCPruneResult:
         return acdc_prune(
-            graph, oracle, target, pool, tau=tau, alpha=alpha, order=order, progress=progress
+            graph,
+            oracle,
+            target,
+            pool,
+            tau=tau,
+            alpha=alpha,
+            order=order,
+            progress=progress,
+            cap_sufficiency=cap_sufficiency,
         )
 
     def feasible(result: ACDCPruneResult) -> bool:
