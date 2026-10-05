@@ -388,6 +388,9 @@ macag_launch_worker_pool() {
         MACAG_NVTX="${MACAG_NVTX:-}"
         PARALLEL_AGENTS="${PARALLEL_AGENTS:-1}"
         RUN_ANALYSIS=0
+        PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
+        OMP_NUM_THREADS="${OMP_NUM_THREADS:-6}"
+        MKL_NUM_THREADS="${MKL_NUM_THREADS:-6}"
         CUDA_VISIBLE_DEVICES="$gpu_id"
       )
       [[ -n "$clt_tag" ]] && env_args+=(CLTS="$clt_tag")

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Final paper campaign, one CLT per array job, one stage at a time.
 #
-# 5 nodes x 2 GPUs x 4 workers = 40 slots. Without a pilot cost table the
-# prompts are sharded evenly. Do not launch until scripts/macag_check_eval_ready.py passes
-# (clean tree, tag macag-final-v3, prompt digest).
+# 5 nodes x 2 GPUs. Per-node worker counts are the n090 runs that finished
+# ARC-Easy: 426k=12 (6/GPU), 2.5M=6 (3/GPU), llama=8 (4/GPU).
+# Do not launch until scripts/macag_check_eval_ready.py passes
+# (clean tree, tag macag-final-v4, prompt digest).
 #
 # Stages follow the eval plan: graph, then Game 1, then baselines
 # (ACDC reads Game 1 |E*|), then Game 2. Launch the next stage only after
@@ -63,8 +64,12 @@ export CONNECTED="${CONNECTED:-0}"
 export PREFILTER_TOP_K="${PREFILTER_TOP_K:-}"
 export KL_RESCORE="${KL_RESCORE:-1}"
 export RUN_ANALYSIS="${RUN_ANALYSIS:-0}"
-export MACAG_WORKERS_PER_GPU="${MACAG_WORKERS_PER_GPU:-4}"
-export MAX_WORKERS_PER_GPU="${MAX_WORKERS_PER_GPU:-4}"
+# Same allocator flag as the n090 submit scripts. The worker env wipe
+# forwards it (see macag_parallel_common.sh).
+export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-6}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-6}"
+export STAGGER="${STAGGER:-90}"
 # One stage per launch. "all" is intentionally not a choice.
 export PAPER_STAGE="${PAPER_STAGE:-graph}"
 case "$PAPER_STAGE" in
@@ -91,19 +96,30 @@ case "$CLTS" in
   *) export MIB_MODELS="${MIB_MODELS:-gemma2}" ;;
 esac
 
-# 4 workers share each of 2 GPUs. The existing slot lock may serialize them
-# if the node would otherwise OOM; the assignment file is still the shard.
-LOCAL_WORKERS="${LOCAL_WORKERS:-8}"
-export TOTAL_WORKERS="${TOTAL_WORKERS:-40}"
+# Counts copied from the n090 2-GPU logs, not a single pack for every CLT.
+# 5 array tasks, so the global shard count is 5 times the per-node count.
 export NODE_RANK="${SLURM_ARRAY_TASK_ID:-0}"
 case "$CLTS" in
-  gemma2-426k) export WORKERS_GEMMA2_426K="$LOCAL_WORKERS" ;;
-  gemma2-2.5M) export WORKERS_GEMMA2_2_5M="$LOCAL_WORKERS" ;;
-  llama32-524k) export WORKERS_LLAMA32_524K="$LOCAL_WORKERS" ;;
+  gemma2-426k)
+    export WORKERS_GEMMA2_426K="${WORKERS_GEMMA2_426K:-12}"
+    export MAX_WORKERS_PER_GPU="${MAX_WORKERS_PER_GPU:-6}"
+    export TOTAL_WORKERS="${TOTAL_WORKERS:-60}"
+    ;;
+  gemma2-2.5M)
+    export WORKERS_GEMMA2_2_5M="${WORKERS_GEMMA2_2_5M:-6}"
+    export MAX_WORKERS_PER_GPU="${MAX_WORKERS_PER_GPU:-6}"
+    export TOTAL_WORKERS="${TOTAL_WORKERS:-30}"
+    ;;
+  llama32-524k)
+    export WORKERS_LLAMA32_524K="${WORKERS_LLAMA32_524K:-8}"
+    export MAX_WORKERS_PER_GPU="${MAX_WORKERS_PER_GPU:-8}"
+    export TOTAL_WORKERS="${TOTAL_WORKERS:-40}"
+    ;;
 esac
+export MACAG_WORKERS_PER_GPU="${MACAG_WORKERS_PER_GPU:-$MAX_WORKERS_PER_GPU}"
 
 python scripts/macag_check_eval_ready.py \
-  --tag "${MACAG_TAG:-macag-final-v3}" \
+  --tag "${MACAG_TAG:-macag-final-v4}" \
   --prompts "$JSON" \
   ${PROMPTS_SHA256:+--prompts-sha256 "$PROMPTS_SHA256"}
 
@@ -113,6 +129,6 @@ if [[ -n "${COST_TABLE:-}" ]]; then
     --costs "$COST_TABLE" --workers "$TOTAL_WORKERS" --output "$ASSIGNMENT_FILE"
 fi
 
-echo ">>> final campaign CLTS=$CLTS node=$NODE_RANK/$TOTAL_WORKERS out=$OUTROOT"
+echo ">>> final campaign CLTS=$CLTS node=$NODE_RANK/$TOTAL_WORKERS max_per_gpu=$MAX_WORKERS_PER_GPU out=$OUTROOT"
 nvidia-smi -L || true
 scripts/run_macag_mib_parallel.sh
