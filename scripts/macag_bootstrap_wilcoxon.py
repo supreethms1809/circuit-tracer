@@ -18,6 +18,13 @@ compared at unequal set sizes. Prompt is the resampling unit: when the same
 prompt appears under multiple CLTs, bootstrap/Wilcoxon average within prompt
 first so CLT×prompt rows are not treated as independent.
 
+A10: pooled blocks still do that prompt-collapsing average, AND every
+(clt, task) stratum gets its own full block set (same families, same tests,
+Holm within each block). Strata never average across CLTs, so the
+Gemma-426k / Gemma-2.5M prompt overlap cannot dilute a CLT-specific effect.
+Which family/stratum is confirmatory is D7 — this script reports all of them
+with n visible so the choice is auditable.
+
 Outputs a markdown report and a long-format CSV next to the input root.
 """
 from __future__ import annotations
@@ -279,7 +286,9 @@ def render_markdown(blocks: dict[tuple[str, str], list[dict[str, Any]]]) -> str:
                  "Holm correction spans the four baselines within each block. "
                  "`cost_ratio` rows report oracle_shapley/oracle_game1. Check "
                  "`mean_k` before reading ACDC p-values — pre budget-matching its "
-                 "selected size is not comparable.")
+                 "selected size is not comparable. `clt=*,task=*` blocks are "
+                 "per-stratum (no cross-CLT averaging); pooled `all` blocks average "
+                 "shared slugs across CLTs first.")
     lines.append("")
     return "\n".join(lines)
 
@@ -315,6 +324,24 @@ def main(argv: list[str] | None = None) -> int:
         for family in METRIC_FAMILIES:
             blocks[(filt_name, family)] = method_table(subset, family=family, **kwargs)
         blocks[(filt_name, "cost_ratio")] = [cost_ratio_record(subset, **kwargs)]
+
+    # A10: per-(clt, task) strata. Same blocks as pooled; the resampling unit
+    # stays the prompt (slug), and rows are already one-per-(clt, slug) so no
+    # cross-CLT averaging happens inside a stratum.
+    strata = sorted({(str(r.get("clt", "")), str(r.get("task", ""))) for r in rows})
+    for clt, task in strata:
+        in_stratum = [r for r in rows
+                      if str(r.get("clt", "")) == clt and str(r.get("task", "")) == task]
+        for filt_name, keep in filters:
+            subset = [r for r in in_stratum if keep(r)]
+            if not subset:
+                continue
+            label = f"clt={clt},task={task}"
+            if filt_name != "all":
+                label += f"+{filt_name}"
+            for family in METRIC_FAMILIES:
+                blocks[(label, family)] = method_table(subset, family=family, **kwargs)
+            blocks[(label, "cost_ratio")] = [cost_ratio_record(subset, **kwargs)]
 
     markdown = render_markdown(blocks)
     print(markdown)

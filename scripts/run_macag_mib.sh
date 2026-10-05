@@ -193,6 +193,8 @@ PY
       pipeline_args+=(--prefilter-top-k "$PREFILTER_TOP_K")
     [[ -n "${GAME2_PREFILTER_TOP_K}" && "${GAME2_PREFILTER_TOP_K}" != "0" && "${GAME2_PREFILTER_TOP_K}" != "off" && "${GAME2_PREFILTER_TOP_K}" != "none" ]] && \
       pipeline_args+=(--game2-prefilter-top-k "$GAME2_PREFILTER_TOP_K")
+    # A1: separate one-sided Game 2 oracle (empty = legacy shared kwargs).
+    [[ -n "${GAME2_SCORE_KIND:-}" ]] && pipeline_args+=(--game2-score-kind "$GAME2_SCORE_KIND")
     [[ -n "${SHAPLEY_PERMUTATIONS:-}" ]] && pipeline_args+=(--shapley-permutations "$SHAPLEY_PERMUTATIONS")
     [[ -n "${BASELINE_METHODS:-}" ]] && pipeline_args+=(--baseline-methods "$BASELINE_METHODS")
     if [[ "$FREEZE_MODE" != "both" ]]; then

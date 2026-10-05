@@ -351,6 +351,7 @@ macag_launch_worker_pool() {
         FREEZE_MODE="$FREEZE_MODE"
         KL_RESCORE="${KL_RESCORE:-1}"
         SCORE_KINDS="${SCORE_KINDS:-logit_gap}"
+        GAME2_SCORE_KIND="${GAME2_SCORE_KIND:-}"
         CONNECTED="${CONNECTED:-0}"
         PREFILTER_TOP_K="${PREFILTER_TOP_K:-}"
         GAME2_PREFILTER_TOP_K="${GAME2_PREFILTER_TOP_K:-}"

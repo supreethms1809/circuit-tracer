@@ -18,6 +18,7 @@ from typing import Any, Callable, Mapping, Sequence
 from macag.factories.replacement_model import create_replacement_model_oracle
 from macag.scoring import ScoringOracle, TargetId
 from macag.utils.metrics import compute_faithfulness_metrics, metrics_to_dict
+from macag.utils.provenance import code_provenance
 
 LOGGER = logging.getLogger(__name__)
 
@@ -242,12 +243,18 @@ def _prefix_at_k(results: Mapping[str, Any], k: int) -> tuple[list[str], int | N
     Ranked methods only populate keys up to their selected size; taking the
     largest key <= k scores every method at Game 1's |E*| instead of at the
     global budget.
+
+    A3: when no realized prefix is <= k, return ([], None) — "unavailable at
+    this k". The old min(ks) fallback returned an OVERSIZED set, silently
+    scoring a larger set than the matched k. Callers skip such methods.
     """
     if not results:
         return [], None
     ks = sorted(int(x) for x in results)
     capped = [x for x in ks if x <= k]
-    own_k = max(capped) if capped else min(ks)
+    if not capped:
+        return [], None
+    own_k = max(capped)
     entry = results.get(str(own_k), {})
     return list(entry.get("evidence") or []), own_k
 
@@ -260,8 +267,35 @@ def _acdc_best_at_k(entry: Mapping[str, Any], k: int) -> dict[str, Any] | None:
         return best_by_size[str(k)]
     sizes = sorted(int(s) for s in best_by_size)
     capped = [s for s in sizes if s <= k]
-    pick = max(capped) if capped else min(sizes)
-    return best_by_size[str(pick)]
+    # A3: no undersized sweep point -> None (caller falls back to the
+    # at-budget read); never hand back an oversized set as "matched".
+    if not capped:
+        return None
+    return best_by_size[str(max(capped))]
+
+
+def _reference_leg(game1_payload: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    """The leg matched-k reads use: frozen under dual-freeze, else the payload."""
+    if not game1_payload:
+        return {}
+    if game1_payload.get("freeze_mode") == "both":
+        return game1_payload.get("frozen") or {}
+    return game1_payload
+
+
+def game1_leg_degenerate(game1_payload: Mapping[str, Any] | None) -> bool | None:
+    """Whether the matched-k reference leg is degenerate (R <= 0).
+
+    None when there is no Game 1 payload to read. Prefers the leg-level
+    ``degenerate`` mark (A2); falls back to nested ``scores.is_degenerate``
+    for outputs written before the mark existed.
+    """
+    if not game1_payload:
+        return None
+    leg = _reference_leg(game1_payload)
+    if "degenerate" in leg:
+        return bool(leg["degenerate"])
+    return bool((leg.get("scores") or {}).get("is_degenerate", False))
 
 
 def game1_matched_k(game1_payload: Mapping[str, Any] | None) -> int | None:
@@ -269,15 +303,34 @@ def game1_matched_k(game1_payload: Mapping[str, Any] | None) -> int | None:
 
     Dual-freeze outputs use the frozen leg (the leg the baseline harness scores:
     the pipeline's frozen oracle kwargs). Single-mode outputs use E_star.
+
+    A2: a degenerate reference leg (R <= 0) has no defined matched k — return
+    None so callers fall back explicitly instead of scoring empty sets as k=0.
+    A genuinely empty (non-degenerate) leg returns 0: Game 1 selected nothing
+    and baselines are honestly graded at k=0.
     """
     if not game1_payload:
         return None
-    if game1_payload.get("freeze_mode") == "both":
-        frozen = game1_payload.get("frozen") or {}
-        evidence = (frozen.get("evidence") or {}).get("E_star") or []
-        return len(evidence) or None
-    evidence = (game1_payload.get("evidence") or {}).get("E_star") or []
-    return len(evidence) or None
+    if game1_leg_degenerate(game1_payload):
+        return None
+    leg = _reference_leg(game1_payload)
+    evidence = (leg.get("evidence") or {}).get("E_star") or []
+    if not evidence:
+        return 0
+    return len(evidence)
+
+
+def game1_matched_k_status(game1_payload: Mapping[str, Any] | None) -> str:
+    """Machine-readable reason behind :func:`game1_matched_k` (A2 mark).
+
+    One of "ok" (k defined, possibly 0), "degenerate_leg" (R <= 0, k
+    undefined — table treatment is D2), "no_game1".
+    """
+    if not game1_payload:
+        return "no_game1"
+    if game1_leg_degenerate(game1_payload):
+        return "degenerate_leg"
+    return "ok"
 
 
 def rescore_baselines(
@@ -287,6 +340,7 @@ def rescore_baselines(
     target: TargetId = DEFAULT_TARGET,
     score_label: str = "kl_divergence",
     matched_k: int | None = None,
+    matched_k_status: str | None = None,
     cap_sufficiency: bool = True,
     cap_necessity: bool = True,
 ) -> dict[str, Any]:
@@ -353,6 +407,12 @@ def rescore_baselines(
     if matched_k is not None:
         out["matched_k"] = matched_k
         out["eval_k"] = eval_k
+    # A2: why the matched k is what it is ("ok" / "degenerate_leg" /
+    # "no_game1"). Degenerate legs fall back to the at-budget read AND are
+    # flagged, so tables can exclude them (treatment is D2) instead of
+    # silently grading at an unrelated k.
+    if matched_k_status is not None:
+        out["matched_k_status"] = matched_k_status
     return out
 
 
@@ -479,6 +539,8 @@ def rescore_run_dir(
         "score_kind": label,
         "target": target,
         "foil": foil,
+        # A6: code provenance travels with the numbers.
+        "code_version": code_provenance(),
         # P1-7: cap provenance — the rescore recomputes capped metrics, so the
         # flags must travel with the numbers (defaults match the games).
         "cap_sufficiency": cap_sufficiency,
@@ -523,11 +585,13 @@ def rescore_run_dir(
         freeze = bool(kwargs.get("freeze_attention", True))
         oracle = build_oracle_with_overrides(kwargs, spec, freeze_attention=freeze)
         # A5: match baselines to Game 1's |E*| (frozen leg) when a Game 1 output
-        # exists; otherwise fall back to the legacy at-budget read.
+        # exists; otherwise fall back to the legacy at-budget read. A2: record
+        # WHY (degenerate legs have no defined k — see game1_matched_k_status).
         g1_for_k = load_json(g1_path) if g1_path.is_file() else None
         output["baselines"] = rescore_baselines(
             bl, oracle, target=target, score_label=label,
             matched_k=game1_matched_k(g1_for_k),
+            matched_k_status=game1_matched_k_status(g1_for_k),
             cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
         )
 

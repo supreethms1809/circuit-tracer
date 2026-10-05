@@ -26,6 +26,9 @@
 #   --no-connected      default; pass --connected to require evidence connectivity
 #   --prefilter-top-k N optional singleton prefilter for Game 1 (default: off for TMLR)
 #   --game2-prefilter-top-k N Game 2 only (does not change Game 1)
+#   --game2-score-kind logit|prob|negative_loss  separate one-sided Game 2
+#     oracle on its own kwargs (no foil map); default empty = share selection
+#     SCORE_KIND kwargs (legacy). Score choice is D1; default runs unchanged.
 #   --graph PATH       use this graph instead of <outdir>/graphs/<slug>.json
 #   --skip-attribute   reuse an existing graph at <outdir>/graphs/<slug>.json
 #   --skip-game1       reuse <outdir>/macag_game1.json
@@ -127,6 +130,22 @@ SHAPLEY_SEED="${SHAPLEY_SEED:-0}"
 # When the selection utility is already kl_divergence this is a no-op check.
 KL_RESCORE="${KL_RESCORE:-1}"
 SKIP_KL_RESCORE=0
+# Capped faithfulness (A2/A2', default on): sufficiency min(keep,all)-empty and
+# necessity all-max(remove,empty) shared by Game 1, Game 2, ACDC, and the
+# Shapley gold. Env-overridable: CAP_SUFFICIENCY=0 / CAP_NECESSITY=0 to ablate.
+CAP_SUFFICIENCY="${CAP_SUFFICIENCY:-1}"
+CAP_NECESSITY="${CAP_NECESSITY:-1}"
+# Game 2 separation protocol (A1): one-sided per-agent scores require
+# SCORE_KIND=logit (each agent scores its own logit, not the gap). With the
+# default logit_gap + swapped foil map, f_foil == -f_y and zero overlap is
+# structural. GAME2_ONE_SIDED=1 fails fast unless the oracle is one-sided.
+GAME2_ONE_SIDED="${GAME2_ONE_SIDED:-0}"
+# A1: separate Game 2 oracle score. Empty (default) = Game 2 shares the
+# selection SCORE_KIND kwargs (legacy behavior, structural symmetry included).
+# Set GAME2_SCORE_KIND=logit|prob|negative_loss for a one-sided Game 2 oracle
+# on its own kwargs file with no foil map. The score CHOICE itself is D1 —
+# this only wires the mechanism; default runs are unchanged.
+GAME2_SCORE_KIND="${GAME2_SCORE_KIND:-}"
 # freeze attention+embeddings+error nodes during scoring (scoring-time only;
 # the attribution graph is identical either way). true = frozen baseline.
 FREEZE_ATTENTION=true
@@ -154,6 +173,7 @@ while [[ $# -gt 0 ]]; do
     --edge-threshold) EDGE_THRESHOLD="$2"; shift 2;;
     --prefilter-top-k) PREFILTER_TOP_K="$2"; shift 2;;
     --game2-prefilter-top-k) GAME2_PREFILTER_TOP_K="$2"; shift 2;;
+    --game2-score-kind) GAME2_SCORE_KIND="$2"; shift 2;;
     --connected) CONNECTED=1; shift;;
     --no-connected) CONNECTED=0; shift;;
     --budget) BUDGET="$2"; shift 2;;
@@ -185,6 +205,11 @@ while [[ $# -gt 0 ]]; do
     --baseline-methods) BASELINE_METHODS="$2"; shift 2;;
     --shapley-permutations) SHAPLEY_PERMUTATIONS="$2"; shift 2;;
     --shapley-seed) SHAPLEY_SEED="$2"; shift 2;;
+    --cap-sufficiency) CAP_SUFFICIENCY=1; shift;;
+    --no-cap-sufficiency) CAP_SUFFICIENCY=0; shift;;
+    --cap-necessity) CAP_NECESSITY=1; shift;;
+    --no-cap-necessity) CAP_NECESSITY=0; shift;;
+    --game2-one-sided) GAME2_ONE_SIDED=1; shift;;
     --serve) SERVE=1; shift;;
     --port) PORT="$2"; shift 2;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
@@ -195,6 +220,25 @@ done
 GRAPH="$OUTDIR/graphs/$SLUG.json"
 [[ -n "$GRAPH_OVERRIDE" ]] && GRAPH="$GRAPH_OVERRIDE"
 mkdir -p "$OUTDIR/graphs"
+
+# A1: resolve the Game 2 oracle mode up front (fail fast on a bad
+# --game2-score-kind before any GPU work). "shared" (default) keeps one kwargs
+# file for Game 1 + Game 2 + baselines. "onesided" writes a separate
+# oracle_kwargs_game2.json (one-sided score, no foil map) and fails fast via
+# --game2-one-sided if the built oracle is secretly symmetric.
+case "${GAME2_SCORE_KIND:-}" in
+  "")
+    GAME2_KIND_MODE=shared
+    ;;
+  logit|prob|negative_loss)
+    GAME2_KIND_MODE=onesided
+    ;;
+  *)
+    echo "ERROR: --game2-score-kind must be logit|prob|negative_loss (one-sided) or empty (share selection kwargs); got '$GAME2_SCORE_KIND'" >&2
+    exit 2
+    ;;
+esac
+echo ">>> Game 2 oracle: mode=$GAME2_KIND_MODE score_kind=${GAME2_SCORE_KIND:-<shared>}"
 
 PREFILTER_ARGS=()
 if [[ -n "${PREFILTER_TOP_K}" && "${PREFILTER_TOP_K}" != "0" && "${PREFILTER_TOP_K}" != "off" && "${PREFILTER_TOP_K}" != "none" ]]; then
@@ -286,9 +330,11 @@ fi
 write_oracle_kwargs() {
   local kwargs_path="$1"
   local score_kind="$2"
+  local drop_foil_map="${3:-0}"
   PROMPT="$PROMPT" TARGET="$TARGET" FOIL="$FOIL" MODEL="$MODEL" \
   TRANSCODER_SET="$TRANSCODER_SET" GRAPH="$GRAPH" DEVICE="$DEVICE" DTYPE="$DTYPE" \
   FREEZE_ATTENTION="$FREEZE_ATTENTION" SCORE_KIND="$score_kind" \
+  DROP_FOIL_MAP="$drop_foil_map" \
   ABLATION_MODE="$ABLATION_MODE" CORRUPTED_PROMPT="$CORRUPTED_PROMPT" \
   KWARGS="$kwargs_path" python - <<'PY'
 import json, os
@@ -303,9 +349,12 @@ kw = {
     "strict_single_token": False,
     "freeze_attention": freeze,
     "target_token_by_label": {"y": os.environ["TARGET"], "y_foil": os.environ["FOIL"]},
-    "foil_by_target": {"y": "y_foil", "y_foil": "y"},
     "model_kwargs": {"dtype": os.environ["DTYPE"], "device": os.environ["DEVICE"]},
 }
+# A1: one-sided Game 2 oracles ship no foil map (each agent scores its own
+# logit; a stored y<->y_foil swap would misdescribe the run).
+if os.environ.get("DROP_FOIL_MAP", "0") != "1":
+    kw["foil_by_target"] = {"y": "y_foil", "y_foil": "y"}
 ablation_mode = os.environ.get("ABLATION_MODE", "zero")
 if ablation_mode != "zero":
     kw["ablation_mode"] = ablation_mode
@@ -338,7 +387,9 @@ case "${BUDGET}" in
     ;;
 esac
 
-PRIMARY_KIND=""
+# P1-1: the harness game1 leg runs raw_relative under --freeze-mode both.
+BASELINES_STOP_METRIC="$STOP_METRIC"
+[[ "$FREEZE_MODE" == "both" ]] && BASELINES_STOP_METRIC="raw_relative"
 for SCORE_KIND in $SCORE_KINDS; do
   KIND_DIR="$OUTDIR/$SCORE_KIND"
   mkdir -p "$KIND_DIR"
@@ -353,6 +404,12 @@ for SCORE_KIND in $SCORE_KINDS; do
   echo ">>> ===== score_kind=$SCORE_KIND -> $KIND_DIR ====="
   echo ">>> [2/6] Writing oracle kwargs (score_kind=$SCORE_KIND, freeze_attention=$FREEZE_ATTENTION)"
   write_oracle_kwargs "$KWARGS" "$SCORE_KIND"
+  # A1: separate Game 2 oracle when requested (one-sided score, no foil map).
+  G2_KWARGS="$KWARGS"
+  if [[ "$GAME2_KIND_MODE" == "onesided" ]]; then
+    G2_KWARGS="$KIND_DIR/oracle_kwargs_game2.json"
+    write_oracle_kwargs "$G2_KWARGS" "$GAME2_SCORE_KIND" 1
+  fi
 
   if [[ "$SKIP_GAME1" -eq 0 ]]; then
     if [[ -f "$G1_OUT" ]]; then
@@ -370,6 +427,7 @@ for SCORE_KIND in $SCORE_KINDS; do
         --faithfulness-eps "$EPS" \
         --freeze-mode "$FREEZE_MODE" \
         "${G1_STOP_ARGS[@]}" \
+        "${CAP_ARGS[@]}" \
         --checkpoint-json "$KIND_DIR/macag_game1.ckpt.json" \
         --output-json "$G1_OUT"
     fi
@@ -384,7 +442,7 @@ for SCORE_KIND in $SCORE_KINDS; do
     fi
   fi
 
-  echo ">>> [4/6] Game 2 | solvers: ${SOLVERS:-<skipped>} prefilter=${GAME2_PREFILTER_TOP_K:-${PREFILTER_TOP_K:-off}}"
+  echo ">>> [4/6] Game 2 | solvers: ${SOLVERS:-<skipped>} prefilter=${GAME2_PREFILTER_TOP_K:-${PREFILTER_TOP_K:-off}} oracle=${GAME2_KIND_MODE}${GAME2_SCORE_KIND:+:$GAME2_SCORE_KIND}"
   if [[ "$SKIP_GAME2" -eq 1 || -z "${SOLVERS// }" ]]; then
     echo ">>>      Skipping Game 2 (--skip-game2 or empty --solvers)"
     # Prefer an existing abr/fp artifact if present (resume / partial runs).
@@ -423,15 +481,31 @@ PY
     for solver in $SOLVERS; do
       g2_out="$KIND_DIR/macag_game2_${solver}.json"
       if [[ -f "$g2_out" ]]; then
-        echo ">>>      solver=$solver -> $g2_out (already present)"
-        continue
+        if [[ "$GAME2_KIND_MODE" == "onesided" ]]; then
+          # Never reuse a structural (gap-oracle) Game 2 artifact for a
+          # one-sided run; the overlap numbers mean different things.
+          if G2_EXISTING="$g2_out" python - <<'PY'
+import json, os, sys
+params = (json.load(open(os.environ["G2_EXISTING"])).get("params") or {})
+sys.exit(0 if params.get("one_sided") is True else 1)
+PY
+          then
+            echo ">>>      solver=$solver -> $g2_out (already present, one-sided)"
+            continue
+          else
+            echo ">>>      solver=$solver -> $g2_out exists but is not one-sided; re-running"
+          fi
+        else
+          echo ">>>      solver=$solver -> $g2_out (already present)"
+          continue
+        fi
       fi
       echo ">>>      solver=$solver -> $g2_out"
       g2_cmd=(
         python -m macag.cli.run_macag game2
         --graph-json "$GRAPH" --target y --foil y_foil --input-id "$SLUG"
         --oracle-factory "$ORACLE_FACTORY"
-        --oracle-kwargs-file "$KWARGS"
+        --oracle-kwargs-file "$G2_KWARGS"
       )
       ((${#CAND_ARG[@]})) && g2_cmd+=("${CAND_ARG[@]}")
       ((${#GAME2_PREFILTER_ARGS[@]})) && g2_cmd+=("${GAME2_PREFILTER_ARGS[@]}")
@@ -441,12 +515,17 @@ PY
         --beta "$BETA" --abr-iters "$ABR_ITERS"
         --solver "$solver" --fp-tol "$FP_TOL"
         --alpha "$ALPHA" --lam "$LAM"
+        "${CAP_ARGS[@]}"
         --checkpoint-json "$KIND_DIR/macag_game2_${solver}.ckpt.json"
         --output-json "$g2_out"
       )
       if [[ "${PARALLEL_AGENTS}" == "0" || "${PARALLEL_AGENTS}" == "false" || "${PARALLEL_AGENTS}" == "no" ]]; then
         g2_cmd+=(--no-parallel-agents)
       fi
+      # A1: one-sided mode always carries the fail-fast flag; explicit
+      # --game2-one-sided also forces it on shared kwargs (then it errors, by
+      # design — a gap oracle cannot support a separation claim).
+      [[ "$GAME2_ONE_SIDED" == "1" || "$GAME2_KIND_MODE" == "onesided" ]] && g2_cmd+=(--game2-one-sided)
       "${g2_cmd[@]}"
     done
     if [[ -f "$KIND_DIR/macag_game2_abr.json" ]]; then
@@ -477,10 +556,12 @@ PY
       fi
       bl_cmd+=(
         --budget "$BASELINE_BUDGET" --alpha "$ALPHA" --lam "$LAM"
+        --faithfulness-eps "$EPS" --stop-metric "$BASELINES_STOP_METRIC"
         --methods "$BASELINE_METHODS"
         --shapley-permutations "$SHAPLEY_PERMUTATIONS"
         --shapley-seed "$SHAPLEY_SEED"
         "${acdc_target_args[@]}"
+        "${CAP_ARGS[@]}"
         --output-json "$BASELINES_OUT"
       )
       "${bl_cmd[@]}"

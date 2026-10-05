@@ -44,36 +44,43 @@ def test_a0_mcqa_foil_is_wrong_clean_option() -> None:
     spec.loader.exec_module(mod)
 
     class _Tok:
+        # A4: spaced-aware stub — bare and spaced labels are distinct single
+        # tokens, like Gemma MCQA labels.
+        _IDS = {"A": 1, "B": 2, "C": 3, "D": 4, " A": 11, " B": 12, " C": 13, " D": 14}
+
         def __call__(self, text, add_special_tokens=False):
-            return type("E", (), {"input_ids": [ord(str(text)[0])]})()
+            return type("E", (), {"input_ids": [self._IDS[str(text)]]})()
 
         def decode(self, ids):
-            return chr(int(ids[0]))
+            return {v: k for k, v in self._IDS.items()}[int(ids[0])]
 
     tok = _Tok()
     row = {"choices": {"label": ["A", "B", "C", "D"]}, "answerKey": 3}
     correct, foil = mod._mcqa_tokens(tok, row)
-    assert correct == "D"
+    assert correct == " D"
     assert foil != correct
-    assert foil == "A"  # round-robin balanced: (3+1) % 4 == 0
-    # builder validation: foil must appear in the clean prompt
+    assert foil == " A"  # round-robin balanced: (3+1) % 4 == 0
+    # builder validation: foil must appear in the clean prompt (spacing-aware:
+    # prompts list options as '\nA. ...' while stored tokens are spaced).
     clean = "Q\nA. x\nB. y\nC. z\nD. w\nAnswer:"
-    assert foil in clean
+    assert foil.strip() in clean
     # balanced across all four correct answers
-    for answer_key, expected_foil in ((0, "B"), (1, "C"), (2, "D"), (3, "A")):
+    spaced = (" A", " B", " C", " D")
+    for answer_key, expected_foil in ((0, " B"), (1, " C"), (2, " D"), (3, " A")):
         c, f = mod._mcqa_tokens(tok, {"choices": {"label": ["A", "B", "C", "D"]}, "answerKey": answer_key})
-        assert (c, f) == (("A", "B", "C", "D")[answer_key], expected_foil)
+        assert (c, f) == (spaced[answer_key], expected_foil)
 
 
 def test_a0_committed_prompts_have_clean_foils() -> None:
     payload = json.loads(open("macag/data/mib_benchmark_prompts.json").read())
     for task in ("mcqa", "arc_easy"):
         for item in payload["tasks"][task]:
-            assert item["incorrect_token"] in ("A", "B", "C", "D"), item["id"]
+            # A4: stored tokens are space-prefixed; compare spacing-aware.
+            assert item["incorrect_token"] in (" A", " B", " C", " D"), item["id"]
             assert item["incorrect_token"] != item["correct_token"], item["id"]
-            assert item["incorrect_token"] in item["clean_prompt"], item["id"]
+            assert item["incorrect_token"].strip() in item["clean_prompt"], item["id"]
             # digit-alphabet foils ('1'-'4') must be gone
-            assert item["incorrect_token"] not in ("1", "2", "3", "4"), item["id"]
+            assert item["incorrect_token"].strip() not in ("1", "2", "3", "4"), item["id"]
 
 
 # ---------------------------------------------------------------- A2/A2'

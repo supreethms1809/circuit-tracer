@@ -62,6 +62,7 @@ from macag.utils.metrics import (
     game1_utility,
     metrics_to_dict,
 )
+from macag.utils.provenance import code_provenance
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1125,6 +1126,7 @@ def main(argv: list[str] | None = None) -> int:
         "input_id": args.input_id,
         "target": args.target,
         "game": "baselines",
+        "code_version": code_provenance(),
         "experiment_identity": _experiment_identity(args, payload, candidates),
         "params": {
             "alpha": args.alpha,

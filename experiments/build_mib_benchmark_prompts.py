@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,24 @@ def _decode_token(tokenizer: Any, token_id: int) -> str:
     return tokenizer.decode([token_id])
 
 
+def _label_token(tokenizer: Any, label: str) -> str:
+    """Space-prefixed single-token form of a choice label (A4).
+
+    Mirrors Track A's ``_prefer_leading_space_token`` (macag/factories/
+    replacement_model.py) so the builder emits exactly what the scoring path
+    resolves: prefer ``' X'`` when it is a single token, keep the bare label
+    otherwise (e.g. digits, where ``' 1'`` is typically two tokens). Both the
+    stored target and foil go through this, so the JSON is self-consistent.
+    """
+    bare_ids = tokenizer(str(label), add_special_tokens=False).input_ids
+    spaced_ids = tokenizer(f" {label}", add_special_tokens=False).input_ids
+    if len(spaced_ids) == 1 and (len(bare_ids) != 1 or spaced_ids[0] != bare_ids[0]):
+        return _decode_token(tokenizer, spaced_ids[0])
+    if not bare_ids:
+        raise ValueError(f"label {label!r} tokenized to an empty sequence")
+    return _decode_token(tokenizer, bare_ids[0])
+
+
 def _ioi_tokens(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str]:
     meta = row["metadata"]
     correct = tokenizer(f" {meta['indirect_object']}", add_special_tokens=False).input_ids[0]
@@ -96,15 +115,15 @@ def _mcqa_tokens(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str]:
     labels = row["choices"]["label"]
     correct_idx = _normalize_answer_index(row["answerKey"], len(labels))
     foil_idx = (correct_idx + 1) % len(labels)
-    correct = tokenizer(str(labels[correct_idx]), add_special_tokens=False).input_ids[0]
-    incorrect = tokenizer(str(labels[foil_idx]), add_special_tokens=False).input_ids[0]
-    return _decode_token(tokenizer, correct), _decode_token(tokenizer, incorrect)
+    correct = _label_token(tokenizer, str(labels[correct_idx]))
+    incorrect = _label_token(tokenizer, str(labels[foil_idx]))
+    return correct, incorrect
 
 
 def _arithmetic_tokens(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str]:
-    correct = tokenizer(str(row["label"]), add_special_tokens=False).input_ids[0]
-    incorrect = tokenizer(str(row["random_counterfactual"]["label"]), add_special_tokens=False).input_ids[0]
-    return _decode_token(tokenizer, correct), _decode_token(tokenizer, incorrect)
+    correct = _label_token(tokenizer, str(row["label"]))
+    incorrect = _label_token(tokenizer, str(row["random_counterfactual"]["label"]))
+    return correct, incorrect
 
 
 def parse_task_limits(pairs: list[str]) -> dict[str, int]:
@@ -126,6 +145,8 @@ def export_prompts(
     limit_per_task: int | None,
     task_limits: dict[str, int] | None,
     counterfactual_type: str | None,
+    sample: str = "first",
+    seed: int | None = None,
 ) -> dict[str, Any]:
     sys.path.insert(0, str(MIB_DIR))
     from MIB_circuit_track.dataset import HFEAPDataset  # noqa: WPS433
@@ -153,11 +174,24 @@ def export_prompts(
             )
             n = len(ds)
             limit = (task_limits or {}).get(task, limit_per_task)
-            if limit is not None:
-                n = min(n, limit)
+            # A9: first-N (legacy default) or a seeded random subset. Random
+            # sampling requires a seed and a limit; sampled dataset indices go
+            # into slugs/metadata so subsets are stable and auditable. Whether
+            # the paper rematches on a random subset is D6 — this only adds
+            # the option.
+            if sample == "random":
+                if seed is None:
+                    raise ValueError("--sample random requires --seed")
+                if limit is None:
+                    raise ValueError("--sample random requires --limit-per-task or --task-limit")
+                idxs = sorted(random.Random(seed).sample(range(len(ds)), min(limit, len(ds))))
+            elif sample == "first":
+                idxs = list(range(min(n, limit) if limit is not None else n))
+            else:
+                raise ValueError(f"Unknown --sample {sample!r}; choose first|random")
             bucket = f"{task}"
             out_tasks.setdefault(bucket, [])
-            for i in range(n):
+            for i in idxs:
                 row = ds.dataset[i]
                 if task == "ioi":
                     cf_col = counterfactual_type or "s2_io_flip_counterfactual"
@@ -172,7 +206,11 @@ def export_prompts(
                     correct_tok, incorrect_tok = _mcqa_tokens(tokenizer, row)
                     if correct_tok == incorrect_tok:
                         raise ValueError(f"foil equals target for {task} row {i}")
-                    if incorrect_tok not in clean and f" {incorrect_tok}" not in clean:
+                    # A4: spacing-agnostic — stored tokens are space-prefixed
+                    # (' A') while prompts list options as '\nA. ...'; compare
+                    # the stripped label (same strength as the legacy check).
+                    foil_label = incorrect_tok.strip() or incorrect_tok
+                    if foil_label not in clean and f" {foil_label}" not in clean:
                         raise ValueError(
                             f"foil {incorrect_tok!r} not an option in the clean prompt "
                             f"({task} row {i}; clean starts {clean[:80]!r})"
@@ -185,6 +223,14 @@ def export_prompts(
                     raise ValueError(task)
 
                 slug = f"mib_{model}_{task}_{i:04d}"
+                entry_metadata: dict[str, Any] = {
+                    "source": "mib-bench",
+                    "hf_dataset": hf_url,
+                    "index": i,
+                }
+                if sample == "random":
+                    entry_metadata["sample_seed"] = seed
+                    entry_metadata["sample_method"] = "random"
                 out_tasks[bucket].append(
                     {
                         "id": slug,
@@ -195,14 +241,10 @@ def export_prompts(
                         "corrupted_prompt": corrupted,
                         "correct_token": correct_tok,
                         "incorrect_token": incorrect_tok,
-                        "metadata": {
-                            "source": "mib-bench",
-                            "hf_dataset": hf_url,
-                            "index": i,
-                        },
+                        "metadata": entry_metadata,
                     }
                 )
-            print(f"exported {n} prompts for {model}/{task} ({split})")
+            print(f"exported {len(idxs)} prompts for {model}/{task} ({split})")
     return {
         "benchmarks_info": {
             "description": (
@@ -210,6 +252,14 @@ def export_prompts(
                 "(mib-bench/* on HuggingFace), exported for MACAG Game 1/2 evaluation. "
                 "Each prompt is tokenizer-aligned to its mib_model; run only on matching CLTs."
             ),
+            # A4: the stored token convention, matching Track A's resolution
+            # (macag/factories/replacement_model.py::_prefer_leading_space_token).
+            "token_convention": (
+                "correct_token/incorrect_token are single-token strings in "
+                "space-prefixed form (e.g. ' D'). Bare choice labels are stored "
+                "spaced, except digits whose spaced form is multi-token (kept bare)."
+            ),
+            "sampling": {"method": sample, "seed": seed},
             "usage": (
                 "Same schema as acdc_benchmark_prompts.json. "
                 "Use clean_prompt for attribution; score logit gap between "
@@ -237,6 +287,11 @@ def main() -> None:
                          "(repeatable; tasks not listed fall back to --limit-per-task / full split)")
     ap.add_argument("--counterfactual-type", default=None,
                     help="IOI/MCQA counterfactual column (MIB default per task if omitted)")
+    ap.add_argument("--sample", choices=("first", "random"), default="first",
+                    help="row selection within each split: first-N (legacy) or seeded "
+                         "random subset (A9; requires --seed and a limit)")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="seed for --sample random")
     args = ap.parse_args()
 
     if not MIB_DIR.is_dir():
@@ -249,6 +304,8 @@ def main() -> None:
         limit_per_task=args.limit_per_task,
         task_limits=parse_task_limits(args.task_limit),
         counterfactual_type=args.counterfactual_type,
+        sample=args.sample,
+        seed=args.seed,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:

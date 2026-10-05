@@ -108,7 +108,15 @@ def select_top_influence(
         method="influence",
         ranking=ranking,
         scores=scores,
-        params={"use_absolute": use_absolute, "score_semantics": score_semantics},
+        # A11: factual objective label (metadata only — ranking untouched). The
+        # graph's influence is attributed toward its exported top-logit nodes,
+        # NOT the target-foil gap the oracle scores. Method-set naming is D5.
+        params={
+            "use_absolute": use_absolute,
+            "score_semantics": score_semantics,
+            "objective": "graph influence magnitude toward exported logit nodes "
+            "(observational; not the evaluated target-foil gap)",
+        },
         extras={
             "missing_influence_count": len(missing),
             "used_influence_raw": used_raw,

@@ -27,6 +27,16 @@ LOGGER = logging.getLogger(__name__)
 KNOWN_METHODS = ("eap_edge", "acdc_edge")
 
 
+def _code_provenance() -> dict[str, Any]:
+    """Best-effort code provenance (A6); never fails a run (see macag.utils.provenance)."""
+    try:
+        from macag.utils.provenance import code_provenance
+
+        return code_provenance()
+    except Exception:
+        return {"git_commit": None, "git_dirty": None}
+
+
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -51,6 +61,43 @@ def _load_native_model(model_name: str, model_kwargs: Mapping[str, Any] | None) 
     model = HookedTransformer.from_pretrained(model_name, **kw)
     model.cfg.use_attn_result = True
     return model
+
+
+def _resolve_missing_indices(
+    kwargs: Mapping[str, Any],
+    tokenizer: Any,
+    target_label: str,
+    target_token: str,
+    foil_token: str | None,
+    target_idx: int,
+    foil_idx: int | None,
+) -> tuple[int, int | None]:
+    """Fill indices absent from the stored kwargs via Track A's resolver (A5).
+
+    Routes through ``resolve_target_to_logit_idx`` (leading-space
+    auto-correction included), not bare ``model.to_tokens()`` — otherwise
+    MCQA/ARC scores logit(' D') - logit('A'). ``strict_single_token`` mirrors
+    the selection oracle kwargs; absent keys keep the legacy first-piece
+    behavior (False).
+    """
+    if target_idx >= 0 and (foil_token is None or foil_idx is not None):
+        return target_idx, foil_idx
+    from macag.factories.replacement_model import resolve_target_to_logit_idx
+
+    foil_label = (kwargs.get("foil_by_target") or {}).get(target_label, "y_foil")
+    label_specs: dict[str, str] = {target_label: target_token}
+    if foil_token is not None:
+        label_specs[foil_label] = foil_token
+    resolved = resolve_target_to_logit_idx(
+        tokenizer,
+        label_specs,
+        strict_single_token=bool(kwargs.get("strict_single_token", False)),
+    )
+    if target_idx < 0:
+        target_idx = resolved[target_label]
+    if foil_token is not None and foil_idx is None:
+        foil_idx = resolved.get(foil_label)
+    return target_idx, foil_idx
 
 
 def _resolve_tokens(kwargs: Mapping[str, Any], target_label: str = "y") -> tuple[str, str | None, int, int | None]:
@@ -129,11 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     model = _load_native_model(str(model_name), model_kwargs)
 
     if target_idx < 0:
-        from macag.baselines.original.metrics import resolve_token_index
-
-        target_idx = resolve_token_index(model, target_token)
-        if foil_token is not None and foil_idx is None:
-            foil_idx = resolve_token_index(model, foil_token)
+        target_idx, foil_idx = _resolve_missing_indices(
+            kwargs, model.tokenizer, "y", target_token, foil_token, target_idx, foil_idx
+        )
 
     method_blocks: dict[str, Any] = {}
     if "eap_edge" in methods:
@@ -205,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
         "track": "original_pipeline",
         "game": "original_baselines",
         "input_id": args.input_id,
+        # A6: code provenance travels with the numbers.
+        "code_version": _code_provenance(),
         "experiment_identity": {
             "schema_version": 1,
             "track": "original_pipeline",

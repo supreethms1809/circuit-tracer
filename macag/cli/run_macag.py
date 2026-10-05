@@ -15,6 +15,7 @@ from macag.games.game2_contrastive import solve_game2
 from macag.graph import CircuitGraph, NodeId
 from macag.scoring import ScoringOracle, ToyAdditiveInterventionScorer, derive_oracle_with_freeze
 from macag.utils.metrics import metrics_to_dict
+from macag.utils.provenance import code_provenance
 
 LOGGER = logging.getLogger(__name__)
 
@@ -297,6 +298,11 @@ def _game1_leg_payload(
         params["freeze_attention"] = freeze_attention
     return {
         "params": params,
+        # A2: leg-level degenerate mark (R <= 0 — capped sufficiency cannot
+        # discriminate; the empty set already sits above the clean gap). The
+        # same flag also lives nested in scores.is_degenerate; this top-level
+        # copy is what aggregation filters on. Table treatment is D2.
+        "degenerate": bool(result.metrics.is_degenerate),
         "evidence": {
             "E_star": _sort_nodes(result.evidence),
             "E_y": _sort_nodes(result.evidence),
@@ -499,6 +505,7 @@ def main(argv: list[str] | None = None) -> int:
             "foil": None,
             "game": "game1",
             "freeze_mode": "both",
+            "code_version": code_provenance(),
             "params": dual.params,
             "frozen": _game1_leg_payload(dual.frozen, freeze_attention=True),
             "unfrozen": _game1_leg_payload(dual.unfrozen, freeze_attention=False),
@@ -537,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
             "target": args.target,
             "foil": None,
             "game": "game1",
+            "code_version": code_provenance(),
             **_game1_leg_payload(result),
         }
     else:
@@ -579,6 +587,7 @@ def main(argv: list[str] | None = None) -> int:
             "target": args.target,
             "foil": args.foil,
             "game": "game2",
+            "code_version": code_provenance(),
             "params": result.params,
             "evidence": {
                 "E_y": _sort_nodes(result.evidence_y),
