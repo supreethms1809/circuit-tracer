@@ -153,7 +153,11 @@ PY
     for kind in $SCORE_KINDS; do
       [[ "$SKIP_GAME1" == "1" || -f "$out/$kind/macag_game1.json" ]] || g1_done=0
       game2_for_prompt=1
-      if [[ -n "${GAME2_SUBSET:-}" && ",${subsets}," != *",${GAME2_SUBSET},"* ]]; then
+      # A staged pass sets SKIP_GAME2=1 for graph, Game 1, and baselines.
+      # Those prompts are done for this pass without Game 2 files.
+      if [[ "$SKIP_GAME2" == "1" ]]; then
+        game2_for_prompt=0
+      elif [[ -n "${GAME2_SUBSET:-}" && ",${subsets}," != *",${GAME2_SUBSET},"* ]]; then
         game2_for_prompt=0
       fi
       if [[ -n "${SOLVERS// }" && "$game2_for_prompt" == "1" ]]; then
@@ -173,6 +177,7 @@ PY
     done
     resume_args=()
     graph_path="$out/graphs/${slug}.json"
+    graph_done=0
     if [[ -f "$graph_path" ]]; then
       if NODE_THRESHOLD="${NODE_THRESHOLD:-1.0}" python - "$graph_path" <<'PY'
 import json, os, sys
@@ -184,6 +189,7 @@ if have is None:
 raise SystemExit(0 if abs(float(have) - want) < 1e-9 else 1)
 PY
       then
+        graph_done=1
         resume_args+=(--skip-attribute)
       else
         echo ">>> graph node_threshold mismatch vs requested ${NODE_THRESHOLD:-1.0}; rebuilding $graph_path"
@@ -197,7 +203,7 @@ PY
     if [[ "$SKIP_GAME2" == "1" || ( -n "${GAME2_SUBSET:-}" && ",${subsets}," != *",${GAME2_SUBSET},"* ) ]]; then
       skip_game2=(--skip-game2)
     fi
-    if [[ "$g1_done" -eq 1 && "$g2_done" -eq 1 && "$bl_done" -eq 1 ]]; then
+    if [[ "$graph_done" -eq 1 && "$g1_done" -eq 1 && "$g2_done" -eq 1 && "$bl_done" -eq 1 ]]; then
       echo "SKIP-done $tag/$slug" | tee -a "$STATUS"; continue
     fi
     pipeline_args=(

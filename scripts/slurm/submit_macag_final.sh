@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Final paper campaign, one CLT per array job.
+# Final paper campaign, one CLT per array job, one stage at a time.
 #
 # 5 nodes x 2 GPUs x 4 workers = 40 slots. Without a pilot cost table the
 # prompts are sharded evenly. Do not launch until scripts/macag_check_eval_ready.py passes
-# (clean tree, tag macag-final-v2, prompt digest). macag-final-v1 died before
-# Game 1: set -u rejected an unset PRIMARY_KIND.
+# (clean tree, tag macag-final-v3, prompt digest).
 #
-#   sbatch --export=ALL,CLTS=llama32-524k scripts/slurm/submit_macag_final.sh
+# Stages follow the eval plan: graph, then Game 1, then baselines
+# (ACDC reads Game 1 |E*|), then Game 2. Launch the next stage only after
+# the previous one has its artifacts. PAPER_STAGE defaults to graph.
+#
+#   sbatch --job-name=paper_final_g426k_graph \
+#     --export=ALL,CLTS=gemma2-426k,PAPER_STAGE=graph \
+#     scripts/slurm/submit_macag_final.sh
+#   # later: PAPER_STAGE=game1 | baselines | game2
 #
 #SBATCH --job-name=macag_final
 #SBATCH -A uwyo-0002
@@ -59,6 +65,27 @@ export KL_RESCORE="${KL_RESCORE:-1}"
 export RUN_ANALYSIS="${RUN_ANALYSIS:-0}"
 export MACAG_WORKERS_PER_GPU="${MACAG_WORKERS_PER_GPU:-4}"
 export MAX_WORKERS_PER_GPU="${MAX_WORKERS_PER_GPU:-4}"
+# One stage per launch. "all" is intentionally not a choice.
+export PAPER_STAGE="${PAPER_STAGE:-graph}"
+case "$PAPER_STAGE" in
+  graph)
+    export SKIP_GAME1=1 SKIP_GAME2=1 SKIP_BASELINES=1
+    ;;
+  game1)
+    export SKIP_GAME1=0 SKIP_GAME2=1 SKIP_BASELINES=1
+    ;;
+  baselines)
+    export SKIP_GAME1=1 SKIP_GAME2=1 SKIP_BASELINES=0
+    ;;
+  game2)
+    export SKIP_GAME1=1 SKIP_GAME2=0 SKIP_BASELINES=1
+    ;;
+  *)
+    echo "ERROR: PAPER_STAGE must be graph|game1|baselines|game2 (got '$PAPER_STAGE')" >&2
+    exit 2
+    ;;
+esac
+echo ">>> PAPER_STAGE=$PAPER_STAGE skip_game1=$SKIP_GAME1 skip_game2=$SKIP_GAME2 skip_baselines=$SKIP_BASELINES"
 case "$CLTS" in
   llama32-524k) export MIB_MODELS="${MIB_MODELS:-llama3}" ;;
   *) export MIB_MODELS="${MIB_MODELS:-gemma2}" ;;
@@ -76,7 +103,7 @@ case "$CLTS" in
 esac
 
 python scripts/macag_check_eval_ready.py \
-  --tag "${MACAG_TAG:-macag-final-v2}" \
+  --tag "${MACAG_TAG:-macag-final-v3}" \
   --prompts "$JSON" \
   ${PROMPTS_SHA256:+--prompts-sha256 "$PROMPTS_SHA256"}
 

@@ -339,6 +339,14 @@ else
   [[ -f "$GRAPH" ]] || { echo "ERROR: $GRAPH not found"; exit 1; }
 fi
 
+# Graph pass of a staged campaign. Skipping every later stage used to fall
+# through into "Game 1 json missing" and mark the prompt FAIL.
+if [[ "$SKIP_GAME1" -eq 1 && "$SKIP_GAME2" -eq 1 && "$SKIP_BASELINES" -eq 1 ]]; then
+  [[ -f "$GRAPH" ]] || { echo "ERROR: graph stage finished without $GRAPH" >&2; exit 1; }
+  echo ">>> graph stage only; wrote $GRAPH"
+  exit 0
+fi
+
 ORACLE_FACTORY="macag.factories.replacement_model:create_replacement_model_oracle"
 G1_STOP_ARGS=()
 if [[ "$FREEZE_MODE" != "both" ]]; then
@@ -465,6 +473,19 @@ for SCORE_KIND in $SCORE_KINDS; do
     else
       echo ">>> [3/6] Skipping Game 1 (no $G1_OUT; Pass A2 Game 2 will still run)"
     fi
+  fi
+
+  # Game 1 pass. Do not write a Game 2 placeholder or run annotate; a later
+  # pass owns those artifacts.
+  if [[ "$SKIP_GAME2" -eq 1 && "$SKIP_BASELINES" -eq 1 ]]; then
+    [[ -f "$G1_OUT" ]] || { echo "ERROR: game1 stage finished without $G1_OUT" >&2; exit 1; }
+    if [[ "$KL_RESCORE" == "1" && "$SKIP_KL_RESCORE" -eq 0 && "$SCORE_KIND" != "kl_divergence" ]]; then
+      echo ">>> KL rescore (eval metric) -> $KIND_DIR/macag_kl_faithfulness.json"
+      python -m macag.cli.rescore_kl --run-dir "$KIND_DIR" --progress || \
+        echo ">>> (KL rescore failed; Game 1 results are unchanged)"
+    fi
+    echo ">>> game1 stage only -> $G1_OUT"
+    continue
   fi
 
   echo ">>> [4/6] Game 2 | solvers: ${SOLVERS:-<skipped>} prefilter=${GAME2_PREFILTER_TOP_K:-${PREFILTER_TOP_K:-off}} oracle=${GAME2_KIND_MODE}${GAME2_SCORE_KIND:+:$GAME2_SCORE_KIND}"
