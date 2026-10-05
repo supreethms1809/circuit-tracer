@@ -467,6 +467,8 @@ for SCORE_KIND in $SCORE_KINDS; do
   else
     if [[ -f "$G1_OUT" ]]; then
       echo ">>> [3/6] Skipping Game 1; reusing $G1_OUT"
+    elif [[ "$SKIP_BASELINES" -eq 0 && "$SKIP_GAME2" -eq 1 ]]; then
+      echo ">>> [3/6] Skipping Game 1 (baselines stage; $G1_OUT not written yet)"
     elif [[ "$SKIP_GAME2" -eq 1 || -z "${SOLVERS// }" ]]; then
       echo "ERROR: $G1_OUT not found (needed when Game 2 is also skipped)" >&2
       exit 1
@@ -498,6 +500,8 @@ for SCORE_KIND in $SCORE_KINDS; do
       cp "$KIND_DIR/macag_game2_fp.json" "$G2_OUT"
     elif [[ -f "$G2_OUT" ]]; then
       :
+    elif [[ ! -f "$G1_OUT" ]]; then
+      echo ">>>      no Game 2 placeholder (no $G1_OUT)"
     else
       # Annotator needs a JSON; mirror Game 1 evidence into the Game 2 schema keys.
       python - "$G1_OUT" "$G2_OUT" <<'PY'
@@ -638,6 +642,15 @@ PY
     fi
   else
     echo ">>> [5/6] Skipping baseline harness"
+  fi
+
+  # Baselines can run before Game 1. ACDC's matched-k search stays
+  # "not_requested" until macag_game1.json exists; the other selectors and
+  # the ACDC tau sweep do not need it. Annotate needs both game jsons.
+  if [[ "$SKIP_GAME1" -eq 1 && "$SKIP_GAME2" -eq 1 && "$SKIP_BASELINES" -eq 0 ]]; then
+    [[ -f "$BASELINES_OUT" ]] || { echo "ERROR: baselines stage finished without $BASELINES_OUT" >&2; exit 1; }
+    echo ">>> baselines stage only -> $BASELINES_OUT"
+    continue
   fi
 
   echo ">>> [6/6] Annotating graph -> $ANNOTATED"

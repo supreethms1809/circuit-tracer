@@ -4,11 +4,11 @@
 # 5 nodes x 2 GPUs. Per-node worker counts are the n090 runs that finished
 # ARC-Easy: 426k=12 (6/GPU), 2.5M=6 (3/GPU), llama=8 (4/GPU).
 # Do not launch until scripts/macag_check_eval_ready.py passes
-# (clean tree, tag macag-final-v4, prompt digest).
+# (clean tree, tag macag-final-v5, prompt digest).
 #
-# Stages follow the eval plan: graph, then Game 1, then baselines
-# (ACDC reads Game 1 |E*|), then Game 2. Launch the next stage only after
-# the previous one has its artifacts. PAPER_STAGE defaults to graph.
+# PAPER_STAGE is one of graph, game1, baselines, game2. Baselines can run
+# before Game 1; ACDC matched-k is filled only when macag_game1.json exists.
+# PAPER_STAGE defaults to graph.
 #
 #   sbatch --job-name=paper_final_g426k_graph \
 #     --export=ALL,CLTS=gemma2-426k,PAPER_STAGE=graph \
@@ -119,7 +119,7 @@ esac
 export MACAG_WORKERS_PER_GPU="${MACAG_WORKERS_PER_GPU:-$MAX_WORKERS_PER_GPU}"
 
 python scripts/macag_check_eval_ready.py \
-  --tag "${MACAG_TAG:-macag-final-v4}" \
+  --tag "${MACAG_TAG:-macag-final-v5}" \
   --prompts "$JSON" \
   ${PROMPTS_SHA256:+--prompts-sha256 "$PROMPTS_SHA256"}
 
