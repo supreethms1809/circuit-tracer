@@ -87,7 +87,8 @@ def test_cli_game1_single_mode_output_schema_unchanged(tmp_path: Path) -> None:
     payload = json.loads(output.read_text())
     # Exact pre-dual top-level schema: no freeze_mode key, no leg sub-dicts.
     assert list(payload.keys()) == [
-        "input_id", "target", "foil", "game", "params", "evidence", "scores", "stats",
+        "input_id", "target", "foil", "game", "code_version",
+        "params", "degenerate", "evidence", "scores", "stats",
     ]
     assert payload["params"]["stop_metric"] == "normalized"  # unset default, frozen mode
     assert "freeze_attention" not in payload["params"]
@@ -182,7 +183,7 @@ def test_cli_game1_both_end_to_end_with_freeze_aware_factory(
     for leg, freeze in (("frozen", True), ("unfrozen", False)):
         leg_payload = payload[leg]
         # Each leg carries exactly the single-mode payload minus the envelope.
-        assert list(leg_payload.keys()) == ["params", "evidence", "scores", "stats"]
+        assert list(leg_payload.keys()) == ["params", "degenerate", "evidence", "scores", "stats"]
         assert leg_payload["params"]["freeze_attention"] is freeze
         assert leg_payload["params"]["stop_metric"] == "raw_relative"
     # Frozen leg: all weights negative -> no improving candidate -> empty set.

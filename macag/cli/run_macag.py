@@ -6,6 +6,7 @@ import argparse
 import importlib
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -419,6 +420,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "to force sequential y-then-foil (same sets; useful for debugging)."
         ),
     )
+    diagnostic = subparsers.add_parser(
+        "diagnostic",
+        help="All/empty ranges under both attention freezes (4 forwards) and the mediation verdict.",
+    )
+    _add_common_args(diagnostic)
+    diagnostic.add_argument(
+        "--verdict-margin",
+        type=float,
+        default=0.0,
+        help="Dead-band half-width for the attention-mediation verdict (default 0).",
+    )
+
     game2.add_argument(
         "--game2-one-sided",
         action="store_true",
@@ -473,7 +486,81 @@ def main(argv: list[str] | None = None) -> int:
         oracle.clear_cache()
 
     output: dict[str, Any]
-    if args.game == "game1" and args.freeze_mode == "both":
+    if args.game == "diagnostic":
+        from macag.utils.attention_mediation import compute_attention_mediation_diagnostic
+        from macag.utils.metrics import FaithfulnessMetrics
+
+        def _range_metrics(all_score: float, empty_score: float) -> FaithfulnessMetrics:
+            recoverable = all_score - empty_score
+            return FaithfulnessMetrics(
+                all_score=all_score,
+                empty_score=empty_score,
+                keep_only_score=empty_score,
+                remove_score=all_score,
+                sufficiency=0.0,
+                necessity=0.0,
+                faithfulness_delta=0.0,
+                recoverable_range=recoverable,
+                sufficiency_normalized=0.0,
+                necessity_normalized=0.0,
+                faithfulness_delta_normalized=0.0,
+                is_degenerate=recoverable <= 0.0,
+            )
+
+        t_diag = time.perf_counter()
+        frozen_oracle = derive_oracle_with_freeze(oracle, True)
+        unfrozen_oracle = derive_oracle_with_freeze(oracle, False)
+        frozen_metrics = _range_metrics(
+            float(frozen_oracle.all(args.target)),
+            float(frozen_oracle.empty(args.target)),
+        )
+        unfrozen_metrics = _range_metrics(
+            float(unfrozen_oracle.all(args.target)),
+            float(unfrozen_oracle.empty(args.target)),
+        )
+        verdict = compute_attention_mediation_diagnostic(
+            graph,
+            frozen_metrics,
+            unfrozen_metrics,
+            set(),
+            set(),
+            margin=args.verdict_margin,
+        )
+        graph_meta = {}
+        try:
+            graph_meta = _load_json(args.graph_json).get("metadata") or {}
+        except (OSError, json.JSONDecodeError, AttributeError):
+            graph_meta = {}
+        output = {
+            "input_id": args.input_id,
+            "target": args.target,
+            "game": "diagnostic",
+            "code_version": code_provenance(),
+            "params": {
+                "verdict_margin": args.verdict_margin,
+                "ablation_mode": getattr(getattr(oracle, "backend", None), "ablation_mode", None),
+                "node_threshold": graph_meta.get("node_threshold"),
+                "edge_threshold": graph_meta.get("edge_threshold"),
+                "score_kind": getattr(getattr(oracle, "backend", None), "score_kind", None),
+            },
+            "ranges": {
+                "frozen": {
+                    "all": frozen_metrics.all_score,
+                    "empty": frozen_metrics.empty_score,
+                    "recoverable_range": frozen_metrics.recoverable_range,
+                    "degenerate": frozen_metrics.is_degenerate,
+                },
+                "unfrozen": {
+                    "all": unfrozen_metrics.all_score,
+                    "empty": unfrozen_metrics.empty_score,
+                    "recoverable_range": unfrozen_metrics.recoverable_range,
+                    "degenerate": unfrozen_metrics.is_degenerate,
+                },
+            },
+            "attention_mediation": verdict.to_dict(),
+            "stats": {"wall_seconds": time.perf_counter() - t_diag},
+        }
+    elif args.game == "game1" and args.freeze_mode == "both":
         # Derive AFTER restrict_universe so both legs inherit the restriction.
         # The helper short-circuits when freeze already matches, so exactly one
         # dataclasses.replace happens whatever the oracle kwargs said.
@@ -559,6 +646,7 @@ def main(argv: list[str] | None = None) -> int:
                     "structural (A1). Rebuild the oracle kwargs with "
                     '"score_kind": "logit" for Game 2.'
                 )
+        t_game = time.perf_counter()
         result = solve_game2(
             graph=graph,
             oracle=oracle,
@@ -588,7 +676,12 @@ def main(argv: list[str] | None = None) -> int:
             "foil": args.foil,
             "game": "game2",
             "code_version": code_provenance(),
-            "params": result.params,
+            "params": {
+                **result.params,
+                "freeze_attention": getattr(
+                    getattr(oracle, "backend", None), "freeze_attention", None
+                ),
+            },
             "evidence": {
                 "E_y": _sort_nodes(result.evidence_y),
                 "E_foil": _sort_nodes(result.evidence_foil),
@@ -603,7 +696,13 @@ def main(argv: list[str] | None = None) -> int:
                 "utility_foil": result.utility_foil,
                 "overlap_rate": result.overlap_rate,
             },
+            # One-sided ranges. A symmetric gap makes these mirrors of each
+            # other; negative_loss does not. R <= 0 means that agent has no
+            # recoverable gap, independent of the logit-gap Game 1 verdict.
+            "degenerate_target": bool(result.metrics_y.is_degenerate),
+            "degenerate_foil": bool(result.metrics_foil.is_degenerate),
             "stats": {
+                "wall_seconds": time.perf_counter() - t_game,
                 "oracle_calls": result.oracle_calls,
                 "cache_hits": result.cache_hits,
                 "cache_size": result.cache_size,

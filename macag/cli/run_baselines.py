@@ -29,6 +29,8 @@ import argparse
 import hashlib
 import json
 import logging
+import os
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -49,18 +51,24 @@ from macag.baselines.common import (
 )
 from macag.baselines.eap import EAPUnavailableError, select_top_eap
 from macag.baselines.eap_syed import select_top_eap_syed
-from macag.baselines.floors import select_random, select_top_singleton
+from macag.baselines.floors import select_random, select_random_draws, select_top_singleton
 from macag.baselines.influence import select_top_influence
 from macag.baselines.shapley_select import select_top_shapley
 from macag.cli.run_macag import _build_oracle, _load_candidates, _load_json, _sort_nodes
 from macag.games.game1_min_faithful import solve_game1
 from macag.graph import CircuitGraph, NodeId
-from macag.scoring import ScoringOracle, TargetId
+from macag.scoring import ScoringOracle, TargetId, derive_oracle_with_freeze
 from macag.utils.metrics import (
     compute_faithfulness_metrics,
     dedupe_preserve_order,
     game1_utility,
     metrics_to_dict,
+)
+from macag.utils.final_protocol import (
+    LEG_INDEPENDENT_METHODS,
+    acdc_target_for_leg,
+    matched_k_read,
+    mean_prefix_scores,
 )
 from macag.utils.provenance import code_provenance
 
@@ -324,7 +332,12 @@ def _run_selection(
             estimator=method,
             progress=args.progress,
             checkpoint_path=(
-                str(Path(args.output_json).with_name("macag_baselines_shapley.ckpt.json"))
+                str(
+                    Path(args.output_json).with_name(
+                        "macag_baselines_shapley"
+                        f"{getattr(args, '_shapley_ckpt_suffix', '')}.ckpt.json"
+                    )
+                )
                 if method == "shapley" and args.output_json
                 else None
             ),
@@ -373,7 +386,11 @@ def _run_selection(
             cap_necessity=args.cap_necessity,
         )
     elif method == "random":
-        result = select_random(candidates, seed=args.random_seed)
+        n_draws = int(getattr(args, "random_draws", 1) or 1)
+        if n_draws > 1:
+            result = select_random_draws(candidates, seed=args.random_seed, n_draws=n_draws)
+        else:
+            result = select_random(candidates, seed=args.random_seed)
     else:
         raise ValueError(f"_run_selection does not handle method '{method}'.")
 
@@ -609,6 +626,28 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--banzhaf-samples", type=int, default=64, help="MC samples for Banzhaf.")
     parser.add_argument("--shapley-seed", type=int, default=0, help="Seed for Shapley/Banzhaf sampling.")
     parser.add_argument("--random-seed", type=int, default=0, help="Seed for the random-k floor shuffle.")
+    parser.add_argument(
+        "--random-draws",
+        type=int,
+        default=1,
+        help="Independent shuffles for the random floor (seeds seed..seed+n-1). "
+        "n>1 reports per-k mean and SD and keeps each draw.",
+    )
+    parser.add_argument(
+        "--legs",
+        choices=("native", "both"),
+        default="native",
+        help="native: score the oracle kwargs' freeze only. both: also score the "
+        "other attention-freeze leg (singleton/Shapley/ACDC re-selected; "
+        "influence, EAP, and random re-scored on the same ranking).",
+    )
+    parser.add_argument(
+        "--acdc-target-from-game1",
+        default=None,
+        help="Game 1 JSON. ACDC target k and prefix matched-k reads use that "
+        "leg's |E*|. Degenerate legs are skipped. |E*| above --budget is "
+        "unavailable_at_k (no silent fallback to the report budget).",
+    )
     parser.add_argument("--no-antithetic", action="store_true", help="Disable antithetic permutation pairing.")
 
     parser.add_argument("--prefilter-top-k", type=int, default=None, help="Game 1 singleton prefilter size.")
@@ -709,6 +748,330 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _native_leg_name(oracle: ScoringOracle) -> str:
+    freeze = getattr(getattr(oracle, "backend", None), "freeze_attention", None)
+    if freeze is False:
+        return "unfrozen"
+    return "frozen"
+
+
+def _load_game1_for_targets(args: argparse.Namespace) -> dict[str, Any] | None:
+    path = getattr(args, "acdc_target_from_game1", None)
+    if not path:
+        return None
+    return _load_json(path)
+
+
+def _acdc_target_spec(args: argparse.Namespace, leg: str) -> dict[str, Any]:
+    return acdc_target_for_leg(
+        _load_game1_for_targets(args),
+        leg,
+        args.budget,
+        args.acdc_target_k,
+    )
+
+
+def _stringify_results(results: Mapping[int, Mapping[str, Any]]) -> dict[str, Any]:
+    return {str(k): payload for k, payload in results.items()}
+
+
+def _evaluate_method_prefixes(
+    oracle: ScoringOracle,
+    args: argparse.Namespace,
+    selection: SelectionResult,
+) -> dict[int, dict[str, Any]]:
+    """Score prefixes. Random multi-draw returns per-k means and stashes draws."""
+    rankings = (selection.extras or {}).get("draw_rankings")
+    if selection.method == "random" and rankings and len(rankings) > 1:
+        per_draw = [
+            _evaluate_prefixes(
+                oracle,
+                args.target,
+                ranking,
+                args.budget,
+                args.alpha,
+                args.lam,
+                cap_sufficiency=args.cap_sufficiency,
+                cap_necessity=args.cap_necessity,
+            )
+            for ranking in rankings
+        ]
+        mean_results, sd = mean_prefix_scores(per_draw)
+        selection.extras["scores_sd"] = sd
+        selection.extras["random_draw_results"] = [
+            _stringify_results(draw) for draw in per_draw
+        ]
+        return mean_results
+    return _evaluate_prefixes(
+        oracle,
+        args.target,
+        selection.ranking,
+        args.budget,
+        args.alpha,
+        args.lam,
+        cap_sufficiency=args.cap_sufficiency,
+        cap_necessity=args.cap_necessity,
+    )
+
+
+def _score_acdc_sweep(
+    oracle: ScoringOracle,
+    args: argparse.Namespace,
+    acdc_output: dict[str, Any],
+) -> None:
+    """Fill sweep scores, best_by_size, and matched_k on one ACDC block."""
+    best_by_size: dict[int, dict[str, Any]] = {}
+    for entry in acdc_output["sweep"]:
+        kept = set(entry["kept"])
+        metrics = compute_faithfulness_metrics(
+            oracle=oracle,
+            target=args.target,
+            nodes=kept,
+            alpha=args.alpha,
+            cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
+        )
+        entry["scores"] = metrics_to_dict(metrics) | {
+            "utility": game1_utility(metrics.faithfulness_delta, size=len(kept), lam=args.lam)
+        }
+        size = len(kept)
+        current = best_by_size.get(size)
+        if current is None or entry["scores"]["faithfulness"] > current["scores"]["faithfulness"]:
+            best_by_size[size] = {
+                "evidence": entry["kept"],
+                "scores": entry["scores"],
+                "tau": entry["tau"],
+            }
+    acdc_output["best_by_size"] = {str(size): best_by_size[size] for size in sorted(best_by_size)}
+    matched_pending = acdc_output.pop("_matched_pending", None)
+    matched_unavailable = acdc_output.pop("_matched_unavailable", None)
+    if matched_pending is not None:
+        matched = matched_pending
+        matched_metrics = compute_faithfulness_metrics(
+            oracle=oracle,
+            target=args.target,
+            nodes=set(matched.kept),
+            alpha=args.alpha,
+            cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
+        )
+        acdc_output["matched_k"] = {
+            "target_k": matched.params["target_k"],
+            "achieved_k": matched.params["achieved_k"],
+            "exact": matched.params["exact"],
+            "tau": matched.tau,
+            "bisection_iters": matched.params["bisection_iters"],
+            "search_evals": matched.params.get("search_evals"),
+            "budget_capped": bool(matched.params.get("budget_capped", True)),
+            "evidence": _sort_nodes(set(matched.kept)),
+            "scores": metrics_to_dict(matched_metrics)
+            | {
+                "utility": game1_utility(
+                    matched_metrics.faithfulness_delta, size=len(matched.kept), lam=args.lam
+                )
+            },
+            "status": "ok",
+        }
+    elif matched_unavailable is not None:
+        acdc_output["matched_k"] = {
+            "status": matched_unavailable.get("status") or "unavailable",
+            "target_k": matched_unavailable["target_k"],
+            "achieved_k": None,
+            "exact": False,
+            "budget_capped": True,
+            "reason": matched_unavailable["reason"],
+            "evidence": None,
+            "scores": None,
+        }
+
+
+def _run_acdc_block(
+    args: argparse.Namespace,
+    graph: CircuitGraph,
+    payload: dict[str, Any],
+    oracle: ScoringOracle,
+    candidates: list[NodeId],
+    leg: str,
+) -> dict[str, Any]:
+    """Sweep + optional matched-k search for one freeze leg. ``payload`` is unused."""
+    del payload
+    oracle.clear_cache()
+    oracle.reset_stats()
+    sweep = acdc_tau_sweep(
+        graph,
+        oracle,
+        args.target,
+        candidates,
+        taus=_parse_float_list(args.acdc_taus),
+        alpha=args.alpha,
+        order=args.acdc_order,
+        progress=args.progress,
+        cap_sufficiency=args.cap_sufficiency,
+        cap_necessity=args.cap_necessity,
+    )
+    block: dict[str, Any] = {
+        "selection_pool_size": len(candidates),
+        "sweep": [
+            {
+                "tau": result.tau,
+                "size": len(result.kept),
+                "kept": _sort_nodes(set(result.kept)),
+                "value": result.value,
+                "removed_order": [str(node) for node in result.removed_order],
+            }
+            for result in sweep
+        ],
+    }
+    target_spec = _acdc_target_spec(args, leg)
+    if target_spec["search"]:
+        target_k = int(target_spec["target_k"])
+        try:
+            block["_matched_pending"] = acdc_target_size(
+                graph,
+                oracle,
+                args.target,
+                candidates,
+                target_k=target_k,
+                alpha=args.alpha,
+                order=args.acdc_order,
+                seed_results=sweep,
+                progress=args.progress,
+                cap_sufficiency=args.cap_sufficiency,
+            )
+        except ACDCBudgetUnreachableError as exc:
+            block["_matched_unavailable"] = {
+                "target_k": target_k,
+                "status": "unavailable",
+                "reason": str(exc),
+            }
+    elif target_spec["status"] not in ("not_requested",):
+        block["_matched_unavailable"] = {
+            "target_k": target_spec.get("target_k"),
+            "status": target_spec["status"],
+            "reason": target_spec["status"],
+        }
+    stats = oracle.cache_stats()
+    block["selection_stats"] = {
+        "oracle_calls": stats["oracle_calls"],
+        "cache_hits": stats["cache_hits"],
+        "forwards": stats["forwards"],
+    }
+    _score_acdc_sweep(oracle, args, block)
+    return block
+
+
+def _leg_result_block(
+    args: argparse.Namespace,
+    ranking: Sequence[NodeId] | None,
+    results: Mapping[int, Any],
+    leg: str,
+    selection_stats: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    spec = _acdc_target_spec(args, leg) if args.acdc_target_from_game1 else {
+        "status": "not_requested",
+        "target_k": None,
+    }
+    block: dict[str, Any] = {
+        "ranking": [str(node) for node in ranking] if ranking is not None else None,
+        "results": _stringify_results(results) if results and not _already_string_keys(results) else dict(results or {}),
+        "matched_k_read": matched_k_read(results, spec) if args.acdc_target_from_game1 else {
+            "status": "no_game1",
+            "target_k": None,
+            "evidence": None,
+            "scores": None,
+        },
+    }
+    if selection_stats is not None:
+        block["selection_stats"] = dict(selection_stats)
+    return block
+
+
+def _already_string_keys(results: Mapping[Any, Any]) -> bool:
+    return all(isinstance(key, str) for key in results)
+
+
+def _attach_freeze_legs(
+    args: argparse.Namespace,
+    graph: CircuitGraph,
+    payload: dict[str, Any],
+    oracle: ScoringOracle,
+    candidates: list[NodeId],
+    selections: dict[str, SelectionResult],
+    method_outputs: dict[str, dict[str, Any]],
+    acdc_output: dict[str, Any] | None,
+) -> None:
+    """Score the other attention-freeze leg when --legs both."""
+    if getattr(args, "legs", "native") != "both":
+        return
+    native = _native_leg_name(oracle)
+    try:
+        other_freeze = native != "frozen"
+        # other_freeze True means the other leg is frozen.
+        other_oracle = derive_oracle_with_freeze(oracle, other_freeze)
+    except TypeError as exc:
+        LOGGER.warning("--legs both skipped: %s", exc)
+        return
+    other = "frozen" if other_freeze else "unfrozen"
+    backend = getattr(other_oracle, "backend", None)
+    if backend is not None and hasattr(backend, "restrict_universe"):
+        backend.restrict_universe(set(candidates))
+        other_oracle.clear_cache()
+
+    for method, output in method_outputs.items():
+        output.setdefault("legs", {})
+        output["legs"][native] = _leg_result_block(
+            args,
+            selections[method].ranking if method in selections else None,
+            output.get("results") or {},
+            native,
+            output.get("selection_stats"),
+        )
+    if acdc_output is not None:
+        acdc_output.setdefault("legs", {})
+        acdc_output["legs"][native] = {
+            "matched_k": acdc_output.get("matched_k"),
+            "best_by_size": acdc_output.get("best_by_size"),
+            "sweep": acdc_output.get("sweep"),
+        }
+
+    args._shapley_ckpt_suffix = f".{other}"
+    for method, selection in list(selections.items()):
+        if method in LEG_INDEPENDENT_METHODS:
+            results = _evaluate_method_prefixes(other_oracle, args, selection)
+            method_outputs[method]["legs"][other] = _leg_result_block(
+                args, selection.ranking, results, other
+            )
+            continue
+        other_selection, stats = _run_selection(
+            method, args, graph, payload, other_oracle, args.target, candidates
+        )
+        results = _evaluate_method_prefixes(other_oracle, args, other_selection)
+        method_outputs[method]["legs"][other] = _leg_result_block(
+            args, other_selection.ranking, results, other, stats
+        )
+        if method == "random":
+            method_outputs[method]["extras"]["scores_sd_by_leg"] = {
+                other: other_selection.extras.get("scores_sd"),
+                native: selection.extras.get("scores_sd"),
+            }
+
+    if acdc_output is not None:
+        acdc_output["legs"][other] = _run_acdc_block(
+            args, graph, payload, other_oracle, candidates, other
+        )
+    args._shapley_ckpt_suffix = ""
+
+
+def _gpu_name() -> str | None:
+    try:
+        import torch
+    except ImportError:
+        return None
+    if not torch.cuda.is_available():
+        return None
+    return str(torch.cuda.get_device_name(0))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -721,6 +1084,8 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--alpha must be in [0, 1].")
     if args.budget < 1:
         raise ValueError("--budget must be >= 1.")
+    if args.random_draws < 1:
+        raise ValueError("--random-draws must be >= 1.")
     methods = _parse_methods(args.methods)
 
     payload = _load_json(args.graph_json)
@@ -738,6 +1103,7 @@ def main(argv: list[str] | None = None) -> int:
     acdc_output: dict[str, Any] | None = None
     acdc_native_output: dict[str, Any] | None = None
     acdc_sweep_results = None
+    t_select = time.perf_counter()
 
     for method in methods:
         if method == "acdc":
@@ -756,13 +1122,9 @@ def main(argv: list[str] | None = None) -> int:
                 cap_necessity=args.cap_necessity,
             )
             acdc_output = {
-                "selection_stats": {
-                    "oracle_calls": stats["oracle_calls"],
-                    "cache_hits": stats["cache_hits"],
-                    # P2: real model forwards (answer_span costs 2 per score).
-                    "forwards": stats["forwards"],
-                },
                 # P1-2: ACDC sweeps the full candidate pool (no prefilter).
+                # selection_stats is filled after the matched-k search so the
+                # count includes that search.
                 "selection_pool_size": len(candidates),
                 "sweep": [
                     {
@@ -775,8 +1137,9 @@ def main(argv: list[str] | None = None) -> int:
                     for result in acdc_sweep_results
                 ],
             }
-            if args.acdc_target_k is not None:
-                target_k = args.budget if args.acdc_target_k == -1 else args.acdc_target_k
+            target_spec = _acdc_target_spec(args, _native_leg_name(oracle))
+            if target_spec["search"]:
+                target_k = int(target_spec["target_k"])
                 try:
                     matched = acdc_target_size(
                         graph,
@@ -794,11 +1157,18 @@ def main(argv: list[str] | None = None) -> int:
                 except ACDCBudgetUnreachableError as exc:
                     acdc_output["_matched_unavailable"] = {
                         "target_k": target_k,
+                        "status": "unavailable",
                         "reason": str(exc),
                     }
                     LOGGER.warning(
                         "ACDC matched_k unavailable for %s: %s", args.input_id, exc
                     )
+            elif target_spec["status"] not in ("not_requested",):
+                acdc_output["_matched_unavailable"] = {
+                    "target_k": target_spec.get("target_k"),
+                    "status": target_spec["status"],
+                    "reason": target_spec["status"],
+                }
             stats = oracle.cache_stats()
             acdc_output["selection_stats"] = {
                 "oracle_calls": stats["oracle_calls"],
@@ -902,19 +1272,19 @@ def main(argv: list[str] | None = None) -> int:
 
     # Evaluation pass: same FaithfulnessMetrics for every method's prefixes.
     # One shared warm cache — evaluation cost is not a comparison axis.
+    t_eval = time.perf_counter()
     oracle.clear_cache()
     oracle.reset_stats()
     for method, selection in selections.items():
-        method_outputs[method]["results"] = _evaluate_prefixes(
-            oracle,
-            args.target,
-            selection.ranking,
-            args.budget,
-            args.alpha,
-            args.lam,
-            cap_sufficiency=args.cap_sufficiency,
-            cap_necessity=args.cap_necessity,
+        method_outputs[method]["results"] = _evaluate_method_prefixes(
+            oracle, args, selection
         )
+        if method == "random" and selection.extras.get("random_draw_results"):
+            method_outputs[method]["extras"]["scores_sd"] = selection.extras.get("scores_sd")
+            method_outputs[method]["extras"]["random_draw_results"] = selection.extras[
+                "random_draw_results"
+            ]
+            method_outputs[method]["params"] = dict(selection.params)
     if acdc_output is not None:
         # ACDC produces one set per tau, not nested prefixes; score each kept
         # set as-is and bucket the best entry per size for matched-|E| reads.
@@ -969,7 +1339,7 @@ def main(argv: list[str] | None = None) -> int:
             }
         elif matched_unavailable is not None:
             acdc_output["matched_k"] = {
-                "status": "unavailable",
+                "status": matched_unavailable.get("status") or "unavailable",
                 "target_k": matched_unavailable["target_k"],
                 "achieved_k": None,
                 "exact": False,
@@ -982,6 +1352,10 @@ def main(argv: list[str] | None = None) -> int:
     # Prefix/ACDC evaluation is one cost phase. Exact search is measured
     # separately so it cannot inflate ``evaluation_oracle_calls``.
     evaluation_stats = oracle.cache_stats()
+    t_eval_done = time.perf_counter()
+    _attach_freeze_legs(
+        args, graph, payload, oracle, candidates, selections, method_outputs, acdc_output
+    )
     oracle.clear_cache()
     oracle.reset_stats()
 
@@ -1144,6 +1518,9 @@ def main(argv: list[str] | None = None) -> int:
             "shapley_seed": args.shapley_seed,
             "antithetic": not args.no_antithetic,
             "random_seed": args.random_seed,
+            "random_draws": args.random_draws,
+            "legs": args.legs,
+            "acdc_target_from_game1": args.acdc_target_from_game1,
             "acdc_taus": _parse_float_list(args.acdc_taus),
             "acdc_order": args.acdc_order,
             "acdc_target_k": args.acdc_target_k,
@@ -1170,6 +1547,14 @@ def main(argv: list[str] | None = None) -> int:
             "evaluation_cache_hits": evaluation_stats["cache_hits"],
             "bruteforce_oracle_calls": bruteforce_stats["oracle_calls"],
             "bruteforce_cache_hits": bruteforce_stats["cache_hits"],
+            "wall_seconds": {
+                "selection": t_eval - t_select,
+                "evaluation": t_eval_done - t_eval,
+                "total": time.perf_counter() - t_select,
+            },
+            "gpu": _gpu_name(),
+            "worker_concurrency": os.environ.get("MACAG_WORKERS_PER_GPU")
+            or os.environ.get("WORKER_CONCURRENCY"),
         },
     }
     if acdc_output is not None:

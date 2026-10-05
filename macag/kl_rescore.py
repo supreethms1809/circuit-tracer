@@ -18,6 +18,7 @@ from typing import Any, Callable, Mapping, Sequence
 from macag.factories.replacement_model import create_replacement_model_oracle
 from macag.scoring import ScoringOracle, TargetId
 from macag.utils.metrics import compute_faithfulness_metrics, metrics_to_dict
+from macag.utils.final_protocol import acdc_target_for_leg
 from macag.utils.provenance import code_provenance
 
 LOGGER = logging.getLogger(__name__)
@@ -460,9 +461,34 @@ def merge_kl_into_outputs(
         g2[spec.embed_key] = kl_g2.get(label)
         g2[spec.embed_key + "_caps"] = _caps_of(kl_g2)
         g2_path.write_text(json.dumps(g2, indent=2) + "\n")
+    for name, block in (kl_payload.get("game2_files") or {}).items():
+        path = root / name
+        if not path.is_file() or not isinstance(block, Mapping):
+            continue
+        g2 = load_json(path)
+        g2[spec.embed_key] = block.get(label)
+        g2[spec.embed_key + "_caps"] = _caps_of(block)
+        path.write_text(json.dumps(g2, indent=2) + "\n")
 
     bl_path = root / "macag_baselines.json"
     kl_bl = kl_payload.get("baselines") or {}
+    if kl_bl.get("per_leg"):
+        if bl_path.is_file():
+            bl = load_json(bl_path)
+            for leg_name in ("frozen", "unfrozen"):
+                leg_kl = kl_bl.get(leg_name) or {}
+                for method, block in (leg_kl.get("methods") or {}).items():
+                    entry = (bl.get("methods") or {}).get(method)
+                    if entry is None:
+                        continue
+                    entry.setdefault("legs", {}).setdefault(leg_name, {})
+                    entry["legs"][leg_name][spec.embed_key] = block.get(label)
+                    entry["legs"][leg_name][spec.embed_key + "_caps"] = _caps_of(leg_kl)
+                    entry["legs"][leg_name][spec.embed_key + "_matched_k_status"] = leg_kl.get(
+                        "matched_k_status"
+                    )
+            bl_path.write_text(json.dumps(bl, indent=2) + "\n")
+        return
     kl_methods = kl_bl.get("methods") or {}
     if bl_path.is_file() and kl_methods:
         bl = load_json(bl_path)
@@ -506,6 +532,36 @@ def read_game1_kl_faith(run_dir: str | Path, leg: str = "frozen") -> float | Non
         return None
     faith = (block.get("kl_divergence") or {}).get("faithfulness")
     return float(faith) if isinstance(faith, (int, float)) else None
+
+
+def _baselines_have_legs(payload: Mapping[str, Any]) -> bool:
+    for entry in (payload.get("methods") or {}).values():
+        if isinstance(entry, Mapping) and entry.get("legs"):
+            return True
+    return False
+
+
+def _baselines_view_for_leg(payload: Mapping[str, Any], leg: str) -> dict[str, Any]:
+    """Project ``methods.*.legs.<leg>`` back to the flat shape rescore_baselines reads."""
+    methods: dict[str, Any] = {}
+    for name, entry in (payload.get("methods") or {}).items():
+        if not isinstance(entry, Mapping):
+            continue
+        leg_block = (entry.get("legs") or {}).get(leg)
+        if not isinstance(leg_block, Mapping):
+            methods[name] = dict(entry)
+            continue
+        merged = dict(entry)
+        if leg_block.get("results") is not None:
+            merged["results"] = leg_block["results"]
+        if leg_block.get("ranking") is not None:
+            merged["ranking"] = leg_block["ranking"]
+        if leg_block.get("matched_k") is not None:
+            merged["matched_k"] = leg_block["matched_k"]
+        if leg_block.get("best_by_size") is not None:
+            merged["best_by_size"] = leg_block["best_by_size"]
+        methods[name] = merged
+    return {**dict(payload), "methods": methods}
 
 
 def rescore_run_dir(
@@ -569,31 +625,69 @@ def rescore_run_dir(
                 cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
             )
 
+    g2_kwargs_path = root / "oracle_kwargs_game2.json"
+    g2_kwargs = load_json(g2_kwargs_path) if g2_kwargs_path.is_file() else kwargs
+    g2_freeze = bool(g2_kwargs.get("freeze_attention", kwargs.get("freeze_attention", True)))
     g2_path = root / "macag_game2.json"
     if g2_path.is_file():
         g2 = load_json(g2_path)
-        freeze = bool(kwargs.get("freeze_attention", True))
-        oracle = build_oracle_with_overrides(kwargs, spec, freeze_attention=freeze)
+        oracle = build_oracle_with_overrides(g2_kwargs, spec, freeze_attention=g2_freeze)
         output["game2"] = rescore_game2(
             g2, oracle, target=target, foil=foil, score_label=label,
             cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
         )
+    g2_files = sorted(p for p in root.glob("macag_game2_*.json") if p.name != "macag_game2.json")
+    if g2_files:
+        output["game2_files"] = {}
+        for path in g2_files:
+            g2 = load_json(path)
+            oracle = build_oracle_with_overrides(g2_kwargs, spec, freeze_attention=g2_freeze)
+            output["game2_files"][path.name] = rescore_game2(
+                g2, oracle, target=target, foil=foil, score_label=label,
+                cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+            )
 
     bl_path = root / "macag_baselines.json"
     if bl_path.is_file():
         bl = load_json(bl_path)
-        freeze = bool(kwargs.get("freeze_attention", True))
-        oracle = build_oracle_with_overrides(kwargs, spec, freeze_attention=freeze)
-        # A5: match baselines to Game 1's |E*| (frozen leg) when a Game 1 output
-        # exists; otherwise fall back to the legacy at-budget read. A2: record
-        # WHY (degenerate legs have no defined k — see game1_matched_k_status).
         g1_for_k = load_json(g1_path) if g1_path.is_file() else None
-        output["baselines"] = rescore_baselines(
-            bl, oracle, target=target, score_label=label,
-            matched_k=game1_matched_k(g1_for_k),
-            matched_k_status=game1_matched_k_status(g1_for_k),
-            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
-        )
+        if _baselines_have_legs(bl) and g1_for_k and g1_for_k.get("freeze_mode") == "both":
+            output["baselines"] = {"per_leg": True}
+            budget = int((bl.get("params") or {}).get("budget", 8))
+            for leg_name, freeze in (("frozen", True), ("unfrozen", False)):
+                spec_k = acdc_target_for_leg(g1_for_k, leg_name, budget, None)
+                if spec_k["status"] != "ok":
+                    output["baselines"][leg_name] = {
+                        "matched_k": spec_k.get("target_k"),
+                        "matched_k_status": spec_k["status"],
+                        "methods": {},
+                        "cap_sufficiency": cap_sufficiency,
+                        "cap_necessity": cap_necessity,
+                    }
+                    continue
+                oracle = build_oracle_with_overrides(kwargs, spec, freeze_attention=freeze)
+                output["baselines"][leg_name] = rescore_baselines(
+                    _baselines_view_for_leg(bl, leg_name),
+                    oracle,
+                    target=target,
+                    score_label=label,
+                    matched_k=int(spec_k["target_k"]),
+                    matched_k_status="ok",
+                    cap_sufficiency=cap_sufficiency,
+                    cap_necessity=cap_necessity,
+                )
+        else:
+            freeze = bool(kwargs.get("freeze_attention", True))
+            oracle = build_oracle_with_overrides(kwargs, spec, freeze_attention=freeze)
+            # A5: match baselines to Game 1's |E*| (frozen leg) when a Game 1 output
+            # exists; otherwise fall back to the legacy at-budget read. A2: record
+            # WHY (degenerate legs have no defined k — see game1_matched_k_status).
+            output["baselines"] = rescore_baselines(
+                bl, oracle, target=target, score_label=label,
+                matched_k=game1_matched_k(g1_for_k),
+                matched_k_status=game1_matched_k_status(g1_for_k),
+                cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+            )
 
     if "game1" not in output and "game2" not in output and "baselines" not in output:
         LOGGER.warning("skip %s: no game/baseline JSON to rescore", root)

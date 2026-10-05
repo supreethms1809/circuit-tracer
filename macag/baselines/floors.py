@@ -73,3 +73,29 @@ def select_random(
         scores=None,
         params={"seed": seed},
     )
+
+
+def select_random_draws(
+    candidates: Sequence[NodeId],
+    seed: int = 0,
+    n_draws: int = 10,
+) -> SelectionResult:
+    """Mean-of-draws chance floor. Seeds are ``seed`` .. ``seed + n_draws - 1``.
+
+    The reported ranking is draw 0. Every draw's ranking is kept in
+    ``extras['draw_rankings']`` so evaluation can average per-k scores.
+    """
+    if n_draws < 1:
+        raise ValueError(f"n_draws must be >= 1, got {n_draws}.")
+    draws = [select_random(candidates, seed=seed + i) for i in range(n_draws)]
+    return SelectionResult(
+        method="random",
+        ranking=list(draws[0].ranking),
+        scores=None,
+        params={
+            "seed": seed,
+            "n_draws": n_draws,
+            "seeds": list(range(seed, seed + n_draws)),
+        },
+        extras={"draw_rankings": [list(draw.ranking) for draw in draws]},
+    )

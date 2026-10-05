@@ -1,6 +1,16 @@
 # TMLR evaluation recipe (MACAG + baselines)
 
-**Status:** canonical protocol for the TMLR MACAG evaluation campaign.  
+**Status:** the final campaign protocol is `eval_plan/macag_final_experiment_plan.md`, not the v4 settings below. Launch with `scripts/slurm/submit_macag_final.sh` only after `scripts/macag_check_eval_ready.py` passes.
+
+Final-campaign settings that override this file where they differ:
+
+- Graph: `node_threshold=0.9`, `edge_threshold=1.0` (90% influence mass). 1.0 is a sensitivity check, not the main run.
+- Game 1: capped sufficiency and necessity, dual freeze, no prefilter.
+- Game 2: one-sided `negative_loss`, attention unfrozen, betas 0 and 0.2, separate files `macag_game2_<solver>_b<beta>.json`. Overlap near zero is not a finding and is not expected as a structural identity.
+- Baselines: `random,influence,eap_syed,singleton,acdc`, both freeze legs, random mean of 10 draws, ACDC target k = that leg's Game 1 `|E*|`.
+- v3/v4 result trees are legacy and are not the paper's numbers.
+
+**Status (historical v4 recipe below):** canonical protocol for the earlier TMLR MACAG evaluation campaign.  
 **Goal:** fair, reviewer-defensible baseline comparisons. A previous paper was withdrawn over incorrect baselines — this document exists so that does not happen again.
 
 Companion docs (do not contradict them; this recipe operationalizes them):
@@ -170,7 +180,7 @@ Per model × task (aggregate with CIs when n allows):
 ### Table 4 — Diagnostics
 
 - Attention-mediation verdict rates by task  
-- Game2 overlap_rate (expect ~0 on MIB)  
+- Game2 overlap_rate (one-sided negative_loss; do not treat ~0 as structural)  
 - Frozen↔unfrozen evidence Jaccard  
 
 ---

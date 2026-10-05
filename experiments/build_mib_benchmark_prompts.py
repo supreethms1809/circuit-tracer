@@ -227,6 +227,7 @@ def export_prompts(
                     "source": "mib-bench",
                     "hf_dataset": hf_url,
                     "index": i,
+                    "split_size": n,
                 }
                 if sample == "random":
                     entry_metadata["sample_seed"] = seed
@@ -274,6 +275,107 @@ def export_prompts(
     }
 
 
+def _next_option_foil(correct_token: str, prompt: str) -> str:
+    """Next clean-prompt option after the correct label, space-prefixed.
+
+    Matches ``_mcqa_tokens`` on letter options (A–D). Checked against the
+    tokenizer-built campaign file: 200/200 foils agree.
+    """
+    import re
+
+    labels = re.findall(r"(?m)^([A-Z])\.", prompt)
+    letter = correct_token.strip()
+    if letter not in labels:
+        raise ValueError(
+            f"correct token {correct_token!r} is not an option label in the prompt"
+        )
+    nxt = labels[(labels.index(letter) + 1) % len(labels)]
+    return f" {nxt}"
+
+
+def resample_from_manifest(
+    manifest_path: Path,
+    *,
+    seed: int,
+    task_limits: dict[str, int],
+    models: list[str],
+    tasks: list[str],
+) -> dict[str, Any]:
+    """Seeded draw from the exported full manifest, with clean-prompt foils.
+
+    The full v1 export stored MCQA/ARC foils as counterfactual digits. Those
+    are replaced with the next wrong option. IOI name tokens are already the
+    clean-prompt subject and indirect object. The same seed is reconstructed
+    per (model, task), matching ``export_prompts``.
+    """
+    manifest = json.loads(manifest_path.read_text())
+    out_tasks: dict[str, list[dict[str, Any]]] = {}
+    split_sizes: dict[str, int] = {}
+    for model in models:
+        for task in tasks:
+            rows = [
+                row for row in manifest["tasks"].get(task, [])
+                if row.get("mib_model") == model
+            ]
+            if not rows:
+                print(f"skip {model}/{task}: not in {manifest_path.name}")
+                continue
+            limit = task_limits.get(task)
+            if limit is None:
+                raise ValueError(f"--from-manifest needs --task-limit for {task}")
+            split_sizes[f"{model}/{task}"] = len(rows)
+            idxs = sorted(random.Random(seed).sample(range(len(rows)), min(limit, len(rows))))
+            bucket = out_tasks.setdefault(task, [])
+            for i in idxs:
+                row = dict(rows[i])
+                meta = dict(row.get("metadata") or {})
+                meta["split_size"] = len(rows)
+                meta["sample_seed"] = seed
+                meta["sample_method"] = "random"
+                meta["source_manifest"] = manifest_path.name
+                if task in ("mcqa", "arc_easy", "arc_challenge"):
+                    row["incorrect_token"] = _next_option_foil(
+                        row["correct_token"], row["clean_prompt"]
+                    )
+                    meta["foil_rule"] = "next_wrong_option"
+                row["metadata"] = meta
+                bucket.append(row)
+            print(f"sampled {len(idxs)}/{len(rows)} for {model}/{task} seed={seed}")
+    return {
+        "benchmarks_info": {
+            "description": (
+                "Seeded random MIB validation subset for the final MACAG paper. "
+                "25 IOI + 25 MCQA + 25 ARC-Easy per mib_model."
+            ),
+            "token_convention": (
+                "correct_token/incorrect_token are single-token strings in "
+                "space-prefixed form (e.g. ' D'). MCQA/ARC foils are the next "
+                "wrong option in the clean prompt, not the MIB counterfactual digit."
+            ),
+            "sampling": {
+                "method": "random",
+                "seed": seed,
+                "task_limits": task_limits,
+                "source_manifest": manifest_path.name,
+                "split_sizes": split_sizes,
+                "note": (
+                    "MCQA validation in the manifest has 50 rows, so 25 is half "
+                    "that split. IOI is 500 and ARC-Easy is 570 in the same export."
+                ),
+            },
+            "usage": (
+                "Same schema as acdc_benchmark_prompts.json. "
+                "Route via mib_model in run_macag_mib.sh."
+            ),
+            "mib_model_to_clt_tags": {
+                "gemma2": ["gemma2-426k", "gemma2-2.5M"],
+                "llama3": ["llama32-524k"],
+            },
+        },
+        "tasks": out_tasks,
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -292,21 +394,65 @@ def main() -> None:
                          "random subset (A9; requires --seed and a limit)")
     ap.add_argument("--seed", type=int, default=None,
                     help="seed for --sample random")
+    ap.add_argument(
+        "--from-manifest",
+        type=Path,
+        default=None,
+        help="Resample an already-exported full manifest instead of HuggingFace. "
+        "Rewrites MCQA/ARC foils to the next clean-prompt option.",
+    )
+    ap.add_argument(
+        "--mark-subsets",
+        action="store_true",
+        help="Tag Phase-S slices from a second shuffle (seed+1). "
+        "P3 is 20 IOI+20 MCQA; S1 is 20 cells round-robin; S2 20 IOI; "
+        "S3/S4/S6 10 IOI; S7 2 IOI; S8 10 MCQA.",
+    )
     args = ap.parse_args()
 
-    if not MIB_DIR.is_dir():
+    if args.from_manifest is not None:
+        if args.seed is None:
+            raise SystemExit("--from-manifest requires --seed")
+        payload = resample_from_manifest(
+            args.from_manifest,
+            seed=args.seed,
+            task_limits=parse_task_limits(args.task_limit),
+            models=args.models,
+            tasks=args.tasks,
+        )
+    elif not MIB_DIR.is_dir():
         raise SystemExit(f"MIB repo missing at {MIB_DIR}; run external/setup_mib.sh")
+    else:
+        payload = export_prompts(
+            models=args.models,
+            tasks=args.tasks,
+            split=args.split,
+            limit_per_task=args.limit_per_task,
+            task_limits=parse_task_limits(args.task_limit),
+            counterfactual_type=args.counterfactual_type,
+            sample=args.sample,
+            seed=args.seed,
+        )
+    if args.mark_subsets:
+        if args.seed is None:
+            raise SystemExit("--mark-subsets requires --seed")
+        from macag.utils.final_protocol import SUBSET_PREFIXES, assign_subset_flags
 
-    payload = export_prompts(
-        models=args.models,
-        tasks=args.tasks,
-        split=args.split,
-        limit_per_task=args.limit_per_task,
-        task_limits=parse_task_limits(args.task_limit),
-        counterfactual_type=args.counterfactual_type,
-        sample=args.sample,
-        seed=args.seed,
-    )
+        flags = assign_subset_flags(payload["tasks"], args.seed)
+        for entries in payload["tasks"].values():
+            for entry in entries:
+                entry["subsets"] = flags.get(entry["id"], [])
+        payload["benchmarks_info"]["subsets"] = {
+            "shuffle_seed": args.seed + 1,
+            "prefixes": SUBSET_PREFIXES,
+            "s1_cells": 20,
+            "note": (
+                "Flags are prefixes of one seeded shuffle per mib_model and task, "
+                "not a cost ranking. P3 is 20 IOI + 20 MCQA within each model's 25. "
+                "S1 is 20 prompts round-robin across model and task. "
+                "MCQA validation has 50 rows, so 25 is half that split."
+            ),
+        }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=4, ensure_ascii=False)

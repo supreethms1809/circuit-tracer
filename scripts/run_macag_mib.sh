@@ -40,6 +40,7 @@ CLTS="${CLTS:-}"
 MIB_MODELS="${MIB_MODELS:-gemma2}"
 SKIP_TASKS="${SKIP_TASKS:-}"
 SKIP_GAME1="${SKIP_GAME1:-0}"
+SKIP_GAME2="${SKIP_GAME2:-0}"
 SKIP_BASELINES="${SKIP_BASELINES:-0}"
 NUM_WORKERS="${NUM_WORKERS:-1}"
 WORKER_ID="${WORKER_ID:-0}"
@@ -79,7 +80,8 @@ for task, items in d["tasks"].items():
             continue
         if limit and i >= limit:
             break
-        print(f"{task}\t{i}\t{it.get('mib_model', '')}")
+        subs = ",".join(it.get("subsets") or [])
+        print(f"{task}\t{i}\t{it.get('mib_model', '')}\t{subs}")
 PY
 }
 
@@ -114,18 +116,32 @@ for ci in "${!CLT_TAGS[@]}"; do
   tag="${CLT_TAGS[$ci]}"; model="${CLT_MODEL[$ci]}"; tset="${CLT_TSET[$ci]}"
   if [[ -n "$CLTS" && " $CLTS " != *" $tag "* ]]; then continue; fi
   echo ""; echo ">>> ===== CLT $tag ($model | $tset) ====="
-  while IFS=$'\t' read -r task idx mib_model; do
+  while IFS=$'\t' read -r task idx mib_model subsets; do
     [[ -z "$task" ]] && continue
     if ! clt_matches_mib_model "$tag" "$mib_model"; then
       continue
     fi
     cell=$CELL; CELL=$((CELL + 1))
-    (( cell % NUM_WORKERS == WORKER_ID )) || continue
     slug=$(get_field "$task" "$idx" id)
     prompt=$(get_field "$task" "$idx" clean_prompt)
     target=$(get_field "$task" "$idx" correct_token)
     foil=$(get_field "$task" "$idx" incorrect_token)
     corrupted=$(get_field "$task" "$idx" corrupted_prompt 2>/dev/null || true)
+    stages_to_run="all"
+    if [[ -n "${ASSIGNMENT_FILE:-}" ]]; then
+      stages_to_run="$(python - "$ASSIGNMENT_FILE" "${WORKER_ID:-0}" "$tag/$slug" <<'PY'
+import json, sys
+raw = json.load(open(sys.argv[1]))
+worker = int(sys.argv[2])
+cell = sys.argv[3]
+rows = raw[worker] if isinstance(raw, list) else raw.get(str(worker), [])
+print(" ".join(r["stage"] for r in rows if r.get("cell_id") == cell))
+PY
+)"
+      [[ -z "${stages_to_run// }" ]] && continue
+    else
+      (( cell % NUM_WORKERS == WORKER_ID )) || continue
+    fi
     out="$OUTROOT/$tag/$slug"
     echo ">>> [$tag/$slug] ($task/$mib_model) target=$target foil=$foil"
     mkdir -p "$out"
@@ -136,10 +152,22 @@ for ci in "${!CLT_TAGS[@]}"; do
     g1_done=1; g2_done=1; bl_done=1
     for kind in $SCORE_KINDS; do
       [[ "$SKIP_GAME1" == "1" || -f "$out/$kind/macag_game1.json" ]] || g1_done=0
-      if [[ -n "${SOLVERS// }" ]]; then
-        for solver in $SOLVERS; do
-          [[ -f "$out/$kind/macag_game2_${solver}.json" ]] || g2_done=0
-        done
+      game2_for_prompt=1
+      if [[ -n "${GAME2_SUBSET:-}" && ",${subsets}," != *",${GAME2_SUBSET},"* ]]; then
+        game2_for_prompt=0
+      fi
+      if [[ -n "${SOLVERS// }" && "$game2_for_prompt" == "1" ]]; then
+        if [[ -n "${GAME2_BETAS// }" ]]; then
+          for solver in $SOLVERS; do
+            for beta in $GAME2_BETAS; do
+              [[ -f "$out/$kind/macag_game2_${solver}_b${beta}.json" ]] || g2_done=0
+            done
+          done
+        else
+          for solver in $SOLVERS; do
+            [[ -f "$out/$kind/macag_game2_${solver}.json" ]] || g2_done=0
+          done
+        fi
       fi
       [[ "$SKIP_BASELINES" == "1" || -f "$out/$kind/macag_baselines.json" ]] || bl_done=0
     done
@@ -165,6 +193,10 @@ PY
     [[ "$SKIP_BASELINES" == "1" ]] && skip_baselines=(--skip-baselines)
     skip_game1=()
     [[ "$SKIP_GAME1" == "1" ]] && skip_game1=(--skip-game1)
+    skip_game2=()
+    if [[ "$SKIP_GAME2" == "1" || ( -n "${GAME2_SUBSET:-}" && ",${subsets}," != *",${GAME2_SUBSET},"* ) ]]; then
+      skip_game2=(--skip-game2)
+    fi
     if [[ "$g1_done" -eq 1 && "$g2_done" -eq 1 && "$bl_done" -eq 1 ]]; then
       echo "SKIP-done $tag/$slug" | tee -a "$STATUS"; continue
     fi
@@ -181,7 +213,9 @@ PY
       --max-feature-nodes "${MAX_FEATURE_NODES:-1000000}"
       "${resume_args[@]}"
       "${skip_game1[@]}"
+      "${skip_game2[@]}"
       "${skip_baselines[@]}"
+      --abr-iters "${ABR_ITERS:-4}"
     )
     [[ -n "${corrupted:-}" ]] && pipeline_args+=(--corrupted-prompt "$corrupted")
     if [[ "${CONNECTED}" == "1" || "${CONNECTED}" == "true" ]]; then
@@ -241,14 +275,55 @@ PY
     gpu_slot=""
     gpu_slot="$(macag_acquire_gpu_slot "$OUTROOT")" || exit 1
     pipeline_rc=0
-    if SCORE_KINDS="$SCORE_KINDS" CONNECTED="$CONNECTED" PREFILTER_TOP_K="${PREFILTER_TOP_K:-}" \
-         GAME2_PREFILTER_TOP_K="${GAME2_PREFILTER_TOP_K:-}" \
-         scripts/run_macag_pipeline.sh "${pipeline_args[@]}" \
-          > "$OUTROOT/$tag-$slug.log" 2>&1; then
-      :
-    else
-      pipeline_rc=1
-    fi
+    for stage in $stages_to_run; do
+      stage_args=()
+      stage_betas="${GAME2_BETAS:-}"
+      case "$stage" in
+        all) ;;
+        graph)
+          stage_args=(--skip-game1 --skip-game2 --skip-baselines)
+          ;;
+        game1_baselines)
+          stage_args=(--skip-game2)
+          ;;
+        game2_b0|game2_b0p2)
+          stage_args=(--skip-game1 --skip-baselines)
+          if [[ "$stage" == "game2_b0" ]]; then stage_betas="0"; else stage_betas="0.2"; fi
+          ;;
+        *)
+          echo "FAIL $tag/$slug unknown stage $stage" | tee -a "$STATUS"
+          pipeline_rc=1
+          break
+          ;;
+      esac
+      if [[ "$stage" != "all" && "$stage" != "graph" && ! -f "$graph_path" ]]; then
+        echo ">>> waiting for graph $graph_path (stage=$stage)"
+        waited=0
+        limit="${MACAG_STAGE_WAIT_SECONDS:-172800}"
+        while [[ ! -f "$graph_path" && "$waited" -lt "$limit" ]]; do
+          sleep 30
+          waited=$((waited + 30))
+        done
+        if [[ ! -f "$graph_path" ]]; then
+          echo "FAIL $tag/$slug graph not ready for $stage" | tee -a "$STATUS"
+          pipeline_rc=1
+          break
+        fi
+        stage_args+=(--skip-attribute)
+      fi
+      stage_log="$OUTROOT/$tag-$slug.log"
+      [[ "$stage" != "all" ]] && stage_log="$OUTROOT/$tag-$slug.$stage.log"
+      if SCORE_KINDS="$SCORE_KINDS" CONNECTED="$CONNECTED" PREFILTER_TOP_K="${PREFILTER_TOP_K:-}" \
+           GAME2_PREFILTER_TOP_K="${GAME2_PREFILTER_TOP_K:-}" \
+           GAME2_BETAS="$stage_betas" \
+           scripts/run_macag_pipeline.sh "${pipeline_args[@]}" "${stage_args[@]}" \
+            > "$stage_log" 2>&1; then
+        :
+      else
+        pipeline_rc=1
+        break
+      fi
+    done
     macag_release_gpu_slot "$gpu_slot"
     if [[ "$pipeline_rc" -eq 0 ]]; then
       echo "OK   $tag/$slug ($task/$mib_model)" | tee -a "$STATUS"

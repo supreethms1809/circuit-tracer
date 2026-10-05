@@ -81,7 +81,7 @@ CONNECTED="${CONNECTED:-0}"
 BUDGET="${BUDGET:-none}"
 REPORT_BUDGET="${REPORT_BUDGET:-128}"
 BETA=0.2
-ABR_ITERS=4
+ABR_ITERS="${ABR_ITERS:-4}"
 ALPHA=0.5
 LAM=0.02
 EPS=0.1
@@ -146,6 +146,14 @@ GAME2_ONE_SIDED="${GAME2_ONE_SIDED:-0}"
 # on its own kwargs file with no foil map. The score CHOICE itself is D1 —
 # this only wires the mechanism; default runs are unchanged.
 GAME2_SCORE_KIND="${GAME2_SCORE_KIND:-}"
+# Space-separated betas. Empty keeps the single --beta output name
+# macag_game2_<solver>.json. A list writes macag_game2_<solver>_b<beta>.json.
+GAME2_BETAS="${GAME2_BETAS:-}"
+# Unset inherits FREEZE_ATTENTION. The final campaign sets this false.
+GAME2_FREEZE_ATTENTION="${GAME2_FREEZE_ATTENTION:-}"
+BASELINE_LEGS="${BASELINE_LEGS:-native}"
+RANDOM_DRAWS="${RANDOM_DRAWS:-1}"
+ACDC_TARGET_FROM_GAME1="${ACDC_TARGET_FROM_GAME1:-0}"
 # freeze attention+embeddings+error nodes during scoring (scoring-time only;
 # the attribution graph is identical either way). true = frozen baseline.
 FREEZE_ATTENTION=true
@@ -258,6 +266,16 @@ fi
 
 CAND_ARG=()
 [[ -n "$CANDIDATES_FILE" ]] && CAND_ARG=(--candidates-file "$CANDIDATES_FILE")
+
+# Empty when the CLI defaults (caps on) are what we want. --no-cap-* only
+# when a campaign explicitly turns one off. Must be set: set -u.
+CAP_ARGS=()
+if [[ "${CAP_SUFFICIENCY}" == "0" || "${CAP_SUFFICIENCY}" == "false" ]]; then
+  CAP_ARGS+=(--no-cap-sufficiency)
+fi
+if [[ "${CAP_NECESSITY}" == "0" || "${CAP_NECESSITY}" == "false" ]]; then
+  CAP_ARGS+=(--no-cap-necessity)
+fi
 
 echo ">>> MACAG pipeline | model=$MODEL clt=$TRANSCODER_SET device=$DEVICE"
 echo ">>> prompt: $PROMPT"
@@ -408,7 +426,13 @@ for SCORE_KIND in $SCORE_KINDS; do
   G2_KWARGS="$KWARGS"
   if [[ "$GAME2_KIND_MODE" == "onesided" ]]; then
     G2_KWARGS="$KIND_DIR/oracle_kwargs_game2.json"
+    _saved_freeze="$FREEZE_ATTENTION"
+    if [[ -n "$GAME2_FREEZE_ATTENTION" ]]; then
+      FREEZE_ATTENTION="$GAME2_FREEZE_ATTENTION"
+    fi
     write_oracle_kwargs "$G2_KWARGS" "$GAME2_SCORE_KIND" 1
+    FREEZE_ATTENTION="$_saved_freeze"
+    echo ">>>      Game 2 freeze_attention=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["freeze_attention"])' "$G2_KWARGS")"
   fi
 
   if [[ "$SKIP_GAME1" -eq 0 ]]; then
@@ -478,29 +502,40 @@ print("wrote placeholder", sys.argv[2])
 PY
     fi
   else
+    if [[ -n "${GAME2_BETAS// }" ]]; then
+      beta_list="$GAME2_BETAS"
+    else
+      beta_list="$BETA"
+    fi
     for solver in $SOLVERS; do
-      g2_out="$KIND_DIR/macag_game2_${solver}.json"
+      for beta in $beta_list; do
+      if [[ -n "${GAME2_BETAS// }" ]]; then
+        g2_out="$KIND_DIR/macag_game2_${solver}_b${beta}.json"
+        g2_ckpt="$KIND_DIR/macag_game2_${solver}_b${beta}.ckpt.json"
+      else
+        g2_out="$KIND_DIR/macag_game2_${solver}.json"
+        g2_ckpt="$KIND_DIR/macag_game2_${solver}.ckpt.json"
+      fi
       if [[ -f "$g2_out" ]]; then
-        if [[ "$GAME2_KIND_MODE" == "onesided" ]]; then
-          # Never reuse a structural (gap-oracle) Game 2 artifact for a
-          # one-sided run; the overlap numbers mean different things.
-          if G2_EXISTING="$g2_out" python - <<'PY'
+        if G2_EXISTING="$g2_out" G2_BETA="$beta" G2_NEED_ONESIDED="$([[ "$GAME2_KIND_MODE" == "onesided" || "$GAME2_ONE_SIDED" == "1" ]] && echo 1 || echo 0)" python - <<'PY'
 import json, os, sys
 params = (json.load(open(os.environ["G2_EXISTING"])).get("params") or {})
-sys.exit(0 if params.get("one_sided") is True else 1)
+ok = True
+if os.environ.get("G2_NEED_ONESIDED") == "1" and params.get("one_sided") is not True:
+    ok = False
+have = params.get("beta")
+if have is not None and abs(float(have) - float(os.environ["G2_BETA"])) > 1e-9:
+    ok = False
+sys.exit(0 if ok else 1)
 PY
-          then
-            echo ">>>      solver=$solver -> $g2_out (already present, one-sided)"
-            continue
-          else
-            echo ">>>      solver=$solver -> $g2_out exists but is not one-sided; re-running"
-          fi
-        else
-          echo ">>>      solver=$solver -> $g2_out (already present)"
+        then
+          echo ">>>      solver=$solver beta=$beta -> $g2_out (already present)"
           continue
+        else
+          echo ">>>      solver=$solver beta=$beta -> $g2_out exists but protocol mismatches; re-running"
         fi
       fi
-      echo ">>>      solver=$solver -> $g2_out"
+      echo ">>>      solver=$solver beta=$beta -> $g2_out"
       g2_cmd=(
         python -m macag.cli.run_macag game2
         --graph-json "$GRAPH" --target y --foil y_foil --input-id "$SLUG"
@@ -512,24 +547,31 @@ PY
       ((${#CONNECTED_ARGS[@]})) && g2_cmd+=("${CONNECTED_ARGS[@]}")
       g2_cmd+=(
         "${GAME_BUDGET_ARGS[@]}"
-        --beta "$BETA" --abr-iters "$ABR_ITERS"
+        --beta "$beta" --abr-iters "$ABR_ITERS"
         --solver "$solver" --fp-tol "$FP_TOL"
         --alpha "$ALPHA" --lam "$LAM"
         "${CAP_ARGS[@]}"
-        --checkpoint-json "$KIND_DIR/macag_game2_${solver}.ckpt.json"
+        --checkpoint-json "$g2_ckpt"
         --output-json "$g2_out"
       )
       if [[ "${PARALLEL_AGENTS}" == "0" || "${PARALLEL_AGENTS}" == "false" || "${PARALLEL_AGENTS}" == "no" ]]; then
         g2_cmd+=(--no-parallel-agents)
       fi
-      # A1: one-sided mode always carries the fail-fast flag; explicit
+      # One-sided mode always carries the fail-fast flag; explicit
       # --game2-one-sided also forces it on shared kwargs (then it errors, by
       # design — a gap oracle cannot support a separation claim).
       [[ "$GAME2_ONE_SIDED" == "1" || "$GAME2_KIND_MODE" == "onesided" ]] && g2_cmd+=(--game2-one-sided)
       "${g2_cmd[@]}"
+      done
     done
-    if [[ -f "$KIND_DIR/macag_game2_abr.json" ]]; then
+    if [[ -n "${GAME2_BETAS// }" && -f "$KIND_DIR/macag_game2_abr_b0.2.json" ]]; then
+      cp "$KIND_DIR/macag_game2_abr_b0.2.json" "$G2_OUT"
+    elif [[ -f "$KIND_DIR/macag_game2_abr.json" ]]; then
       cp "$KIND_DIR/macag_game2_abr.json" "$G2_OUT"
+    elif [[ -n "${GAME2_BETAS// }" ]]; then
+      first_beta="${GAME2_BETAS%% *}"
+      first_solver="${SOLVERS%% *}"
+      cp "$KIND_DIR/macag_game2_${first_solver}_b${first_beta}.json" "$G2_OUT"
     else
       first_solver="${SOLVERS%% *}"
       cp "$KIND_DIR/macag_game2_${first_solver}.json" "$G2_OUT"
@@ -542,7 +584,11 @@ PY
     else
       echo ">>> [5/6] Baselines (methods=$BASELINE_METHODS, report_budget=$BASELINE_BUDGET) -> $BASELINES_OUT"
       acdc_target_args=()
-      [[ -n "${ACDC_TARGET_K:-}" ]] && acdc_target_args=(--acdc-target-k "$ACDC_TARGET_K")
+      if [[ "$ACDC_TARGET_FROM_GAME1" == "1" && -f "$G1_OUT" ]]; then
+        acdc_target_args=(--acdc-target-from-game1 "$G1_OUT")
+      elif [[ -n "${ACDC_TARGET_K:-}" ]]; then
+        acdc_target_args=(--acdc-target-k "$ACDC_TARGET_K")
+      fi
       bl_cmd=(
         python -m macag.cli.run_baselines
         --graph-json "$GRAPH" --target y --input-id "$SLUG"
@@ -560,6 +606,8 @@ PY
         --methods "$BASELINE_METHODS"
         --shapley-permutations "$SHAPLEY_PERMUTATIONS"
         --shapley-seed "$SHAPLEY_SEED"
+        --random-draws "$RANDOM_DRAWS"
+        --legs "$BASELINE_LEGS"
         "${acdc_target_args[@]}"
         "${CAP_ARGS[@]}"
         --output-json "$BASELINES_OUT"
