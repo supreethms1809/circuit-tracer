@@ -3,7 +3,8 @@
 #
 # 5 nodes x 2 GPUs x 4 workers = 40 slots. Without a pilot cost table the
 # prompts are sharded evenly. Do not launch until scripts/macag_check_eval_ready.py passes
-# (clean tree, tag macag-final-v1, prompt digest).
+# (clean tree, tag macag-final-v2, prompt digest). macag-final-v1 died before
+# Game 1: set -u rejected an unset PRIMARY_KIND.
 #
 #   sbatch --export=ALL,CLTS=llama32-524k scripts/slurm/submit_macag_final.sh
 #
@@ -75,7 +76,7 @@ case "$CLTS" in
 esac
 
 python scripts/macag_check_eval_ready.py \
-  --tag "${MACAG_TAG:-macag-final-v1}" \
+  --tag "${MACAG_TAG:-macag-final-v2}" \
   --prompts "$JSON" \
   ${PROMPTS_SHA256:+--prompts-sha256 "$PROMPTS_SHA256"}
 

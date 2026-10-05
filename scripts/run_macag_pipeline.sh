@@ -411,7 +411,8 @@ BASELINES_STOP_METRIC="$STOP_METRIC"
 for SCORE_KIND in $SCORE_KINDS; do
   KIND_DIR="$OUTDIR/$SCORE_KIND"
   mkdir -p "$KIND_DIR"
-  [[ -z "$PRIMARY_KIND" ]] && PRIMARY_KIND="$SCORE_KIND"
+  # ${var:-} is required: set -u errors on a bare unset PRIMARY_KIND.
+  PRIMARY_KIND="${PRIMARY_KIND:-$SCORE_KIND}"
   KWARGS="$KIND_DIR/oracle_kwargs.json"
   G1_OUT="$KIND_DIR/macag_game1.json"
   G2_OUT="$KIND_DIR/macag_game2.json"
@@ -636,7 +637,7 @@ PY
   fi
 done
 
-if [[ -n "$PRIMARY_KIND" && -d "$OUTDIR/$PRIMARY_KIND" ]]; then
+if [[ -n "${PRIMARY_KIND:-}" && -d "$OUTDIR/$PRIMARY_KIND" ]]; then
   for f in macag_game1.json macag_game2.json macag_baselines.json oracle_kwargs.json \
            macag_game2_abr.json macag_game2_fp.json macag_kl_faithfulness.json; do
     if [[ -f "$OUTDIR/$PRIMARY_KIND/$f" && ! -e "$OUTDIR/$f" ]]; then
