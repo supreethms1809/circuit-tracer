@@ -82,7 +82,9 @@ def solve_game1_dual(
     progress: bool = True,
     log_every: int = 50,
     checkpoint_path: str | Path | None = None,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
+    verdict_margin: float = 0.0,
 ) -> DualGame1Result:
     """Run matched frozen + unfrozen Game 1 legs and diagnose attention mediation.
 
@@ -116,6 +118,7 @@ def solve_game1_dual(
         log_every=log_every,
         checkpoint_path=checkpoint_path,
         cap_sufficiency=cap_sufficiency,
+        cap_necessity=cap_necessity,
     )
     params = {
         "alpha": alpha,
@@ -127,6 +130,8 @@ def solve_game1_dual(
         "connected": connected,
         "min_gain": min_gain,
         "cap_sufficiency": cap_sufficiency,
+        "cap_necessity": cap_necessity,
+        "verdict_margin": verdict_margin,
         "matched": True,
     }
     pool = list(candidates) if candidates is not None else list(graph.nodes())
@@ -162,6 +167,7 @@ def solve_game1_dual(
             candidate_count=total_candidates,
             params={k: v for k, v in params.items() if k != "matched"},
             cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
 
     ckpt = _load_game1_checkpoint(checkpoint_path)
@@ -221,6 +227,7 @@ def solve_game1_dual(
         unfrozen_metrics=unfrozen_result.metrics,
         frozen_evidence=frozen_result.evidence,
         unfrozen_evidence=unfrozen_result.evidence,
+        margin=verdict_margin,
     )
     if progress:
         LOGGER.info(

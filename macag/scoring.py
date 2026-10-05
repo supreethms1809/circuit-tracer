@@ -153,11 +153,16 @@ class ScoringOracle:
         return self.remove(nodes, target)
 
     def cache_stats(self) -> dict[str, int]:
+        # P2: expose real model forwards alongside logical oracle scores.
+        # answer_span runs 2 forwards per score; backends without a
+        # forward_count (toy/callback scorers) fall back to oracle_calls.
+        forwards = getattr(self.backend, "forward_count", None)
         with self._cache_lock:
             return {
                 "oracle_calls": self._oracle_calls,
                 "cache_hits": self._cache_hits,
                 "cache_size": len(self._cache),
+                "forwards": self._oracle_calls if forwards is None else int(forwards),
             }
 
     def clear_cache(self) -> None:
@@ -168,6 +173,12 @@ class ScoringOracle:
         with self._cache_lock:
             self._oracle_calls = 0
             self._cache_hits = 0
+        # Per-solve accounting: the backend forward counter must reset with
+        # the oracle counters, or per-method costs accumulate across solves
+        # sharing one backend (dual legs use separate backends; the harness
+        # reuses one backend across methods).
+        if hasattr(self.backend, "forward_count"):
+            self.backend.forward_count = 0
 
 
 def derive_oracle_with_freeze(oracle: ScoringOracle, freeze_attention: bool) -> ScoringOracle:
@@ -194,6 +205,14 @@ def derive_oracle_with_freeze(oracle: ScoringOracle, freeze_attention: bool) -> 
     # Re-apply the source's live universe so both legs ablate the same node set.
     if hasattr(derived, "restrict_universe") and hasattr(backend, "intervention_universe"):
         derived.restrict_universe(backend.intervention_universe())
+    # P2: replace() re-runs __init__, so init=False caches (_ref_logits,
+    # _prompt_token_ids, forward_count) already reset — but the KL reference
+    # correctness depends on it (a frozen-convention ref reused under the
+    # unfrozen convention would silently corrupt every KL score). Reset
+    # explicitly so the invariant does not depend on dataclass-replace
+    # semantics surviving future field changes.
+    if hasattr(derived, "_ref_logits"):
+        derived._ref_logits = None
     return ScoringOracle(backend=derived, cache_enabled=oracle.cache_enabled)
 
 
@@ -409,7 +428,14 @@ class ReplacementModelInterventionScorer:
             raise ValueError(
                 "score_kind='logit_gap' requires foil_by_target[target] or default_foil."
             )
-        return target_idx, self.target_to_logit_idx[foil_target]
+        foil_idx = self.target_to_logit_idx[foil_target]
+        if foil_idx == target_idx:
+            raise ValueError(
+                f"logit_gap target {target!r} and foil {foil_target!r} share logit "
+                f"index {target_idx}; the gap is identically zero. Targets/foils "
+                "sharing a first sub-token need score_kind='answer_span'."
+            )
+        return target_idx, foil_idx
 
     def _run_logits(self, interventions: list[Intervention], inputs: Any = None) -> Any:
         self.forward_count += 1

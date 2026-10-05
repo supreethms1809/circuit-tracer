@@ -211,6 +211,26 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Game 1 or Game 2: read/write a solver checkpoint so a 24h kill can resume.",
     )
+    parser.add_argument(
+        "--cap-sufficiency",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Cap sufficiency at the clean score: min(keep, all) - empty (default: on; "
+            "disable with --no-cap-sufficiency). Uncapped keep-only overshoot is still "
+            "recorded as keep_excess. All games and the Shapley gold share this v."
+        ),
+    )
+    parser.add_argument(
+        "--cap-necessity",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Cap necessity at the recoverable range: all - max(remove, empty) (default: "
+            "on; disable with --no-cap-necessity). Overshoot below the empty floor is "
+            "recorded as remove_below_empty; report N/R alongside N."
+        ),
+    )
     parser.set_defaults(progress=True)
     parser.add_argument(
         "--progress",
@@ -329,16 +349,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     game1.add_argument(
-        "--cap-sufficiency",
-        action="store_true",
-        help=(
-            "Cap sufficiency at the clean score: min(keep_only, all) - empty. "
-            "Keep-only logit gap above the clean model is not rewarded. "
-            "Necessity is unchanged. Raw sufficiency and |keep_only - all| "
-            "are still written on the score record."
-        ),
-    )
-    game1.add_argument(
         "--freeze-mode",
         choices=("frozen", "unfrozen", "both"),
         default="frozen",
@@ -350,6 +360,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "legs) and emit the per-prompt attention-mediation diagnostic. "
             "unfrozen/both require a ReplacementModel-backed oracle "
             "(not --toy-oracle-json)."
+        ),
+    )
+    game1.add_argument(
+        "--verdict-margin",
+        type=float,
+        default=0.0,
+        help=(
+            "Dead-band half-width for the --freeze-mode both attention-mediation "
+            "verdict: ranges inside [-margin, +margin] count as neither robustly "
+            "negative nor robustly positive (default 0.0 = legacy strict-zero rule)."
         ),
     )
 
@@ -391,6 +411,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Within each Jacobi round, run y and foil best-responses concurrently "
             "and only exchange sets at the round barrier (default: on). Disable "
             "to force sequential y-then-foil (same sets; useful for debugging)."
+        ),
+    )
+    game2.add_argument(
+        "--game2-one-sided",
+        action="store_true",
+        help=(
+            "Require one-sided per-agent scores for the separation claim (A1). Fails "
+            "fast if the oracle is a symmetric logit_gap pair (f_foil == -f_y), where "
+            "near-zero overlap is structural. One-sided means score_kind=logit (or "
+            "prob/negative_loss): each agent scores its own logit. Always report a "
+            "beta=0 control, a Game-1-twice control, and a beta sweep alongside."
         ),
     )
 
@@ -459,6 +490,8 @@ def main(argv: list[str] | None = None) -> int:
             log_every=args.log_every,
             checkpoint_path=args.checkpoint_json,
             cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
+            verdict_margin=args.verdict_margin,
         )
         output = {
             "input_id": args.input_id,
@@ -497,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
             log_every=args.log_every,
             checkpoint_path=args.checkpoint_json,
             cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
         )
         output = {
             "input_id": args.input_id,
@@ -506,6 +540,17 @@ def main(argv: list[str] | None = None) -> int:
             **_game1_leg_payload(result),
         }
     else:
+        if getattr(args, "game2_one_sided", False):
+            from macag.games.game2_contrastive import is_symmetric_gap_oracle
+
+            if is_symmetric_gap_oracle(oracle, args.target, args.foil):
+                raise ValueError(
+                    "--game2-one-sided requires one-sided per-agent scores "
+                    "(score_kind=logit/prob/negative_loss), but the built oracle is a "
+                    "symmetric logit_gap pair where f_foil == -f_y and zero overlap is "
+                    "structural (A1). Rebuild the oracle kwargs with "
+                    '"score_kind": "logit" for Game 2.'
+                )
         result = solve_game2(
             graph=graph,
             oracle=oracle,
@@ -526,6 +571,8 @@ def main(argv: list[str] | None = None) -> int:
             log_every=args.log_every,
             checkpoint_path=args.checkpoint_json,
             parallel_agents=args.parallel_agents,
+            cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
         )
         output = {
             "input_id": args.input_id,

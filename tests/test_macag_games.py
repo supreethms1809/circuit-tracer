@@ -79,7 +79,10 @@ class _OvershootScorer:
 
 def test_cap_sufficiency_stops_rewarding_overshoot() -> None:
     oracle = ScoringOracle(backend=_OvershootScorer(), cache_enabled=True)
-    raw = compute_faithfulness_metrics(oracle, target="y", nodes={"hot"}, alpha=1.0)
+    # Merged mainline caps by default; the uncapped leg is explicit.
+    raw = compute_faithfulness_metrics(
+        oracle, target="y", nodes={"hot"}, alpha=1.0, cap_sufficiency=False
+    )
     capped = compute_faithfulness_metrics(
         oracle, target="y", nodes={"hot"}, alpha=1.0, cap_sufficiency=True
     )
@@ -107,7 +110,7 @@ def test_cap_sufficiency_changes_which_node_game1_keeps() -> None:
         budget=1,
         progress=False,
     )
-    raw = solve_game1(**common)
+    raw = solve_game1(**common, cap_sufficiency=False)
     capped = solve_game1(**common, cap_sufficiency=True)
     assert raw.evidence == {"hot"}
     assert capped.evidence == {"fit"}
@@ -929,7 +932,12 @@ def test_derive_oracle_with_freeze_shares_model_and_resets_cache() -> None:
     assert derived.backend is not scorer
     assert derived.backend.freeze_attention is False
     assert derived.backend.model is model  # shared shallowly, never reloaded
-    assert derived.cache_stats() == {"oracle_calls": 0, "cache_hits": 0, "cache_size": 0}
+    assert derived.cache_stats() == {
+        "oracle_calls": 0,
+        "cache_hits": 0,
+        "cache_size": 0,
+        "forwards": 0,  # P2: real-forward counter surfaced alongside oracle calls
+    }
     # Source untouched.
     assert scorer.freeze_attention is True
     assert oracle.cache_stats()["cache_size"] >= 1

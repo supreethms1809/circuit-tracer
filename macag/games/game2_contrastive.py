@@ -52,6 +52,38 @@ def _load_game2_checkpoint(path: str | Path | None) -> dict[str, Any] | None:
     return data
 
 
+def is_symmetric_gap_oracle(oracle: ScoringOracle, y: TargetId, y_foil: TargetId) -> bool:
+    """Detect the A1 structural-overlap configuration.
+
+    With a gap-style score (``logit_gap`` or ``answer_span``) and a swapped foil
+    map (``y<->y_foil``), ``f_foil(S) == -f_y(S)`` for every coalition, so the
+    foil agent maximizes the negation of the target agent's objective and
+    near-zero overlap is structural rather than empirical. Returns True in
+    exactly that case. One-sided oracles (``logit``/``prob``/``negative_loss``,
+    each agent scoring its own logit) return False; the target-blind
+    ``kl_divergence`` score is neither symmetric nor one-sided (both agents see
+    the same objective).
+    """
+    backend = getattr(oracle, "backend", None)
+    score_kind = getattr(backend, "score_kind", None)
+    if score_kind not in ("logit_gap", "answer_span"):
+        return False
+    foil_map = getattr(backend, "foil_by_target", None) or {}
+    try:
+        return foil_map.get(y) == y_foil and foil_map.get(y_foil) == y
+    except Exception:
+        return False
+
+
+def is_one_sided_oracle(oracle: ScoringOracle) -> bool:
+    """True when each Game 2 agent scores its own logit (A1 separation setup)."""
+    return getattr(getattr(oracle, "backend", None), "score_kind", None) in (
+        "logit",
+        "prob",
+        "negative_loss",
+    )
+
+
 def _sort_key(node: NodeId) -> str:
     return str(node)
 
@@ -77,6 +109,8 @@ def _prefilter_with_overlap_penalty(
     beta: float,
     top_k: int,
     connected: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> list[NodeId]:
     if top_k <= 0:
         return []
@@ -86,7 +120,10 @@ def _prefilter_with_overlap_penalty(
         if not graph.has_node(node):
             continue
         singleton = {node}
-        metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=singleton, alpha=alpha)
+        metrics = compute_faithfulness_metrics(
+            oracle=oracle, target=target, nodes=singleton, alpha=alpha,
+            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+        )
         utility = game2_utility(
             faithfulness_delta=metrics.faithfulness_delta,
             size=1,
@@ -122,6 +159,8 @@ def _best_response(
     progress_desc: str,
     initial_selected: set[NodeId] | None = None,
     on_add: Callable[[set[NodeId]], None] | None = None,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> set[NodeId]:
     candidate_pool = list(candidates)
     if prefilter_top_k is not None:
@@ -136,6 +175,8 @@ def _best_response(
             beta=beta,
             top_k=prefilter_top_k,
             connected=connected,
+            cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
@@ -144,7 +185,10 @@ def _best_response(
         key = frozenset(nodes)
         if key in utility_cache:
             return utility_cache[key]
-        metrics = compute_faithfulness_metrics(oracle=oracle, target=target, nodes=nodes, alpha=alpha)
+        metrics = compute_faithfulness_metrics(
+            oracle=oracle, target=target, nodes=nodes, alpha=alpha,
+            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+        )
         utility = game2_utility(
             faithfulness_delta=metrics.faithfulness_delta,
             size=len(nodes),
@@ -285,6 +329,8 @@ def solve_game2(
     log_every: int = 50,
     checkpoint_path: str | Path | None = None,
     parallel_agents: bool = True,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> ContrastiveEvidenceResult:
     """Contrastive evidence allocation via ABR or fictitious play.
 
@@ -311,6 +357,16 @@ def solve_game2(
 
     Reported metrics/utilities always use the HARD overlap of the returned joint
     allocation, so ABR and FP results are directly comparable.
+
+    ``beta`` procedure notes: ``beta=0`` decouples the game into two
+    independent single-target allocations (the no-interaction control — each
+    agent's evidence is just its own Game-1-style best set, so any overlap
+    there is the chance baseline for the penalized runs). ``beta``-sweep
+    curves (0 → large) separate interaction-driven de-overlap from
+    single-agent relevance; report them alongside any fixed-beta separation
+    claim. A Game-1-twice control (both agents run as independent Game 1
+    solves) checks whether the joint solver finds anything beyond two
+    independent greedy runs.
     """
     if solver not in ("abr", "fp"):
         raise ValueError("solver must be 'abr' or 'fp'.")
@@ -338,6 +394,18 @@ def solve_game2(
     # Full candidate count before per-agent prefilters, so reported sparsity reflects
     # the true graph rather than the prefiltered pool (I4).
     total_candidates = len(candidate_pool)
+    structural_gap_symmetry = is_symmetric_gap_oracle(oracle, y, y_foil)
+    one_sided = is_one_sided_oracle(oracle)
+    if structural_gap_symmetry:
+        LOGGER.warning(
+            "Game2 A1: symmetric gap-style foil map (%r<->%r) makes "
+            "f_foil(S) == -f_y(S) for every coalition, so near-zero overlap is "
+            "structural. For a separation claim use one-sided per-agent scores "
+            "(score_kind=logit/prob/negative_loss) and report a beta=0 control, "
+            "a Game-1-twice control, and a beta sweep.",
+            y,
+            y_foil,
+        )
     if progress:
         LOGGER.info(
             "Game2 start: solver=%s candidates=%d max_iters=%d budget=%s "
@@ -357,8 +425,14 @@ def solve_game2(
     ) -> tuple[FaithfulnessMetrics, FaithfulnessMetrics, float, float, float]:
         """Score a joint allocation: per-agent metrics, utilities, combined utility."""
         shared_nodes = e_y & e_foil
-        m_y = compute_faithfulness_metrics(oracle=oracle, target=y, nodes=e_y, alpha=alpha)
-        m_foil = compute_faithfulness_metrics(oracle=oracle, target=y_foil, nodes=e_foil, alpha=alpha)
+        m_y = compute_faithfulness_metrics(
+            oracle=oracle, target=y, nodes=e_y, alpha=alpha,
+            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+        )
+        m_foil = compute_faithfulness_metrics(
+            oracle=oracle, target=y_foil, nodes=e_foil, alpha=alpha,
+            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+        )
         u_y = game2_utility(
             faithfulness_delta=m_y.faithfulness_delta,
             size=len(e_y),
@@ -492,6 +566,8 @@ def solve_game2(
             progress_desc=progress_desc,
             initial_selected=seed,
             on_add=on_add,
+            cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
 
     for iteration in range(start_iter, abr_iters + 1):
@@ -708,6 +784,10 @@ def solve_game2(
             "solver": solver,
             "fp_tol": fp_tol if solver == "fp" else None,
             "parallel_agents": parallel_agents,
+            "cap_sufficiency": cap_sufficiency,
+            "cap_necessity": cap_necessity,
+            "structural_gap_symmetry": structural_gap_symmetry,
+            "one_sided": one_sided,
         },
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],

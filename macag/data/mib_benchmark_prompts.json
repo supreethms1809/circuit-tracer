@@ -3030,11 +3030,13 @@
                 "clean_prompt": "Question: Boxes are brown. What color are boxes?\nA. pink\nB. red\nC. green\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Boxes are brown. What color are boxes?\n1. pink\n2. red\n3. green\n4. brown\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 0
+                    "index": 0,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3045,11 +3047,13 @@
                 "clean_prompt": "Question: Paper towels are white. What color are paper towels?\nA. green\nB. red\nC. white\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Paper towels are white. What color are paper towels?\n1. green\n2. red\n3. white\n4. blue\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 1
+                    "index": 1,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3060,11 +3064,13 @@
                 "clean_prompt": "Question: Saucers are white. What color are saucers?\nA. blue\nB. brown\nC. white\nD. black\nAnswer:",
                 "corrupted_prompt": "Question: Saucers are white. What color are saucers?\n1. blue\n2. brown\n3. white\n4. black\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 2
+                    "index": 2,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3075,11 +3081,13 @@
                 "clean_prompt": "Question: Cucumbers are green. What color are cucumbers?\nA. blue\nB. white\nC. red\nD. green\nAnswer:",
                 "corrupted_prompt": "Question: Cucumbers are green. What color are cucumbers?\n1. blue\n2. white\n3. red\n4. green\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 3
+                    "index": 3,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3090,11 +3098,13 @@
                 "clean_prompt": "Question: Lagoons are blue. What color are lagoons?\nA. blue\nB. red\nC. black\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Lagoons are blue. What color are lagoons?\n1. blue\n2. red\n3. black\n4. purple\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 4
+                    "index": 4,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3105,11 +3115,13 @@
                 "clean_prompt": "Question: Light bulbs are white. What color are light bulbs?\nA. green\nB. purple\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Light bulbs are white. What color are light bulbs?\n1. green\n2. purple\n3. white\n4. pink\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 5
+                    "index": 5,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3120,11 +3132,13 @@
                 "clean_prompt": "Question: Porcupines are brown. What color are porcupines?\nA. gray\nB. orange\nC. brown\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Porcupines are brown. What color are porcupines?\n1. gray\n2. orange\n3. brown\n4. purple\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 6
+                    "index": 6,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3135,11 +3149,13 @@
                 "clean_prompt": "Question: Violins are brown. What color are violins?\nA. purple\nB. white\nC. blue\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Violins are brown. What color are violins?\n1. purple\n2. white\n3. blue\n4. brown\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 7
+                    "index": 7,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3150,11 +3166,13 @@
                 "clean_prompt": "Question: Ladders are gray. What color are ladders?\nA. black\nB. blue\nC. gray\nD. orange\nAnswer:",
                 "corrupted_prompt": "Question: Ladders are gray. What color are ladders?\n1. black\n2. blue\n3. gray\n4. orange\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 8
+                    "index": 8,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3165,11 +3183,13 @@
                 "clean_prompt": "Question: Cherries are red. What color are cherries?\nA. red\nB. white\nC. purple\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Cherries are red. What color are cherries?\n1. red\n2. white\n3. purple\n4. pink\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 9
+                    "index": 9,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3180,11 +3200,13 @@
                 "clean_prompt": "Question: Crocodiles are green. What color are crocodiles?\nA. white\nB. green\nC. gray\nD. black\nAnswer:",
                 "corrupted_prompt": "Question: Crocodiles are green. What color are crocodiles?\n1. white\n2. green\n3. gray\n4. black\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 10
+                    "index": 10,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3195,11 +3217,13 @@
                 "clean_prompt": "Question: A plum is purple. What color is a plum?\nA. blue\nB. green\nC. red\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: A plum is purple. What color is a plum?\n1. blue\n2. green\n3. red\n4. purple\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 11
+                    "index": 11,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3210,11 +3234,13 @@
                 "clean_prompt": "Question: Dolphins are gray. What color are dolphins?\nA. purple\nB. blue\nC. gray\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Dolphins are gray. What color are dolphins?\n1. purple\n2. blue\n3. gray\n4. pink\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 12
+                    "index": 12,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3225,11 +3251,13 @@
                 "clean_prompt": "Question: Penguins are black. What color are penguins?\nA. black\nB. red\nC. orange\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Penguins are black. What color are penguins?\n1. black\n2. red\n3. orange\n4. purple\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 13
+                    "index": 13,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3240,11 +3268,13 @@
                 "clean_prompt": "Question: Bronze sculptures are brown. What color are bronze sculptures?\nA. brown\nB. green\nC. gray\nD. orange\nAnswer:",
                 "corrupted_prompt": "Question: Bronze sculptures are brown. What color are bronze sculptures?\n1. brown\n2. green\n3. gray\n4. orange\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 14
+                    "index": 14,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3255,11 +3285,13 @@
                 "clean_prompt": "Question: Platters are white. What color are platters?\nA. black\nB. green\nC. purple\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Platters are white. What color are platters?\n1. black\n2. green\n3. purple\n4. white\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 15
+                    "index": 15,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3270,11 +3302,13 @@
                 "clean_prompt": "Question: Blue jays are blue. What color are blue jays?\nA. green\nB. blue\nC. red\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Blue jays are blue. What color are blue jays?\n1. green\n2. blue\n3. red\n4. yellow\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 16
+                    "index": 16,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3285,11 +3319,13 @@
                 "clean_prompt": "Question: Beets are red. What color are beets?\nA. purple\nB. blue\nC. red\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Beets are red. What color are beets?\n1. purple\n2. blue\n3. red\n4. yellow\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 17
+                    "index": 17,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3300,11 +3336,13 @@
                 "clean_prompt": "Question: Watermelons are green. What color are watermelons?\nA. red\nB. gray\nC. pink\nD. green\nAnswer:",
                 "corrupted_prompt": "Question: Watermelons are green. What color are watermelons?\n1. red\n2. gray\n3. pink\n4. green\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 18
+                    "index": 18,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3315,11 +3353,13 @@
                 "clean_prompt": "Question: Bones are white. What color are bones?\nA. purple\nB. white\nC. pink\nD. red\nAnswer:",
                 "corrupted_prompt": "Question: Bones are white. What color are bones?\n1. purple\n2. white\n3. pink\n4. red\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 19
+                    "index": 19,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3330,11 +3370,13 @@
                 "clean_prompt": "Question: Tacos are brown. What color are tacos?\nA. blue\nB. white\nC. red\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Tacos are brown. What color are tacos?\n1. blue\n2. white\n3. red\n4. brown\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 20
+                    "index": 20,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3345,11 +3387,13 @@
                 "clean_prompt": "Question: Scissors are gray. What color are scissors?\nA. pink\nB. black\nC. gray\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Scissors are gray. What color are scissors?\n1. pink\n2. black\n3. gray\n4. yellow\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 21
+                    "index": 21,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3360,11 +3404,13 @@
                 "clean_prompt": "Question: Gravel is gray. What color is gravel?\nA. blue\nB. purple\nC. gray\nD. black\nAnswer:",
                 "corrupted_prompt": "Question: Gravel is gray. What color is gravel?\n1. blue\n2. purple\n3. gray\n4. black\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 22
+                    "index": 22,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3375,11 +3421,13 @@
                 "clean_prompt": "Question: Cherry blossoms are pink. What color are cherry blossoms?\nA. green\nB. pink\nC. blue\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Cherry blossoms are pink. What color are cherry blossoms?\n1. green\n2. pink\n3. blue\n4. white\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 23
+                    "index": 23,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3390,11 +3438,13 @@
                 "clean_prompt": "Question: Taxis are yellow. What color are taxis?\nA. yellow\nB. gray\nC. green\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Taxis are yellow. What color are taxis?\n1. yellow\n2. gray\n3. green\n4. brown\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 24
+                    "index": 24,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3405,11 +3455,13 @@
                 "clean_prompt": "Question: Binoculars are black. What color are binoculars?\nA. black\nB. orange\nC. blue\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Binoculars are black. What color are binoculars?\n1. black\n2. orange\n3. blue\n4. purple\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 25
+                    "index": 25,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3420,11 +3472,13 @@
                 "clean_prompt": "Question: Otters are brown. What color are otters?\nA. red\nB. brown\nC. orange\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Otters are brown. What color are otters?\n1. red\n2. brown\n3. orange\n4. pink\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 26
+                    "index": 26,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3435,11 +3489,13 @@
                 "clean_prompt": "Question: Clocks are white. What color are clocks?\nA. pink\nB. orange\nC. black\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Clocks are white. What color are clocks?\n1. pink\n2. orange\n3. black\n4. white\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 27
+                    "index": 27,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3450,11 +3506,13 @@
                 "clean_prompt": "Question: Cheeses are yellow. What color are cheeses?\nA. gray\nB. white\nC. green\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Cheeses are yellow. What color are cheeses?\n1. gray\n2. white\n3. green\n4. yellow\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 28
+                    "index": 28,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3465,11 +3523,13 @@
                 "clean_prompt": "Question: Volleyballs are white. What color are volleyballs?\nA. gray\nB. blue\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Volleyballs are white. What color are volleyballs?\n1. gray\n2. blue\n3. white\n4. pink\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 29
+                    "index": 29,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3480,11 +3540,13 @@
                 "clean_prompt": "Question: A rose is red. What color is a rose?\nA. red\nB. black\nC. orange\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: A rose is red. What color is a rose?\n1. red\n2. black\n3. orange\n4. brown\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 30
+                    "index": 30,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3495,11 +3557,13 @@
                 "clean_prompt": "Question: A frog is green. What color is a frog?\nA. white\nB. yellow\nC. black\nD. green\nAnswer:",
                 "corrupted_prompt": "Question: A frog is green. What color is a frog?\n1. white\n2. yellow\n3. black\n4. green\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 31
+                    "index": 31,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3510,11 +3574,13 @@
                 "clean_prompt": "Question: Tuxedos are black. What color are tuxedos?\nA. gray\nB. purple\nC. black\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Tuxedos are black. What color are tuxedos?\n1. gray\n2. purple\n3. black\n4. white\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 32
+                    "index": 32,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3525,11 +3591,13 @@
                 "clean_prompt": "Question: Jeans are blue. What color are jeans?\nA. blue\nB. white\nC. orange\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Jeans are blue. What color are jeans?\n1. blue\n2. white\n3. orange\n4. yellow\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 33
+                    "index": 33,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3540,11 +3608,13 @@
                 "clean_prompt": "Question: Diapers are white. What color are diapers?\nA. purple\nB. white\nC. pink\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Diapers are white. What color are diapers?\n1. purple\n2. white\n3. pink\n4. blue\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 34
+                    "index": 34,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3555,11 +3625,13 @@
                 "clean_prompt": "Question: Guacamole is green. What color is guacamole?\nA. green\nB. yellow\nC. brown\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Guacamole is green. What color is guacamole?\n1. green\n2. yellow\n3. brown\n4. white\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 35
+                    "index": 35,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3570,11 +3642,13 @@
                 "clean_prompt": "Question: Bagels are brown. What color are bagels?\nA. purple\nB. pink\nC. brown\nD. gray\nAnswer:",
                 "corrupted_prompt": "Question: Bagels are brown. What color are bagels?\n1. purple\n2. pink\n3. brown\n4. gray\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 36
+                    "index": 36,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3585,11 +3659,13 @@
                 "clean_prompt": "Question: Chopsticks are brown. What color are chopsticks?\nA. brown\nB. pink\nC. blue\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Chopsticks are brown. What color are chopsticks?\n1. brown\n2. pink\n3. blue\n4. white\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 37
+                    "index": 37,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3600,11 +3676,13 @@
                 "clean_prompt": "Question: Cutting boards are brown. What color are cutting boards?\nA. gray\nB. brown\nC. green\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Cutting boards are brown. What color are cutting boards?\n1. gray\n2. brown\n3. green\n4. pink\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 38
+                    "index": 38,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3615,11 +3693,13 @@
                 "clean_prompt": "Question: Oranges are orange. What color are oranges?\nA. gray\nB. green\nC. white\nD. orange\nAnswer:",
                 "corrupted_prompt": "Question: Oranges are orange. What color are oranges?\n1. gray\n2. green\n3. white\n4. orange\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 39
+                    "index": 39,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3630,11 +3710,13 @@
                 "clean_prompt": "Question: Pandas are black. What color are pandas?\nA. orange\nB. pink\nC. black\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Pandas are black. What color are pandas?\n1. orange\n2. pink\n3. black\n4. blue\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 40
+                    "index": 40,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3645,11 +3727,13 @@
                 "clean_prompt": "Question: Cattle are brown. What color are cattle?\nA. yellow\nB. brown\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Cattle are brown. What color are cattle?\n1. yellow\n2. brown\n3. white\n4. pink\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 41
+                    "index": 41,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3660,11 +3744,13 @@
                 "clean_prompt": "Question: Salmon meat is pink. What color is salmon meat?\nA. gray\nB. black\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Salmon meat is pink. What color is salmon meat?\n1. gray\n2. black\n3. white\n4. pink\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 42
+                    "index": 42,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3675,11 +3761,13 @@
                 "clean_prompt": "Question: Bees are yellow. What color are bees?\nA. brown\nB. gray\nC. green\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Bees are yellow. What color are bees?\n1. brown\n2. gray\n3. green\n4. yellow\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 43
+                    "index": 43,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3690,11 +3778,13 @@
                 "clean_prompt": "Question: Parsley is green. What color is parsley?\nA. green\nB. brown\nC. purple\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Parsley is green. What color is parsley?\n1. green\n2. brown\n3. purple\n4. yellow\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 44
+                    "index": 44,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3705,11 +3795,13 @@
                 "clean_prompt": "Question: Goldfish are orange. What color are goldfish?\nA. brown\nB. blue\nC. orange\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Goldfish are orange. What color are goldfish?\n1. brown\n2. blue\n3. orange\n4. purple\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 45
+                    "index": 45,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3720,11 +3812,13 @@
                 "clean_prompt": "Question: Raspberries are red. What color are raspberries?\nA. red\nB. pink\nC. black\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Raspberries are red. What color are raspberries?\n1. red\n2. pink\n3. black\n4. blue\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 46
+                    "index": 46,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3735,11 +3829,13 @@
                 "clean_prompt": "Question: Rice is white. What color is rice?\nA. brown\nB. gray\nC. blue\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Rice is white. What color is rice?\n1. brown\n2. gray\n3. blue\n4. white\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 47
+                    "index": 47,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3750,11 +3846,13 @@
                 "clean_prompt": "Question: Lizards are green. What color are lizards?\nA. green\nB. purple\nC. blue\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Lizards are green. What color are lizards?\n1. green\n2. purple\n3. blue\n4. brown\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 48
+                    "index": 48,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3765,11 +3863,13 @@
                 "clean_prompt": "Question: Flamingos are pink. What color are flamingos?\nA. orange\nB. pink\nC. brown\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Flamingos are pink. What color are flamingos?\n1. orange\n2. pink\n3. brown\n4. blue\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 49
+                    "index": 49,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3780,11 +3880,13 @@
                 "clean_prompt": "Question: Boxes are brown. What color are boxes?\nA. pink\nB. red\nC. green\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Boxes are brown. What color are boxes?\n1. pink\n2. red\n3. green\n4. brown\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 0
+                    "index": 0,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3795,11 +3897,13 @@
                 "clean_prompt": "Question: Paper towels are white. What color are paper towels?\nA. green\nB. red\nC. white\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Paper towels are white. What color are paper towels?\n1. green\n2. red\n3. white\n4. blue\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 1
+                    "index": 1,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3810,11 +3914,13 @@
                 "clean_prompt": "Question: Saucers are white. What color are saucers?\nA. blue\nB. brown\nC. white\nD. black\nAnswer:",
                 "corrupted_prompt": "Question: Saucers are white. What color are saucers?\n1. blue\n2. brown\n3. white\n4. black\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 2
+                    "index": 2,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3825,11 +3931,13 @@
                 "clean_prompt": "Question: Cucumbers are green. What color are cucumbers?\nA. blue\nB. white\nC. red\nD. green\nAnswer:",
                 "corrupted_prompt": "Question: Cucumbers are green. What color are cucumbers?\n1. blue\n2. white\n3. red\n4. green\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 3
+                    "index": 3,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3840,11 +3948,13 @@
                 "clean_prompt": "Question: Lagoons are blue. What color are lagoons?\nA. blue\nB. red\nC. black\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Lagoons are blue. What color are lagoons?\n1. blue\n2. red\n3. black\n4. purple\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 4
+                    "index": 4,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3855,11 +3965,13 @@
                 "clean_prompt": "Question: Light bulbs are white. What color are light bulbs?\nA. green\nB. purple\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Light bulbs are white. What color are light bulbs?\n1. green\n2. purple\n3. white\n4. pink\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 5
+                    "index": 5,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3870,11 +3982,13 @@
                 "clean_prompt": "Question: Porcupines are brown. What color are porcupines?\nA. gray\nB. orange\nC. brown\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Porcupines are brown. What color are porcupines?\n1. gray\n2. orange\n3. brown\n4. purple\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 6
+                    "index": 6,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3885,11 +3999,13 @@
                 "clean_prompt": "Question: Violins are brown. What color are violins?\nA. purple\nB. white\nC. blue\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Violins are brown. What color are violins?\n1. purple\n2. white\n3. blue\n4. brown\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 7
+                    "index": 7,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3900,11 +4016,13 @@
                 "clean_prompt": "Question: Ladders are gray. What color are ladders?\nA. black\nB. blue\nC. gray\nD. orange\nAnswer:",
                 "corrupted_prompt": "Question: Ladders are gray. What color are ladders?\n1. black\n2. blue\n3. gray\n4. orange\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 8
+                    "index": 8,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3915,11 +4033,13 @@
                 "clean_prompt": "Question: Cherries are red. What color are cherries?\nA. red\nB. white\nC. purple\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Cherries are red. What color are cherries?\n1. red\n2. white\n3. purple\n4. pink\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 9
+                    "index": 9,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3930,11 +4050,13 @@
                 "clean_prompt": "Question: Crocodiles are green. What color are crocodiles?\nA. white\nB. green\nC. gray\nD. black\nAnswer:",
                 "corrupted_prompt": "Question: Crocodiles are green. What color are crocodiles?\n1. white\n2. green\n3. gray\n4. black\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 10
+                    "index": 10,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -3945,11 +4067,13 @@
                 "clean_prompt": "Question: A plum is purple. What color is a plum?\nA. blue\nB. green\nC. red\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: A plum is purple. What color is a plum?\n1. blue\n2. green\n3. red\n4. purple\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 11
+                    "index": 11,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -3960,11 +4084,13 @@
                 "clean_prompt": "Question: Dolphins are gray. What color are dolphins?\nA. purple\nB. blue\nC. gray\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Dolphins are gray. What color are dolphins?\n1. purple\n2. blue\n3. gray\n4. pink\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 12
+                    "index": 12,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -3975,11 +4101,13 @@
                 "clean_prompt": "Question: Penguins are black. What color are penguins?\nA. black\nB. red\nC. orange\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Penguins are black. What color are penguins?\n1. black\n2. red\n3. orange\n4. purple\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 13
+                    "index": 13,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -3990,11 +4118,13 @@
                 "clean_prompt": "Question: Bronze sculptures are brown. What color are bronze sculptures?\nA. brown\nB. green\nC. gray\nD. orange\nAnswer:",
                 "corrupted_prompt": "Question: Bronze sculptures are brown. What color are bronze sculptures?\n1. brown\n2. green\n3. gray\n4. orange\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 14
+                    "index": 14,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4005,11 +4135,13 @@
                 "clean_prompt": "Question: Platters are white. What color are platters?\nA. black\nB. green\nC. purple\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Platters are white. What color are platters?\n1. black\n2. green\n3. purple\n4. white\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 15
+                    "index": 15,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4020,11 +4152,13 @@
                 "clean_prompt": "Question: Blue jays are blue. What color are blue jays?\nA. green\nB. blue\nC. red\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Blue jays are blue. What color are blue jays?\n1. green\n2. blue\n3. red\n4. yellow\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 16
+                    "index": 16,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4035,11 +4169,13 @@
                 "clean_prompt": "Question: Beets are red. What color are beets?\nA. purple\nB. blue\nC. red\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Beets are red. What color are beets?\n1. purple\n2. blue\n3. red\n4. yellow\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 17
+                    "index": 17,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4050,11 +4186,13 @@
                 "clean_prompt": "Question: Watermelons are green. What color are watermelons?\nA. red\nB. gray\nC. pink\nD. green\nAnswer:",
                 "corrupted_prompt": "Question: Watermelons are green. What color are watermelons?\n1. red\n2. gray\n3. pink\n4. green\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 18
+                    "index": 18,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4065,11 +4203,13 @@
                 "clean_prompt": "Question: Bones are white. What color are bones?\nA. purple\nB. white\nC. pink\nD. red\nAnswer:",
                 "corrupted_prompt": "Question: Bones are white. What color are bones?\n1. purple\n2. white\n3. pink\n4. red\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 19
+                    "index": 19,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4080,11 +4220,13 @@
                 "clean_prompt": "Question: Tacos are brown. What color are tacos?\nA. blue\nB. white\nC. red\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Tacos are brown. What color are tacos?\n1. blue\n2. white\n3. red\n4. brown\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 20
+                    "index": 20,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4095,11 +4237,13 @@
                 "clean_prompt": "Question: Scissors are gray. What color are scissors?\nA. pink\nB. black\nC. gray\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Scissors are gray. What color are scissors?\n1. pink\n2. black\n3. gray\n4. yellow\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 21
+                    "index": 21,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4110,11 +4254,13 @@
                 "clean_prompt": "Question: Gravel is gray. What color is gravel?\nA. blue\nB. purple\nC. gray\nD. black\nAnswer:",
                 "corrupted_prompt": "Question: Gravel is gray. What color is gravel?\n1. blue\n2. purple\n3. gray\n4. black\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 22
+                    "index": 22,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4125,11 +4271,13 @@
                 "clean_prompt": "Question: Cherry blossoms are pink. What color are cherry blossoms?\nA. green\nB. pink\nC. blue\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Cherry blossoms are pink. What color are cherry blossoms?\n1. green\n2. pink\n3. blue\n4. white\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 23
+                    "index": 23,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4140,11 +4288,13 @@
                 "clean_prompt": "Question: Taxis are yellow. What color are taxis?\nA. yellow\nB. gray\nC. green\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Taxis are yellow. What color are taxis?\n1. yellow\n2. gray\n3. green\n4. brown\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 24
+                    "index": 24,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4155,11 +4305,13 @@
                 "clean_prompt": "Question: Binoculars are black. What color are binoculars?\nA. black\nB. orange\nC. blue\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Binoculars are black. What color are binoculars?\n1. black\n2. orange\n3. blue\n4. purple\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 25
+                    "index": 25,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4170,11 +4322,13 @@
                 "clean_prompt": "Question: Otters are brown. What color are otters?\nA. red\nB. brown\nC. orange\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Otters are brown. What color are otters?\n1. red\n2. brown\n3. orange\n4. pink\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 26
+                    "index": 26,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4185,11 +4339,13 @@
                 "clean_prompt": "Question: Clocks are white. What color are clocks?\nA. pink\nB. orange\nC. black\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Clocks are white. What color are clocks?\n1. pink\n2. orange\n3. black\n4. white\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 27
+                    "index": 27,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4200,11 +4356,13 @@
                 "clean_prompt": "Question: Cheeses are yellow. What color are cheeses?\nA. gray\nB. white\nC. green\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Cheeses are yellow. What color are cheeses?\n1. gray\n2. white\n3. green\n4. yellow\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 28
+                    "index": 28,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4215,11 +4373,13 @@
                 "clean_prompt": "Question: Volleyballs are white. What color are volleyballs?\nA. gray\nB. blue\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Volleyballs are white. What color are volleyballs?\n1. gray\n2. blue\n3. white\n4. pink\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 29
+                    "index": 29,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4230,11 +4390,13 @@
                 "clean_prompt": "Question: A rose is red. What color is a rose?\nA. red\nB. black\nC. orange\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: A rose is red. What color is a rose?\n1. red\n2. black\n3. orange\n4. brown\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 30
+                    "index": 30,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4245,11 +4407,13 @@
                 "clean_prompt": "Question: A frog is green. What color is a frog?\nA. white\nB. yellow\nC. black\nD. green\nAnswer:",
                 "corrupted_prompt": "Question: A frog is green. What color is a frog?\n1. white\n2. yellow\n3. black\n4. green\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 31
+                    "index": 31,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4260,11 +4424,13 @@
                 "clean_prompt": "Question: Tuxedos are black. What color are tuxedos?\nA. gray\nB. purple\nC. black\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Tuxedos are black. What color are tuxedos?\n1. gray\n2. purple\n3. black\n4. white\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 32
+                    "index": 32,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4275,11 +4441,13 @@
                 "clean_prompt": "Question: Jeans are blue. What color are jeans?\nA. blue\nB. white\nC. orange\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Jeans are blue. What color are jeans?\n1. blue\n2. white\n3. orange\n4. yellow\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 33
+                    "index": 33,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4290,11 +4458,13 @@
                 "clean_prompt": "Question: Diapers are white. What color are diapers?\nA. purple\nB. white\nC. pink\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Diapers are white. What color are diapers?\n1. purple\n2. white\n3. pink\n4. blue\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 34
+                    "index": 34,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4305,11 +4475,13 @@
                 "clean_prompt": "Question: Guacamole is green. What color is guacamole?\nA. green\nB. yellow\nC. brown\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Guacamole is green. What color is guacamole?\n1. green\n2. yellow\n3. brown\n4. white\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 35
+                    "index": 35,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4320,11 +4492,13 @@
                 "clean_prompt": "Question: Bagels are brown. What color are bagels?\nA. purple\nB. pink\nC. brown\nD. gray\nAnswer:",
                 "corrupted_prompt": "Question: Bagels are brown. What color are bagels?\n1. purple\n2. pink\n3. brown\n4. gray\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 36
+                    "index": 36,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4335,11 +4509,13 @@
                 "clean_prompt": "Question: Chopsticks are brown. What color are chopsticks?\nA. brown\nB. pink\nC. blue\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Chopsticks are brown. What color are chopsticks?\n1. brown\n2. pink\n3. blue\n4. white\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 37
+                    "index": 37,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4350,11 +4526,13 @@
                 "clean_prompt": "Question: Cutting boards are brown. What color are cutting boards?\nA. gray\nB. brown\nC. green\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Cutting boards are brown. What color are cutting boards?\n1. gray\n2. brown\n3. green\n4. pink\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 38
+                    "index": 38,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4365,11 +4543,13 @@
                 "clean_prompt": "Question: Oranges are orange. What color are oranges?\nA. gray\nB. green\nC. white\nD. orange\nAnswer:",
                 "corrupted_prompt": "Question: Oranges are orange. What color are oranges?\n1. gray\n2. green\n3. white\n4. orange\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 39
+                    "index": 39,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4380,11 +4560,13 @@
                 "clean_prompt": "Question: Pandas are black. What color are pandas?\nA. orange\nB. pink\nC. black\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Pandas are black. What color are pandas?\n1. orange\n2. pink\n3. black\n4. blue\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 40
+                    "index": 40,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4395,11 +4577,13 @@
                 "clean_prompt": "Question: Cattle are brown. What color are cattle?\nA. yellow\nB. brown\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Cattle are brown. What color are cattle?\n1. yellow\n2. brown\n3. white\n4. pink\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 41
+                    "index": 41,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4410,11 +4594,13 @@
                 "clean_prompt": "Question: Salmon meat is pink. What color is salmon meat?\nA. gray\nB. black\nC. white\nD. pink\nAnswer:",
                 "corrupted_prompt": "Question: Salmon meat is pink. What color is salmon meat?\n1. gray\n2. black\n3. white\n4. pink\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 42
+                    "index": 42,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4425,11 +4611,13 @@
                 "clean_prompt": "Question: Bees are yellow. What color are bees?\nA. brown\nB. gray\nC. green\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Bees are yellow. What color are bees?\n1. brown\n2. gray\n3. green\n4. yellow\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 43
+                    "index": 43,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4440,11 +4628,13 @@
                 "clean_prompt": "Question: Parsley is green. What color is parsley?\nA. green\nB. brown\nC. purple\nD. yellow\nAnswer:",
                 "corrupted_prompt": "Question: Parsley is green. What color is parsley?\n1. green\n2. brown\n3. purple\n4. yellow\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 44
+                    "index": 44,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4455,11 +4645,13 @@
                 "clean_prompt": "Question: Goldfish are orange. What color are goldfish?\nA. brown\nB. blue\nC. orange\nD. purple\nAnswer:",
                 "corrupted_prompt": "Question: Goldfish are orange. What color are goldfish?\n1. brown\n2. blue\n3. orange\n4. purple\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 45
+                    "index": 45,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4470,11 +4662,13 @@
                 "clean_prompt": "Question: Raspberries are red. What color are raspberries?\nA. red\nB. pink\nC. black\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Raspberries are red. What color are raspberries?\n1. red\n2. pink\n3. black\n4. blue\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 46
+                    "index": 46,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4485,11 +4679,13 @@
                 "clean_prompt": "Question: Rice is white. What color is rice?\nA. brown\nB. gray\nC. blue\nD. white\nAnswer:",
                 "corrupted_prompt": "Question: Rice is white. What color is rice?\n1. brown\n2. gray\n3. blue\n4. white\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 47
+                    "index": 47,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4500,11 +4696,13 @@
                 "clean_prompt": "Question: Lizards are green. What color are lizards?\nA. green\nB. purple\nC. blue\nD. brown\nAnswer:",
                 "corrupted_prompt": "Question: Lizards are green. What color are lizards?\n1. green\n2. purple\n3. blue\n4. brown\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 48
+                    "index": 48,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4515,11 +4713,13 @@
                 "clean_prompt": "Question: Flamingos are pink. What color are flamingos?\nA. orange\nB. pink\nC. brown\nD. blue\nAnswer:",
                 "corrupted_prompt": "Question: Flamingos are pink. What color are flamingos?\n1. orange\n2. pink\n3. brown\n4. blue\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/copycolors_mcqa",
-                    "index": 49
+                    "index": 49,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             }
         ],
@@ -4532,11 +4732,13 @@
                 "clean_prompt": "Question: Which technology was developed most recently?\nA. cellular telephone\nB. television\nC. refrigerator\nD. airplane\nAnswer:",
                 "corrupted_prompt": "Question: Which technology was developed most recently?\n1. cellular telephone\n2. television\n3. refrigerator\n4. airplane\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 0
+                    "index": 0,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4547,11 +4749,13 @@
                 "clean_prompt": "Question: A student hypothesizes that algae are producers. Which question will best help the student determine if this is correct?\nA. Do algae consume other organisms?\nB. Which organisms consume algae?\nC. Do algae use sunlight to make food?\nD. Could an ecosystem survive without algae?\nAnswer:",
                 "corrupted_prompt": "Question: A student hypothesizes that algae are producers. Which question will best help the student determine if this is correct?\n1. Do algae consume other organisms?\n2. Which organisms consume algae?\n3. Do algae use sunlight to make food?\n4. Could an ecosystem survive without algae?\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 1
+                    "index": 1,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4562,11 +4766,13 @@
                 "clean_prompt": "Question: Soccer players use their muscle systems to kick a ball into a goal. What organ system coordinates the muscles?\nA. The nervous system\nB. The endocrine system\nC. The respiratory system\nD. The circulatory system\nAnswer:",
                 "corrupted_prompt": "Question: Soccer players use their muscle systems to kick a ball into a goal. What organ system coordinates the muscles?\n1. The nervous system\n2. The endocrine system\n3. The respiratory system\n4. The circulatory system\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 2
+                    "index": 2,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4577,11 +4783,13 @@
                 "clean_prompt": "Question: Planets in the solar system are in constant motion. What factor has the greatest effect on the orbits of the planets?\nA. the size of the planets\nB. gravitational pull of the Sun\nC. the composition of the planets\nD. electromagnetic radiation from the Sun\nAnswer:",
                 "corrupted_prompt": "Question: Planets in the solar system are in constant motion. What factor has the greatest effect on the orbits of the planets?\n1. the size of the planets\n2. gravitational pull of the Sun\n3. the composition of the planets\n4. electromagnetic radiation from the Sun\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 3
+                    "index": 3,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4592,11 +4800,13 @@
                 "clean_prompt": "Question: How is a pond different from a lake?\nA. Ponds have moving water.\nB. Ponds are smaller and shallower.\nC. Ponds are not surrounded by land.\nD. Ponds have a different amount of salt.\nAnswer:",
                 "corrupted_prompt": "Question: How is a pond different from a lake?\n1. Ponds have moving water.\n2. Ponds are smaller and shallower.\n3. Ponds are not surrounded by land.\n4. Ponds have a different amount of salt.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 4
+                    "index": 4,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4607,11 +4817,13 @@
                 "clean_prompt": "Question: A substance with a mass of 10 g is heated to produce two new substances. The mass of the first new substance is 9.3 g and the mass of the second new substance is 0.7 g. Which of the following is best demonstrated by this example?\nA. heat transfer\nB. physical change\nC. law of conservation of mass\nD. law of conservation of energy\nAnswer:",
                 "corrupted_prompt": "Question: A substance with a mass of 10 g is heated to produce two new substances. The mass of the first new substance is 9.3 g and the mass of the second new substance is 0.7 g. Which of the following is best demonstrated by this example?\n1. heat transfer\n2. physical change\n3. law of conservation of mass\n4. law of conservation of energy\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 5
+                    "index": 5,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4622,11 +4834,13 @@
                 "clean_prompt": "Question: The cilia in the respiratory system are responsible for preventing dirt and mucus from entering the bronchial tubes and lungs. If the cilia are damaged, the person's bronchial tubes and lungs are most likely to\nA. close to prevent further damage.\nB. stop producing mucus.\nC. become clogged.\nD. become efficient.\nAnswer:",
                 "corrupted_prompt": "Question: The cilia in the respiratory system are responsible for preventing dirt and mucus from entering the bronchial tubes and lungs. If the cilia are damaged, the person's bronchial tubes and lungs are most likely to\n1. close to prevent further damage.\n2. stop producing mucus.\n3. become clogged.\n4. become efficient.\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 6
+                    "index": 6,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4637,11 +4851,13 @@
                 "clean_prompt": "Question: Which two traits would best distinguish a bird from other vertebrates?\nA. fur and wings\nB. gills and feet\nC. feathers and wings\nD. moist skin and feet\nAnswer:",
                 "corrupted_prompt": "Question: Which two traits would best distinguish a bird from other vertebrates?\n1. fur and wings\n2. gills and feet\n3. feathers and wings\n4. moist skin and feet\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 7
+                    "index": 7,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4652,11 +4868,13 @@
                 "clean_prompt": "Question: A green plant absorbs light. A frog eats flies. These are both examples of how organisms\nA. obtain energy\nB. escape predators\nC. produce offspring\nD. excrete waste\nAnswer:",
                 "corrupted_prompt": "Question: A green plant absorbs light. A frog eats flies. These are both examples of how organisms\n1. obtain energy\n2. escape predators\n3. produce offspring\n4. excrete waste\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 8
+                    "index": 8,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4667,11 +4885,13 @@
                 "clean_prompt": "Question: Which of these scientific advances occurred first?\nA. the invention of the telescope\nB. the building of submarines\nC. the generation of electricity\nD. the breeding of plants\nAnswer:",
                 "corrupted_prompt": "Question: Which of these scientific advances occurred first?\n1. the invention of the telescope\n2. the building of submarines\n3. the generation of electricity\n4. the breeding of plants\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 9
+                    "index": 9,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4682,11 +4902,13 @@
                 "clean_prompt": "Question: Which instrument measures atmospheric pressure?\nA. barometer\nB. hygrometer\nC. thermometer\nD. magnetometer\nAnswer:",
                 "corrupted_prompt": "Question: Which instrument measures atmospheric pressure?\n1. barometer\n2. hygrometer\n3. thermometer\n4. magnetometer\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 10
+                    "index": 10,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4697,11 +4919,13 @@
                 "clean_prompt": "Question: Which of the following is produced during the process of cellular respiration?\nA. carbon dioxide\nB. sodium chloride\nC. oxygen\nD. sugar\nAnswer:",
                 "corrupted_prompt": "Question: Which of the following is produced during the process of cellular respiration?\n1. carbon dioxide\n2. sodium chloride\n3. oxygen\n4. sugar\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 11
+                    "index": 11,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4712,11 +4936,13 @@
                 "clean_prompt": "Question: An anemometer is a tool that measures\nA. wind direction.\nB. wind speed.\nC. air pressure.\nD. air temperature.\nAnswer:",
                 "corrupted_prompt": "Question: An anemometer is a tool that measures\n1. wind direction.\n2. wind speed.\n3. air pressure.\n4. air temperature.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 12
+                    "index": 12,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4727,11 +4953,13 @@
                 "clean_prompt": "Question: The element cesium, Cs, is an alkali metal. Which chemical formula represents a cesium compound that is likely to exist?\nA. CsCl\nB. CsCl_{2}\nC. CsO\nD. CsO_{2}\nAnswer:",
                 "corrupted_prompt": "Question: The element cesium, Cs, is an alkali metal. Which chemical formula represents a cesium compound that is likely to exist?\n1. CsCl\n2. CsCl_{2}\n3. CsO\n4. CsO_{2}\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 13
+                    "index": 13,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4742,11 +4970,13 @@
                 "clean_prompt": "Question: The cells of a plant help the plant maintain its life functions. What part of a plant cell has the function of producing sugar in the presence of sunlight?\nA. chloroplast\nB. cytoplasm\nC. mitochondria\nD. nucleus\nAnswer:",
                 "corrupted_prompt": "Question: The cells of a plant help the plant maintain its life functions. What part of a plant cell has the function of producing sugar in the presence of sunlight?\n1. chloroplast\n2. cytoplasm\n3. mitochondria\n4. nucleus\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 14
+                    "index": 14,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4757,11 +4987,13 @@
                 "clean_prompt": "Question: A sample of sulfur forms crystals when it\nA. melts.\nB. freezes.\nC. evaporates.\nD. condenses.\nAnswer:",
                 "corrupted_prompt": "Question: A sample of sulfur forms crystals when it\n1. melts.\n2. freezes.\n3. evaporates.\n4. condenses.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 15
+                    "index": 15,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4772,11 +5004,13 @@
                 "clean_prompt": "Question: When a person is infected with the influenza virus, the immune system defends the body through a cell-mediated immune response. Which immune cell is responsible for protecting the body from the influenza virus infection?\nA. phagocytes\nB. B lymphocytes\nC. helper T lymphocytes\nD. cytotoxic T lymphocytes\nAnswer:",
                 "corrupted_prompt": "Question: When a person is infected with the influenza virus, the immune system defends the body through a cell-mediated immune response. Which immune cell is responsible for protecting the body from the influenza virus infection?\n1. phagocytes\n2. B lymphocytes\n3. helper T lymphocytes\n4. cytotoxic T lymphocytes\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 16
+                    "index": 16,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4787,11 +5021,13 @@
                 "clean_prompt": "Question: Which form of solar radiation causes sunburn?\nA. Visible\nB. Ultraviolet\nC. Infrared\nD. X-rays\nE. Radio waves\nAnswer:",
                 "corrupted_prompt": "Question: Which form of solar radiation causes sunburn?\n1. Visible\n2. Ultraviolet\n3. Infrared\n4. X-rays\n5. Radio waves\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 17
+                    "index": 17,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4802,11 +5038,13 @@
                 "clean_prompt": "Question: About 75% of the world's active volcanoes are the result of tectonic activity around which plate?\nA. North American Plate\nB. African Plate\nC. Pacific Plate\nD. Nazca Plate\nAnswer:",
                 "corrupted_prompt": "Question: About 75% of the world's active volcanoes are the result of tectonic activity around which plate?\n1. North American Plate\n2. African Plate\n3. Pacific Plate\n4. Nazca Plate\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 18
+                    "index": 18,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -4817,11 +5055,13 @@
                 "clean_prompt": "Question: Which of the following is the most accurate measurement for the length of an object that is actually 15.0 m long?\nA. 15.35 m\nB. 15.2 m\nC. 14.55 m\nD. 14.5 m\nAnswer:",
                 "corrupted_prompt": "Question: Which of the following is the most accurate measurement for the length of an object that is actually 15.0 m long?\n1. 15.35 m\n2. 15.2 m\n3. 14.55 m\n4. 14.5 m\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 19
+                    "index": 19,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4832,11 +5072,13 @@
                 "clean_prompt": "Question: After a rainfall, which process in the water cycle draws the water back up into the air?\nA. condensation\nB. evaporation\nC. circulation\nD. precipitation\nAnswer:",
                 "corrupted_prompt": "Question: After a rainfall, which process in the water cycle draws the water back up into the air?\n1. condensation\n2. evaporation\n3. circulation\n4. precipitation\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 20
+                    "index": 20,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4847,11 +5089,13 @@
                 "clean_prompt": "Question: When a person speaks, the type of wave produced can be described as all these except\nA. transverse.\nB. mechanical.\nC. compression.\nD. longitudinal.\nAnswer:",
                 "corrupted_prompt": "Question: When a person speaks, the type of wave produced can be described as all these except\n1. transverse.\n2. mechanical.\n3. compression.\n4. longitudinal.\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 21
+                    "index": 21,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4862,11 +5106,13 @@
                 "clean_prompt": "Question: Bill stands in a swimming pool and notices that the water around his feet is a lot cooler than the water near the surface. Which process causes this difference in temperature?\nA. convection\nB. evaporation\nC. radiation\nD. conduction\nAnswer:",
                 "corrupted_prompt": "Question: Bill stands in a swimming pool and notices that the water around his feet is a lot cooler than the water near the surface. Which process causes this difference in temperature?\n1. convection\n2. evaporation\n3. radiation\n4. conduction\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 22
+                    "index": 22,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4877,11 +5123,13 @@
                 "clean_prompt": "Question: Andy adds a small amount of water to sand and makes shapes with the wet sand. Which of these best describes the wet sand?\nA. a mixture\nB. a solution\nC. an element\nD. a compound\nAnswer:",
                 "corrupted_prompt": "Question: Andy adds a small amount of water to sand and makes shapes with the wet sand. Which of these best describes the wet sand?\n1. a mixture\n2. a solution\n3. an element\n4. a compound\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 23
+                    "index": 23,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4892,11 +5140,13 @@
                 "clean_prompt": "Question: To observe materials up close and in greater detail we use\nA. gripping tools.\nB. optical tools.\nC. cutting tools.\nD. polishing tools.\nAnswer:",
                 "corrupted_prompt": "Question: To observe materials up close and in greater detail we use\n1. gripping tools.\n2. optical tools.\n3. cutting tools.\n4. polishing tools.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 24
+                    "index": 24,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4907,11 +5157,13 @@
                 "clean_prompt": "Question: Joyce is conducting a traffic survey and needs to find out how many cars cross the crosswalk in the morning before the school bell rings. How should she collect this data?\nA. Make a tally chart\nB. Draw a pictograph\nC. Take a picture of each passing car\nD. Write down the cars' license plate numbers\nAnswer:",
                 "corrupted_prompt": "Question: Joyce is conducting a traffic survey and needs to find out how many cars cross the crosswalk in the morning before the school bell rings. How should she collect this data?\n1. Make a tally chart\n2. Draw a pictograph\n3. Take a picture of each passing car\n4. Write down the cars' license plate numbers\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 25
+                    "index": 25,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4922,11 +5174,13 @@
                 "clean_prompt": "Question: A student conducts an experiment to determine the average size of acorn that squirrels eat. The student gave several different sizes of acorns to a squirrel. Which action would most likely improve the results?\nA. change the food source\nB. use more than one squirrel\nC. increase the number of students\nD. shorten the period of observation\nAnswer:",
                 "corrupted_prompt": "Question: A student conducts an experiment to determine the average size of acorn that squirrels eat. The student gave several different sizes of acorns to a squirrel. Which action would most likely improve the results?\n1. change the food source\n2. use more than one squirrel\n3. increase the number of students\n4. shorten the period of observation\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 26
+                    "index": 26,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -4937,11 +5191,13 @@
                 "clean_prompt": "Question: India is in the Northern Hemisphere and Australia is in the Southern Hemisphere. In June, it is summer in India and winter in Australia. What is the main reason the seasons are opposite in the two countries?\nA. because Earth is tilted on its axis\nB. because the Sun rotates on its axis\nC. because Earth revolves around the Sun\nD. because of the distance between the countries\nAnswer:",
                 "corrupted_prompt": "Question: India is in the Northern Hemisphere and Australia is in the Southern Hemisphere. In June, it is summer in India and winter in Australia. What is the main reason the seasons are opposite in the two countries?\n1. because Earth is tilted on its axis\n2. because the Sun rotates on its axis\n3. because Earth revolves around the Sun\n4. because of the distance between the countries\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 27
+                    "index": 27,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4952,11 +5208,13 @@
                 "clean_prompt": "Question: What contributes the most to beach erosion?\nA. animal activity\nB. evaporation\nC. precipitation\nD. wave action\nAnswer:",
                 "corrupted_prompt": "Question: What contributes the most to beach erosion?\n1. animal activity\n2. evaporation\n3. precipitation\n4. wave action\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 28
+                    "index": 28,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -4967,11 +5225,13 @@
                 "clean_prompt": "Question: Which type of graph would best display the changes in temperature over a 24 hour period?\nA. line graph\nB. pictograph\nC. circle (pie) graph\nD. stem-and-leaf graph\nAnswer:",
                 "corrupted_prompt": "Question: Which type of graph would best display the changes in temperature over a 24 hour period?\n1. line graph\n2. pictograph\n3. circle (pie) graph\n4. stem-and-leaf graph\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 29
+                    "index": 29,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4982,11 +5242,13 @@
                 "clean_prompt": "Question: Which structure determines the traits that will be passed to offspring?\nA. chromosome\nB. centromere\nC. nuclear membrane\nD. spindle fibers\nAnswer:",
                 "corrupted_prompt": "Question: Which structure determines the traits that will be passed to offspring?\n1. chromosome\n2. centromere\n3. nuclear membrane\n4. spindle fibers\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 30
+                    "index": 30,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -4997,11 +5259,13 @@
                 "clean_prompt": "Question: Oak trees produce seeds that are contained in acorns. Blue jays eat the seeds in acorns. Blue jays also collect acorns and hide them in the ground, often far away from the parent oak tree. Blue jays do not eat the seed of every acorn they hide. How do oak trees benefit from blue jays' collecting and hiding acorns?\nA. The oak trees are pollinated by the blue jays.\nB. The oak trees are protected from other herbivores.\nC. The seeds of oak trees are protected from the sun.\nD. The seeds of oak trees are planted in new environments.\nAnswer:",
                 "corrupted_prompt": "Question: Oak trees produce seeds that are contained in acorns. Blue jays eat the seeds in acorns. Blue jays also collect acorns and hide them in the ground, often far away from the parent oak tree. Blue jays do not eat the seed of every acorn they hide. How do oak trees benefit from blue jays' collecting and hiding acorns?\n1. The oak trees are pollinated by the blue jays.\n2. The oak trees are protected from other herbivores.\n3. The seeds of oak trees are protected from the sun.\n4. The seeds of oak trees are planted in new environments.\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 31
+                    "index": 31,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5012,11 +5276,13 @@
                 "clean_prompt": "Question: Which step of the scientific method will follow after a student graphs collected data during a lab experiment?\nA. observing\nB. hypothesizing\nC. analyzing\nD. researching\nAnswer:",
                 "corrupted_prompt": "Question: Which step of the scientific method will follow after a student graphs collected data during a lab experiment?\n1. observing\n2. hypothesizing\n3. analyzing\n4. researching\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 32
+                    "index": 32,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5027,11 +5293,13 @@
                 "clean_prompt": "Question: Which is a true statement about cells?\nA. Plant cells contain chloroplasts.\nB. Animal cells are missing a nucleus.\nC. Only plant cells have a cell membrane.\nD. Animal cells include a rigid wall structure.\nAnswer:",
                 "corrupted_prompt": "Question: Which is a true statement about cells?\n1. Plant cells contain chloroplasts.\n2. Animal cells are missing a nucleus.\n3. Only plant cells have a cell membrane.\n4. Animal cells include a rigid wall structure.\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 33
+                    "index": 33,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5042,11 +5310,13 @@
                 "clean_prompt": "Question: Which kind of events can form mountains?\nA. earthquakes and volcanoes\nB. earthquakes and landslides\nC. landslides and avalanches\nD. volcanoes and avalanches\nAnswer:",
                 "corrupted_prompt": "Question: Which kind of events can form mountains?\n1. earthquakes and volcanoes\n2. earthquakes and landslides\n3. landslides and avalanches\n4. volcanoes and avalanches\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 34
+                    "index": 34,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5057,11 +5327,13 @@
                 "clean_prompt": "Question: During the early 1990s, people began using cell phones to communicate. The development of the cell phone was most likely a response to the need of society to\nA. be able to communicate when sick.\nB. provide a safer method of communicating.\nC. provide more jobs in the communication industry.\nD. be able to communicate when away from home.\nAnswer:",
                 "corrupted_prompt": "Question: During the early 1990s, people began using cell phones to communicate. The development of the cell phone was most likely a response to the need of society to\n1. be able to communicate when sick.\n2. provide a safer method of communicating.\n3. provide more jobs in the communication industry.\n4. be able to communicate when away from home.\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 35
+                    "index": 35,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5072,11 +5344,13 @@
                 "clean_prompt": "Question: Which process uses carbon from the air to make food for plants?\nA. growth\nB. respiration\nC. decomposition\nD. photosynthesis\nAnswer:",
                 "corrupted_prompt": "Question: Which process uses carbon from the air to make food for plants?\n1. growth\n2. respiration\n3. decomposition\n4. photosynthesis\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 36
+                    "index": 36,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5087,11 +5361,13 @@
                 "clean_prompt": "Question: Organisms contain DNA. What makes prokaryotic DNA different from eukaryotic DNA?\nA. the molecular shape\nB. the types of bases\nC. the sugar composition\nD. the presence of phosphates\nAnswer:",
                 "corrupted_prompt": "Question: Organisms contain DNA. What makes prokaryotic DNA different from eukaryotic DNA?\n1. the molecular shape\n2. the types of bases\n3. the sugar composition\n4. the presence of phosphates\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 37
+                    "index": 37,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5102,11 +5378,13 @@
                 "clean_prompt": "Question: The changing appearances of the nighttime sky over the surface of Earth and eclipses of the Moon have provided evidence that\nA. Earth is a sphere.\nB. Earth supports life.\nC. Earth has a layered atmosphere.\nD. Earth is covered mostly with water.\nAnswer:",
                 "corrupted_prompt": "Question: The changing appearances of the nighttime sky over the surface of Earth and eclipses of the Moon have provided evidence that\n1. Earth is a sphere.\n2. Earth supports life.\n3. Earth has a layered atmosphere.\n4. Earth is covered mostly with water.\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 38
+                    "index": 38,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5117,11 +5395,13 @@
                 "clean_prompt": "Question: Scientists found evidence of past glacial activity in Massachusetts. Which of the following conclusions is best supported by this evidence?\nA. Sea levels were much higher in the past.\nB. The climate on Earth has changed over time.\nC. Total numbers of organisms on Earth have changed over time.\nD. The total amount of radiation from the Sun was much higher in the past.\nAnswer:",
                 "corrupted_prompt": "Question: Scientists found evidence of past glacial activity in Massachusetts. Which of the following conclusions is best supported by this evidence?\n1. Sea levels were much higher in the past.\n2. The climate on Earth has changed over time.\n3. Total numbers of organisms on Earth have changed over time.\n4. The total amount of radiation from the Sun was much higher in the past.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 39
+                    "index": 39,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5132,11 +5412,13 @@
                 "clean_prompt": "Question: Which statement explains why a mother's unhealthy diet during pregnancy is harmful to her embryo's development?\nA. The embryo inherits half its chromosomes from its mother.\nB. The embryo receives its food from its mother through the placenta.\nC. The embryo receives oxygen through the placenta.\nD. The embryo receives mutations carried by its mother.\nAnswer:",
                 "corrupted_prompt": "Question: Which statement explains why a mother's unhealthy diet during pregnancy is harmful to her embryo's development?\n1. The embryo inherits half its chromosomes from its mother.\n2. The embryo receives its food from its mother through the placenta.\n3. The embryo receives oxygen through the placenta.\n4. The embryo receives mutations carried by its mother.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 40
+                    "index": 40,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5147,11 +5429,13 @@
                 "clean_prompt": "Question: Which word best describes the physical state of an ice cube?\nA. gas\nB. solid\nC. liquid\nD. plasma\nAnswer:",
                 "corrupted_prompt": "Question: Which word best describes the physical state of an ice cube?\n1. gas\n2. solid\n3. liquid\n4. plasma\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 41
+                    "index": 41,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5162,11 +5446,13 @@
                 "clean_prompt": "Question: All nations need to import and export goods for their economic survival. As a result, many island nations have developed advanced technology for transporting goods by\nA. space.\nB. rail.\nC. sea.\nD. road.\nAnswer:",
                 "corrupted_prompt": "Question: All nations need to import and export goods for their economic survival. As a result, many island nations have developed advanced technology for transporting goods by\n1. space.\n2. rail.\n3. sea.\n4. road.\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 42
+                    "index": 42,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5177,11 +5463,13 @@
                 "clean_prompt": "Question: A species of mouse spends the day sleeping in its burrow to avoid high daytime temperatures. It is processing what little water it needs from the seeds it collects. To which environment is this mouse best adapted?\nA. rainforest\nB. marine\nC. desert\nD. tundra\nAnswer:",
                 "corrupted_prompt": "Question: A species of mouse spends the day sleeping in its burrow to avoid high daytime temperatures. It is processing what little water it needs from the seeds it collects. To which environment is this mouse best adapted?\n1. rainforest\n2. marine\n3. desert\n4. tundra\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 43
+                    "index": 43,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5192,11 +5480,13 @@
                 "clean_prompt": "Question: What system helps the body defend itself against disease while maintaining the levels of body fluids?\nA. nervous\nB. digestive\nC. lymphatic\nD. integumentary\nAnswer:",
                 "corrupted_prompt": "Question: What system helps the body defend itself against disease while maintaining the levels of body fluids?\n1. nervous\n2. digestive\n3. lymphatic\n4. integumentary\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 44
+                    "index": 44,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5207,11 +5497,13 @@
                 "clean_prompt": "Question: After fossils are formed, which process is most likely to destroy them?\nA. the carbon cycle\nB. the nitrogen cycle\nC. the water cycle\nD. the rock cycle\nAnswer:",
                 "corrupted_prompt": "Question: After fossils are formed, which process is most likely to destroy them?\n1. the carbon cycle\n2. the nitrogen cycle\n3. the water cycle\n4. the rock cycle\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 45
+                    "index": 45,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5222,11 +5514,13 @@
                 "clean_prompt": "Question: Which of these causes the MOST evaporation of water from a lake?\nA. Freezing of the lake\nB. Heat from the Sun\nC. Melting snow forming streams\nD. Volcanic activity near the lake\nAnswer:",
                 "corrupted_prompt": "Question: Which of these causes the MOST evaporation of water from a lake?\n1. Freezing of the lake\n2. Heat from the Sun\n3. Melting snow forming streams\n4. Volcanic activity near the lake\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 46
+                    "index": 46,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5237,11 +5531,13 @@
                 "clean_prompt": "Question: Jeannie put her soccer ball on the ground on the side of a hill. What force acted on the soccer ball to make it roll down the hill?\nA. gravity\nB. electricity\nC. friction\nD. magnetism\nAnswer:",
                 "corrupted_prompt": "Question: Jeannie put her soccer ball on the ground on the side of a hill. What force acted on the soccer ball to make it roll down the hill?\n1. gravity\n2. electricity\n3. friction\n4. magnetism\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 47
+                    "index": 47,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5252,11 +5548,13 @@
                 "clean_prompt": "Question: Which tools are needed to measure the length and mass of a seashell?\nA. a ruler and a balance\nB. a ruler and a microscope\nC. a balance and a stopwatch\nD. a microscope and a magnet\nAnswer:",
                 "corrupted_prompt": "Question: Which tools are needed to measure the length and mass of a seashell?\n1. a ruler and a balance\n2. a ruler and a microscope\n3. a balance and a stopwatch\n4. a microscope and a magnet\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 48
+                    "index": 48,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5267,11 +5565,13 @@
                 "clean_prompt": "Question: Which statement about the genetic traits of humans is true?\nA. Recessive forms of genes are always visible in offspring.\nB. Visible traits are the same for each member of a family.\nC. Dominant forms of genes are always inherited from both parents.\nD. Visible traits depend on the dominant and recessive forms of genes from each parent.\nAnswer:",
                 "corrupted_prompt": "Question: Which statement about the genetic traits of humans is true?\n1. Recessive forms of genes are always visible in offspring.\n2. Visible traits are the same for each member of a family.\n3. Dominant forms of genes are always inherited from both parents.\n4. Visible traits depend on the dominant and recessive forms of genes from each parent.\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 49
+                    "index": 49,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5282,11 +5582,13 @@
                 "clean_prompt": "Question: Which technology was developed most recently?\nA. cellular telephone\nB. television\nC. refrigerator\nD. airplane\nAnswer:",
                 "corrupted_prompt": "Question: Which technology was developed most recently?\n1. cellular telephone\n2. television\n3. refrigerator\n4. airplane\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 0
+                    "index": 0,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5297,11 +5599,13 @@
                 "clean_prompt": "Question: A student hypothesizes that algae are producers. Which question will best help the student determine if this is correct?\nA. Do algae consume other organisms?\nB. Which organisms consume algae?\nC. Do algae use sunlight to make food?\nD. Could an ecosystem survive without algae?\nAnswer:",
                 "corrupted_prompt": "Question: A student hypothesizes that algae are producers. Which question will best help the student determine if this is correct?\n1. Do algae consume other organisms?\n2. Which organisms consume algae?\n3. Do algae use sunlight to make food?\n4. Could an ecosystem survive without algae?\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 1
+                    "index": 1,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5312,11 +5616,13 @@
                 "clean_prompt": "Question: Soccer players use their muscle systems to kick a ball into a goal. What organ system coordinates the muscles?\nA. The nervous system\nB. The endocrine system\nC. The respiratory system\nD. The circulatory system\nAnswer:",
                 "corrupted_prompt": "Question: Soccer players use their muscle systems to kick a ball into a goal. What organ system coordinates the muscles?\n1. The nervous system\n2. The endocrine system\n3. The respiratory system\n4. The circulatory system\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 2
+                    "index": 2,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5327,11 +5633,13 @@
                 "clean_prompt": "Question: Planets in the solar system are in constant motion. What factor has the greatest effect on the orbits of the planets?\nA. the size of the planets\nB. gravitational pull of the Sun\nC. the composition of the planets\nD. electromagnetic radiation from the Sun\nAnswer:",
                 "corrupted_prompt": "Question: Planets in the solar system are in constant motion. What factor has the greatest effect on the orbits of the planets?\n1. the size of the planets\n2. gravitational pull of the Sun\n3. the composition of the planets\n4. electromagnetic radiation from the Sun\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 3
+                    "index": 3,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5342,11 +5650,13 @@
                 "clean_prompt": "Question: How is a pond different from a lake?\nA. Ponds have moving water.\nB. Ponds are smaller and shallower.\nC. Ponds are not surrounded by land.\nD. Ponds have a different amount of salt.\nAnswer:",
                 "corrupted_prompt": "Question: How is a pond different from a lake?\n1. Ponds have moving water.\n2. Ponds are smaller and shallower.\n3. Ponds are not surrounded by land.\n4. Ponds have a different amount of salt.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 4
+                    "index": 4,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5357,11 +5667,13 @@
                 "clean_prompt": "Question: A substance with a mass of 10 g is heated to produce two new substances. The mass of the first new substance is 9.3 g and the mass of the second new substance is 0.7 g. Which of the following is best demonstrated by this example?\nA. heat transfer\nB. physical change\nC. law of conservation of mass\nD. law of conservation of energy\nAnswer:",
                 "corrupted_prompt": "Question: A substance with a mass of 10 g is heated to produce two new substances. The mass of the first new substance is 9.3 g and the mass of the second new substance is 0.7 g. Which of the following is best demonstrated by this example?\n1. heat transfer\n2. physical change\n3. law of conservation of mass\n4. law of conservation of energy\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 5
+                    "index": 5,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5372,11 +5684,13 @@
                 "clean_prompt": "Question: The cilia in the respiratory system are responsible for preventing dirt and mucus from entering the bronchial tubes and lungs. If the cilia are damaged, the person's bronchial tubes and lungs are most likely to\nA. close to prevent further damage.\nB. stop producing mucus.\nC. become clogged.\nD. become efficient.\nAnswer:",
                 "corrupted_prompt": "Question: The cilia in the respiratory system are responsible for preventing dirt and mucus from entering the bronchial tubes and lungs. If the cilia are damaged, the person's bronchial tubes and lungs are most likely to\n1. close to prevent further damage.\n2. stop producing mucus.\n3. become clogged.\n4. become efficient.\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 6
+                    "index": 6,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5387,11 +5701,13 @@
                 "clean_prompt": "Question: Which two traits would best distinguish a bird from other vertebrates?\nA. fur and wings\nB. gills and feet\nC. feathers and wings\nD. moist skin and feet\nAnswer:",
                 "corrupted_prompt": "Question: Which two traits would best distinguish a bird from other vertebrates?\n1. fur and wings\n2. gills and feet\n3. feathers and wings\n4. moist skin and feet\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 7
+                    "index": 7,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5402,11 +5718,13 @@
                 "clean_prompt": "Question: A green plant absorbs light. A frog eats flies. These are both examples of how organisms\nA. obtain energy\nB. escape predators\nC. produce offspring\nD. excrete waste\nAnswer:",
                 "corrupted_prompt": "Question: A green plant absorbs light. A frog eats flies. These are both examples of how organisms\n1. obtain energy\n2. escape predators\n3. produce offspring\n4. excrete waste\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 8
+                    "index": 8,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5417,11 +5735,13 @@
                 "clean_prompt": "Question: Which of these scientific advances occurred first?\nA. the invention of the telescope\nB. the building of submarines\nC. the generation of electricity\nD. the breeding of plants\nAnswer:",
                 "corrupted_prompt": "Question: Which of these scientific advances occurred first?\n1. the invention of the telescope\n2. the building of submarines\n3. the generation of electricity\n4. the breeding of plants\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 9
+                    "index": 9,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5432,11 +5752,13 @@
                 "clean_prompt": "Question: Which instrument measures atmospheric pressure?\nA. barometer\nB. hygrometer\nC. thermometer\nD. magnetometer\nAnswer:",
                 "corrupted_prompt": "Question: Which instrument measures atmospheric pressure?\n1. barometer\n2. hygrometer\n3. thermometer\n4. magnetometer\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 10
+                    "index": 10,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5447,11 +5769,13 @@
                 "clean_prompt": "Question: Which of the following is produced during the process of cellular respiration?\nA. carbon dioxide\nB. sodium chloride\nC. oxygen\nD. sugar\nAnswer:",
                 "corrupted_prompt": "Question: Which of the following is produced during the process of cellular respiration?\n1. carbon dioxide\n2. sodium chloride\n3. oxygen\n4. sugar\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 11
+                    "index": 11,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5462,11 +5786,13 @@
                 "clean_prompt": "Question: An anemometer is a tool that measures\nA. wind direction.\nB. wind speed.\nC. air pressure.\nD. air temperature.\nAnswer:",
                 "corrupted_prompt": "Question: An anemometer is a tool that measures\n1. wind direction.\n2. wind speed.\n3. air pressure.\n4. air temperature.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 12
+                    "index": 12,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5477,11 +5803,13 @@
                 "clean_prompt": "Question: The element cesium, Cs, is an alkali metal. Which chemical formula represents a cesium compound that is likely to exist?\nA. CsCl\nB. CsCl_{2}\nC. CsO\nD. CsO_{2}\nAnswer:",
                 "corrupted_prompt": "Question: The element cesium, Cs, is an alkali metal. Which chemical formula represents a cesium compound that is likely to exist?\n1. CsCl\n2. CsCl_{2}\n3. CsO\n4. CsO_{2}\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 13
+                    "index": 13,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5492,11 +5820,13 @@
                 "clean_prompt": "Question: The cells of a plant help the plant maintain its life functions. What part of a plant cell has the function of producing sugar in the presence of sunlight?\nA. chloroplast\nB. cytoplasm\nC. mitochondria\nD. nucleus\nAnswer:",
                 "corrupted_prompt": "Question: The cells of a plant help the plant maintain its life functions. What part of a plant cell has the function of producing sugar in the presence of sunlight?\n1. chloroplast\n2. cytoplasm\n3. mitochondria\n4. nucleus\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 14
+                    "index": 14,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5507,11 +5837,13 @@
                 "clean_prompt": "Question: A sample of sulfur forms crystals when it\nA. melts.\nB. freezes.\nC. evaporates.\nD. condenses.\nAnswer:",
                 "corrupted_prompt": "Question: A sample of sulfur forms crystals when it\n1. melts.\n2. freezes.\n3. evaporates.\n4. condenses.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 15
+                    "index": 15,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5522,11 +5854,13 @@
                 "clean_prompt": "Question: When a person is infected with the influenza virus, the immune system defends the body through a cell-mediated immune response. Which immune cell is responsible for protecting the body from the influenza virus infection?\nA. phagocytes\nB. B lymphocytes\nC. helper T lymphocytes\nD. cytotoxic T lymphocytes\nAnswer:",
                 "corrupted_prompt": "Question: When a person is infected with the influenza virus, the immune system defends the body through a cell-mediated immune response. Which immune cell is responsible for protecting the body from the influenza virus infection?\n1. phagocytes\n2. B lymphocytes\n3. helper T lymphocytes\n4. cytotoxic T lymphocytes\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 16
+                    "index": 16,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5537,11 +5871,13 @@
                 "clean_prompt": "Question: Which form of solar radiation causes sunburn?\nA. Visible\nB. Ultraviolet\nC. Infrared\nD. X-rays\nE. Radio waves\nAnswer:",
                 "corrupted_prompt": "Question: Which form of solar radiation causes sunburn?\n1. Visible\n2. Ultraviolet\n3. Infrared\n4. X-rays\n5. Radio waves\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 17
+                    "index": 17,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5552,11 +5888,13 @@
                 "clean_prompt": "Question: About 75% of the world's active volcanoes are the result of tectonic activity around which plate?\nA. North American Plate\nB. African Plate\nC. Pacific Plate\nD. Nazca Plate\nAnswer:",
                 "corrupted_prompt": "Question: About 75% of the world's active volcanoes are the result of tectonic activity around which plate?\n1. North American Plate\n2. African Plate\n3. Pacific Plate\n4. Nazca Plate\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 18
+                    "index": 18,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5567,11 +5905,13 @@
                 "clean_prompt": "Question: Which of the following is the most accurate measurement for the length of an object that is actually 15.0 m long?\nA. 15.35 m\nB. 15.2 m\nC. 14.55 m\nD. 14.5 m\nAnswer:",
                 "corrupted_prompt": "Question: Which of the following is the most accurate measurement for the length of an object that is actually 15.0 m long?\n1. 15.35 m\n2. 15.2 m\n3. 14.55 m\n4. 14.5 m\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 19
+                    "index": 19,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5582,11 +5922,13 @@
                 "clean_prompt": "Question: After a rainfall, which process in the water cycle draws the water back up into the air?\nA. condensation\nB. evaporation\nC. circulation\nD. precipitation\nAnswer:",
                 "corrupted_prompt": "Question: After a rainfall, which process in the water cycle draws the water back up into the air?\n1. condensation\n2. evaporation\n3. circulation\n4. precipitation\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 20
+                    "index": 20,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5597,11 +5939,13 @@
                 "clean_prompt": "Question: When a person speaks, the type of wave produced can be described as all these except\nA. transverse.\nB. mechanical.\nC. compression.\nD. longitudinal.\nAnswer:",
                 "corrupted_prompt": "Question: When a person speaks, the type of wave produced can be described as all these except\n1. transverse.\n2. mechanical.\n3. compression.\n4. longitudinal.\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 21
+                    "index": 21,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5612,11 +5956,13 @@
                 "clean_prompt": "Question: Bill stands in a swimming pool and notices that the water around his feet is a lot cooler than the water near the surface. Which process causes this difference in temperature?\nA. convection\nB. evaporation\nC. radiation\nD. conduction\nAnswer:",
                 "corrupted_prompt": "Question: Bill stands in a swimming pool and notices that the water around his feet is a lot cooler than the water near the surface. Which process causes this difference in temperature?\n1. convection\n2. evaporation\n3. radiation\n4. conduction\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 22
+                    "index": 22,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5627,11 +5973,13 @@
                 "clean_prompt": "Question: Andy adds a small amount of water to sand and makes shapes with the wet sand. Which of these best describes the wet sand?\nA. a mixture\nB. a solution\nC. an element\nD. a compound\nAnswer:",
                 "corrupted_prompt": "Question: Andy adds a small amount of water to sand and makes shapes with the wet sand. Which of these best describes the wet sand?\n1. a mixture\n2. a solution\n3. an element\n4. a compound\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 23
+                    "index": 23,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5642,11 +5990,13 @@
                 "clean_prompt": "Question: To observe materials up close and in greater detail we use\nA. gripping tools.\nB. optical tools.\nC. cutting tools.\nD. polishing tools.\nAnswer:",
                 "corrupted_prompt": "Question: To observe materials up close and in greater detail we use\n1. gripping tools.\n2. optical tools.\n3. cutting tools.\n4. polishing tools.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 24
+                    "index": 24,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5657,11 +6007,13 @@
                 "clean_prompt": "Question: Joyce is conducting a traffic survey and needs to find out how many cars cross the crosswalk in the morning before the school bell rings. How should she collect this data?\nA. Make a tally chart\nB. Draw a pictograph\nC. Take a picture of each passing car\nD. Write down the cars' license plate numbers\nAnswer:",
                 "corrupted_prompt": "Question: Joyce is conducting a traffic survey and needs to find out how many cars cross the crosswalk in the morning before the school bell rings. How should she collect this data?\n1. Make a tally chart\n2. Draw a pictograph\n3. Take a picture of each passing car\n4. Write down the cars' license plate numbers\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 25
+                    "index": 25,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5672,11 +6024,13 @@
                 "clean_prompt": "Question: A student conducts an experiment to determine the average size of acorn that squirrels eat. The student gave several different sizes of acorns to a squirrel. Which action would most likely improve the results?\nA. change the food source\nB. use more than one squirrel\nC. increase the number of students\nD. shorten the period of observation\nAnswer:",
                 "corrupted_prompt": "Question: A student conducts an experiment to determine the average size of acorn that squirrels eat. The student gave several different sizes of acorns to a squirrel. Which action would most likely improve the results?\n1. change the food source\n2. use more than one squirrel\n3. increase the number of students\n4. shorten the period of observation\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 26
+                    "index": 26,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5687,11 +6041,13 @@
                 "clean_prompt": "Question: India is in the Northern Hemisphere and Australia is in the Southern Hemisphere. In June, it is summer in India and winter in Australia. What is the main reason the seasons are opposite in the two countries?\nA. because Earth is tilted on its axis\nB. because the Sun rotates on its axis\nC. because Earth revolves around the Sun\nD. because of the distance between the countries\nAnswer:",
                 "corrupted_prompt": "Question: India is in the Northern Hemisphere and Australia is in the Southern Hemisphere. In June, it is summer in India and winter in Australia. What is the main reason the seasons are opposite in the two countries?\n1. because Earth is tilted on its axis\n2. because the Sun rotates on its axis\n3. because Earth revolves around the Sun\n4. because of the distance between the countries\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 27
+                    "index": 27,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5702,11 +6058,13 @@
                 "clean_prompt": "Question: What contributes the most to beach erosion?\nA. animal activity\nB. evaporation\nC. precipitation\nD. wave action\nAnswer:",
                 "corrupted_prompt": "Question: What contributes the most to beach erosion?\n1. animal activity\n2. evaporation\n3. precipitation\n4. wave action\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 28
+                    "index": 28,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5717,11 +6075,13 @@
                 "clean_prompt": "Question: Which type of graph would best display the changes in temperature over a 24 hour period?\nA. line graph\nB. pictograph\nC. circle (pie) graph\nD. stem-and-leaf graph\nAnswer:",
                 "corrupted_prompt": "Question: Which type of graph would best display the changes in temperature over a 24 hour period?\n1. line graph\n2. pictograph\n3. circle (pie) graph\n4. stem-and-leaf graph\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 29
+                    "index": 29,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5732,11 +6092,13 @@
                 "clean_prompt": "Question: Which structure determines the traits that will be passed to offspring?\nA. chromosome\nB. centromere\nC. nuclear membrane\nD. spindle fibers\nAnswer:",
                 "corrupted_prompt": "Question: Which structure determines the traits that will be passed to offspring?\n1. chromosome\n2. centromere\n3. nuclear membrane\n4. spindle fibers\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 30
+                    "index": 30,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5747,11 +6109,13 @@
                 "clean_prompt": "Question: Oak trees produce seeds that are contained in acorns. Blue jays eat the seeds in acorns. Blue jays also collect acorns and hide them in the ground, often far away from the parent oak tree. Blue jays do not eat the seed of every acorn they hide. How do oak trees benefit from blue jays' collecting and hiding acorns?\nA. The oak trees are pollinated by the blue jays.\nB. The oak trees are protected from other herbivores.\nC. The seeds of oak trees are protected from the sun.\nD. The seeds of oak trees are planted in new environments.\nAnswer:",
                 "corrupted_prompt": "Question: Oak trees produce seeds that are contained in acorns. Blue jays eat the seeds in acorns. Blue jays also collect acorns and hide them in the ground, often far away from the parent oak tree. Blue jays do not eat the seed of every acorn they hide. How do oak trees benefit from blue jays' collecting and hiding acorns?\n1. The oak trees are pollinated by the blue jays.\n2. The oak trees are protected from other herbivores.\n3. The seeds of oak trees are protected from the sun.\n4. The seeds of oak trees are planted in new environments.\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 31
+                    "index": 31,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5762,11 +6126,13 @@
                 "clean_prompt": "Question: Which step of the scientific method will follow after a student graphs collected data during a lab experiment?\nA. observing\nB. hypothesizing\nC. analyzing\nD. researching\nAnswer:",
                 "corrupted_prompt": "Question: Which step of the scientific method will follow after a student graphs collected data during a lab experiment?\n1. observing\n2. hypothesizing\n3. analyzing\n4. researching\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 32
+                    "index": 32,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5777,11 +6143,13 @@
                 "clean_prompt": "Question: Which is a true statement about cells?\nA. Plant cells contain chloroplasts.\nB. Animal cells are missing a nucleus.\nC. Only plant cells have a cell membrane.\nD. Animal cells include a rigid wall structure.\nAnswer:",
                 "corrupted_prompt": "Question: Which is a true statement about cells?\n1. Plant cells contain chloroplasts.\n2. Animal cells are missing a nucleus.\n3. Only plant cells have a cell membrane.\n4. Animal cells include a rigid wall structure.\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 33
+                    "index": 33,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5792,11 +6160,13 @@
                 "clean_prompt": "Question: Which kind of events can form mountains?\nA. earthquakes and volcanoes\nB. earthquakes and landslides\nC. landslides and avalanches\nD. volcanoes and avalanches\nAnswer:",
                 "corrupted_prompt": "Question: Which kind of events can form mountains?\n1. earthquakes and volcanoes\n2. earthquakes and landslides\n3. landslides and avalanches\n4. volcanoes and avalanches\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 34
+                    "index": 34,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5807,11 +6177,13 @@
                 "clean_prompt": "Question: During the early 1990s, people began using cell phones to communicate. The development of the cell phone was most likely a response to the need of society to\nA. be able to communicate when sick.\nB. provide a safer method of communicating.\nC. provide more jobs in the communication industry.\nD. be able to communicate when away from home.\nAnswer:",
                 "corrupted_prompt": "Question: During the early 1990s, people began using cell phones to communicate. The development of the cell phone was most likely a response to the need of society to\n1. be able to communicate when sick.\n2. provide a safer method of communicating.\n3. provide more jobs in the communication industry.\n4. be able to communicate when away from home.\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 35
+                    "index": 35,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5822,11 +6194,13 @@
                 "clean_prompt": "Question: Which process uses carbon from the air to make food for plants?\nA. growth\nB. respiration\nC. decomposition\nD. photosynthesis\nAnswer:",
                 "corrupted_prompt": "Question: Which process uses carbon from the air to make food for plants?\n1. growth\n2. respiration\n3. decomposition\n4. photosynthesis\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 36
+                    "index": 36,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5837,11 +6211,13 @@
                 "clean_prompt": "Question: Organisms contain DNA. What makes prokaryotic DNA different from eukaryotic DNA?\nA. the molecular shape\nB. the types of bases\nC. the sugar composition\nD. the presence of phosphates\nAnswer:",
                 "corrupted_prompt": "Question: Organisms contain DNA. What makes prokaryotic DNA different from eukaryotic DNA?\n1. the molecular shape\n2. the types of bases\n3. the sugar composition\n4. the presence of phosphates\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 37
+                    "index": 37,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5852,11 +6228,13 @@
                 "clean_prompt": "Question: The changing appearances of the nighttime sky over the surface of Earth and eclipses of the Moon have provided evidence that\nA. Earth is a sphere.\nB. Earth supports life.\nC. Earth has a layered atmosphere.\nD. Earth is covered mostly with water.\nAnswer:",
                 "corrupted_prompt": "Question: The changing appearances of the nighttime sky over the surface of Earth and eclipses of the Moon have provided evidence that\n1. Earth is a sphere.\n2. Earth supports life.\n3. Earth has a layered atmosphere.\n4. Earth is covered mostly with water.\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 38
+                    "index": 38,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -5867,11 +6245,13 @@
                 "clean_prompt": "Question: Scientists found evidence of past glacial activity in Massachusetts. Which of the following conclusions is best supported by this evidence?\nA. Sea levels were much higher in the past.\nB. The climate on Earth has changed over time.\nC. Total numbers of organisms on Earth have changed over time.\nD. The total amount of radiation from the Sun was much higher in the past.\nAnswer:",
                 "corrupted_prompt": "Question: Scientists found evidence of past glacial activity in Massachusetts. Which of the following conclusions is best supported by this evidence?\n1. Sea levels were much higher in the past.\n2. The climate on Earth has changed over time.\n3. Total numbers of organisms on Earth have changed over time.\n4. The total amount of radiation from the Sun was much higher in the past.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 39
+                    "index": 39,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5882,11 +6262,13 @@
                 "clean_prompt": "Question: Which statement explains why a mother's unhealthy diet during pregnancy is harmful to her embryo's development?\nA. The embryo inherits half its chromosomes from its mother.\nB. The embryo receives its food from its mother through the placenta.\nC. The embryo receives oxygen through the placenta.\nD. The embryo receives mutations carried by its mother.\nAnswer:",
                 "corrupted_prompt": "Question: Which statement explains why a mother's unhealthy diet during pregnancy is harmful to her embryo's development?\n1. The embryo inherits half its chromosomes from its mother.\n2. The embryo receives its food from its mother through the placenta.\n3. The embryo receives oxygen through the placenta.\n4. The embryo receives mutations carried by its mother.\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 40
+                    "index": 40,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5897,11 +6279,13 @@
                 "clean_prompt": "Question: Which word best describes the physical state of an ice cube?\nA. gas\nB. solid\nC. liquid\nD. plasma\nAnswer:",
                 "corrupted_prompt": "Question: Which word best describes the physical state of an ice cube?\n1. gas\n2. solid\n3. liquid\n4. plasma\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 41
+                    "index": 41,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5912,11 +6296,13 @@
                 "clean_prompt": "Question: All nations need to import and export goods for their economic survival. As a result, many island nations have developed advanced technology for transporting goods by\nA. space.\nB. rail.\nC. sea.\nD. road.\nAnswer:",
                 "corrupted_prompt": "Question: All nations need to import and export goods for their economic survival. As a result, many island nations have developed advanced technology for transporting goods by\n1. space.\n2. rail.\n3. sea.\n4. road.\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 42
+                    "index": 42,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5927,11 +6313,13 @@
                 "clean_prompt": "Question: A species of mouse spends the day sleeping in its burrow to avoid high daytime temperatures. It is processing what little water it needs from the seeds it collects. To which environment is this mouse best adapted?\nA. rainforest\nB. marine\nC. desert\nD. tundra\nAnswer:",
                 "corrupted_prompt": "Question: A species of mouse spends the day sleeping in its burrow to avoid high daytime temperatures. It is processing what little water it needs from the seeds it collects. To which environment is this mouse best adapted?\n1. rainforest\n2. marine\n3. desert\n4. tundra\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 43
+                    "index": 43,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5942,11 +6330,13 @@
                 "clean_prompt": "Question: What system helps the body defend itself against disease while maintaining the levels of body fluids?\nA. nervous\nB. digestive\nC. lymphatic\nD. integumentary\nAnswer:",
                 "corrupted_prompt": "Question: What system helps the body defend itself against disease while maintaining the levels of body fluids?\n1. nervous\n2. digestive\n3. lymphatic\n4. integumentary\nAnswer:",
                 "correct_token": " C",
-                "incorrect_token": "3",
+                "incorrect_token": "D",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 44
+                    "index": 44,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "3"
                 }
             },
             {
@@ -5957,11 +6347,13 @@
                 "clean_prompt": "Question: After fossils are formed, which process is most likely to destroy them?\nA. the carbon cycle\nB. the nitrogen cycle\nC. the water cycle\nD. the rock cycle\nAnswer:",
                 "corrupted_prompt": "Question: After fossils are formed, which process is most likely to destroy them?\n1. the carbon cycle\n2. the nitrogen cycle\n3. the water cycle\n4. the rock cycle\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 45
+                    "index": 45,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             },
             {
@@ -5972,11 +6364,13 @@
                 "clean_prompt": "Question: Which of these causes the MOST evaporation of water from a lake?\nA. Freezing of the lake\nB. Heat from the Sun\nC. Melting snow forming streams\nD. Volcanic activity near the lake\nAnswer:",
                 "corrupted_prompt": "Question: Which of these causes the MOST evaporation of water from a lake?\n1. Freezing of the lake\n2. Heat from the Sun\n3. Melting snow forming streams\n4. Volcanic activity near the lake\nAnswer:",
                 "correct_token": " B",
-                "incorrect_token": "2",
+                "incorrect_token": "C",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 46
+                    "index": 46,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "2"
                 }
             },
             {
@@ -5987,11 +6381,13 @@
                 "clean_prompt": "Question: Jeannie put her soccer ball on the ground on the side of a hill. What force acted on the soccer ball to make it roll down the hill?\nA. gravity\nB. electricity\nC. friction\nD. magnetism\nAnswer:",
                 "corrupted_prompt": "Question: Jeannie put her soccer ball on the ground on the side of a hill. What force acted on the soccer ball to make it roll down the hill?\n1. gravity\n2. electricity\n3. friction\n4. magnetism\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 47
+                    "index": 47,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -6002,11 +6398,13 @@
                 "clean_prompt": "Question: Which tools are needed to measure the length and mass of a seashell?\nA. a ruler and a balance\nB. a ruler and a microscope\nC. a balance and a stopwatch\nD. a microscope and a magnet\nAnswer:",
                 "corrupted_prompt": "Question: Which tools are needed to measure the length and mass of a seashell?\n1. a ruler and a balance\n2. a ruler and a microscope\n3. a balance and a stopwatch\n4. a microscope and a magnet\nAnswer:",
                 "correct_token": " A",
-                "incorrect_token": "1",
+                "incorrect_token": "B",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 48
+                    "index": 48,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "1"
                 }
             },
             {
@@ -6017,11 +6415,13 @@
                 "clean_prompt": "Question: Which statement about the genetic traits of humans is true?\nA. Recessive forms of genes are always visible in offspring.\nB. Visible traits are the same for each member of a family.\nC. Dominant forms of genes are always inherited from both parents.\nD. Visible traits depend on the dominant and recessive forms of genes from each parent.\nAnswer:",
                 "corrupted_prompt": "Question: Which statement about the genetic traits of humans is true?\n1. Recessive forms of genes are always visible in offspring.\n2. Visible traits are the same for each member of a family.\n3. Dominant forms of genes are always inherited from both parents.\n4. Visible traits depend on the dominant and recessive forms of genes from each parent.\nAnswer:",
                 "correct_token": " D",
-                "incorrect_token": "4",
+                "incorrect_token": "A",
                 "metadata": {
                     "source": "mib-bench",
                     "hf_dataset": "mib-bench/arc_easy",
-                    "index": 49
+                    "index": 49,
+                    "foil_fix": "clean-wrong-option-v2-balanced",
+                    "symbol_counterfactual_answer": "4"
                 }
             }
         ]

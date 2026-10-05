@@ -269,6 +269,41 @@ def _default_foil_map(
     return None
 
 
+def _validate_gap_indices(
+    target_to_logit_idx: Mapping[Any, int],
+    foil_by_target: Mapping[Any, Any] | None,
+    default_foil: Any | None,
+    score_kind: ScoreKind,
+) -> None:
+    """Fail fast when a logit-gap target/foil pair shares one logit index.
+
+    The gap is then identically zero for every coalition, so all faithfulness
+    metrics silently degenerate (recoverable_range == 0). This happens
+    whenever target and foil share a first sub-token (multi-token answers
+    resolved to ``token_ids[0]``). Use ``score_kind="answer_span"`` — which
+    teacher-forces the full spans and disambiguates shared prefixes — or
+    distinct single-token specs (``id:<int>``) instead.
+    """
+    if score_kind != "logit_gap":
+        return
+    for label, target_idx in target_to_logit_idx.items():
+        foil = None
+        if foil_by_target and label in foil_by_target:
+            foil = foil_by_target[label]
+        elif default_foil is not None:
+            foil = default_foil
+        if foil is None or foil not in target_to_logit_idx:
+            continue
+        if target_to_logit_idx[foil] == target_idx:
+            raise ValueError(
+                f"logit_gap target {label!r} and foil {foil!r} resolve to the same "
+                f"logit index {target_idx}; the gap would be identically zero. "
+                "Targets/foils sharing a first sub-token need "
+                "score_kind='answer_span' (full-span teacher-forcing) or distinct "
+                "single-token specs."
+            )
+
+
 def _normalize_model_kwargs(kwargs: Mapping[str, Any] | None) -> dict[str, Any]:
     normalized = dict(kwargs or {})
     if not normalized:
@@ -508,13 +543,16 @@ def create_replacement_model_scorer(
             strict_single_token=strict_single_token,
         )
 
+    foil_map = _default_foil_map(target_to_logit_idx, foil_by_target)
+    _validate_gap_indices(target_to_logit_idx, foil_map, default_foil, score_kind)
+
     scorer = ReplacementModelInterventionScorer(
         model=model,
         prompt=prompt,
         node_to_intervention=node_to_intervention,
         target_to_logit_idx=target_to_logit_idx,
         score_kind=score_kind,
-        foil_by_target=_default_foil_map(target_to_logit_idx, foil_by_target),
+        foil_by_target=foil_map,
         default_foil=default_foil,
         ablation_value=ablation_value,
         constrained_layers=_coerce_constrained_layers(constrained_layers),

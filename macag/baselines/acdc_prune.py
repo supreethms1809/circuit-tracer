@@ -6,6 +6,13 @@ not native edges with corrupted patching / KL(G‖H). For the native-component
 track see ``macag.baselines.acdc_native`` (``acdc_native``).
 
 Naming map: ``macag/docs/baseline_method_map.md``.
+
+Tau units: raw v units (logit-gap points by default), NOT normalized
+fractions. The degradation test is ``v(E) - v(E - node) < tau`` on the capped
+coalition value, so a tau of 0.05 means 0.05 raw faithfulness points —
+calibrate per score_kind (KL-scale v needs much smaller taus). Prefer
+``--acdc-target-k`` (bisect to a budget-matched size) over hand-picked taus
+when comparing against fixed-budget methods.
 """
 
 from __future__ import annotations
@@ -64,7 +71,8 @@ def acdc_prune(
     alpha: float = 0.5,
     order: str = "top_down",
     progress: bool = False,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> ACDCPruneResult:
     """Single top-down sweep: drop a node when v(E) - v(E - node) < tau.
 
@@ -72,6 +80,9 @@ def acdc_prune(
     pruned; larger tau prunes more aggressively. One pass in a deterministic
     order (``top_down`` per node layer/ctx metadata, or ``given`` to keep the
     candidate order), mirroring ACDC's single output-to-input traversal.
+
+    ``tau`` is in raw v units (logit-gap points by default), not normalized
+    fractions — see the module docstring.
     """
     if order not in ("top_down", "given"):
         raise ValueError("order must be 'top_down' or 'given'.")
@@ -82,7 +93,8 @@ def acdc_prune(
 
     kept = set(pool)
     current_value = coalition_value(
-        oracle, target, kept, alpha, cap_sufficiency=cap_sufficiency
+        oracle, target, kept, alpha,
+        cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
     )
     removed_order: list[NodeId] = []
     decisions: list[dict[str, Any]] = []
@@ -90,7 +102,8 @@ def acdc_prune(
     for node in ordered:
         trial = kept - {node}
         trial_value = coalition_value(
-            oracle, target, trial, alpha, cap_sufficiency=cap_sufficiency
+            oracle, target, trial, alpha,
+            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
         )
         degradation = current_value - trial_value
         pruned = degradation < tau
@@ -117,7 +130,10 @@ def acdc_prune(
         removed_order=removed_order,
         value=current_value,
         decisions=decisions,
-        params={"alpha": alpha, "order": order, "tau": tau, "cap_sufficiency": cap_sufficiency},
+        params={
+            "alpha": alpha, "order": order, "tau": tau,
+            "cap_sufficiency": cap_sufficiency, "cap_necessity": cap_necessity,
+        },
     )
 
 
@@ -130,7 +146,8 @@ def acdc_tau_sweep(
     alpha: float = 0.5,
     order: str = "top_down",
     progress: bool = False,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> list[ACDCPruneResult]:
     """Run the prune at each tau (ascending) to trace a size/faithfulness curve.
 
@@ -152,6 +169,7 @@ def acdc_tau_sweep(
                 order=order,
                 progress=progress,
                 cap_sufficiency=cap_sufficiency,
+                cap_necessity=cap_necessity,
             )
         )
     return results
@@ -171,7 +189,8 @@ def acdc_target_size(
     tau_hi: float | None = None,
     seed_results: Sequence[ACDCPruneResult] | None = None,
     progress: bool = False,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> ACDCPruneResult:
     """Find a tau whose pruned set is as close as possible to ``target_k`` **without exceeding it**.
 
@@ -211,6 +230,7 @@ def acdc_target_size(
             order=order,
             progress=progress,
             cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
 
     def feasible(result: ACDCPruneResult) -> bool:

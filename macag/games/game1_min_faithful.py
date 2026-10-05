@@ -194,7 +194,8 @@ def prefilter_candidates(
     connected: bool = False,
     progress: bool = True,
     log_every: int = 50,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> list[NodeId]:
     """Rank candidates by singleton gain and keep the top-k.
 
@@ -225,6 +226,7 @@ def prefilter_candidates(
             nodes=singleton,
             alpha=alpha,
             cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
         utility = game1_utility(metrics.faithfulness_delta, size=1, lam=lam)
         ranking.append((utility, node))
@@ -268,7 +270,8 @@ def result_from_selected_order(
     total_candidates: int,
     candidate_count: int,
     params: Mapping[str, Any],
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> EvidenceSetResult:
     """Rebuild Game 1 metrics for an already-chosen evidence order (no greedy)."""
     oracle.reset_stats()
@@ -280,6 +283,7 @@ def result_from_selected_order(
         nodes=selected,
         alpha=alpha,
         cap_sufficiency=cap_sufficiency,
+        cap_necessity=cap_necessity,
     )
     utility = game1_utility(faithfulness_delta=metrics.faithfulness_delta, size=len(selected), lam=lam)
     stats = oracle.cache_stats()
@@ -320,7 +324,8 @@ def solve_game1(
     checkpoint_path: str | Path | None = None,
     resume_selected_order: Sequence[NodeId] | None = None,
     checkpoint_meta: Mapping[str, Any] | None = None,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> EvidenceSetResult:
     """Greedy hill-climb solver for Game 1.
 
@@ -401,6 +406,7 @@ def solve_game1(
             resume_selected_order=resume_selected_order,
             checkpoint_meta=checkpoint_meta,
             cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
 
 
@@ -425,7 +431,8 @@ def _solve_game1_body(
     checkpoint_path: str | Path | None,
     resume_selected_order: Sequence[NodeId] | None,
     checkpoint_meta: Mapping[str, Any] | None,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> EvidenceSetResult:
     if prefilter_top_k is not None:
         if prefilter_fn:
@@ -445,6 +452,7 @@ def _solve_game1_body(
                 progress=progress,
                 log_every=log_every,
                 cap_sufficiency=cap_sufficiency,
+                cap_necessity=cap_necessity,
             )
 
     utility_cache: dict[frozenset[NodeId], float] = {}
@@ -461,6 +469,7 @@ def _solve_game1_body(
                 nodes=nodes,
                 alpha=alpha,
                 cap_sufficiency=cap_sufficiency,
+                cap_necessity=cap_necessity,
             )
             utility = game1_utility(faithfulness_delta=metrics.faithfulness_delta, size=len(nodes), lam=lam)
             utility_cache[key] = utility
@@ -648,7 +657,18 @@ def _solve_game1_body(
             # is in [0, 1]; reaching >= 1 - eps means the evidence recovers all but
             # `eps` of the achievable faithfulness. The previous condition tested only
             # the raw sufficiency gap, which is inconsistent when alpha != 1.
-            if metrics.faithfulness_delta_normalized >= 1.0 - faithfulness_eps:
+            # A2'': when R <= 0 the normalized ratio is >= 1 for any non-empty set
+            # (sufficiency <= R < 0 divided by R), so it must NOT trigger the stop
+            # — that would certify a singleton as "recovering everything".
+            if metrics.is_degenerate:
+                if progress:
+                    LOGGER.warning(
+                        "Game1 normalized stop skipped: recoverable_range=%.6f <= 0 "
+                        "(degenerate cell, A2''); capped sufficiency cannot "
+                        "discriminate here — use the unfrozen leg / necessity only.",
+                        metrics.recoverable_range,
+                    )
+            elif metrics.faithfulness_delta_normalized >= 1.0 - faithfulness_eps:
                 if progress:
                     LOGGER.info(
                         "Game1 reached faithfulness_eps=%.6f (normalized delta=%.6f)",
@@ -686,6 +706,7 @@ def _solve_game1_body(
             "min_gain": min_gain,
             "fill_budget": fill_budget,
             "cap_sufficiency": cap_sufficiency,
+            "cap_necessity": cap_necessity,
         },
         oracle_calls=stats["oracle_calls"],
         cache_hits=stats["cache_hits"],

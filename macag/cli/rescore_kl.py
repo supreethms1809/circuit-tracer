@@ -29,6 +29,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing KL JSON.")
     parser.add_argument("--progress", action="store_true", help="Log each rescored directory.")
+    parser.add_argument(
+        "--cap-sufficiency",
+        dest="cap_sufficiency",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Cap keep-only sufficiency at the full-set ceiling (default: on).",
+    )
+    parser.add_argument(
+        "--cap-necessity",
+        dest="cap_necessity",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Cap remove-set necessity at the empty-set floor (default: on).",
+    )
     return parser
 
 
@@ -38,7 +52,12 @@ def main(argv: list[str] | None = None) -> int:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     if args.run_dir is not None:
-        path = rescore_run_dir(args.run_dir, force=args.force)
+        path = rescore_run_dir(
+            args.run_dir,
+            force=args.force,
+            cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
+        )
         if path is None:
             LOGGER.error("rescore failed for %s", args.run_dir)
             return 1
@@ -46,7 +65,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     clts = [c.strip() for c in args.clts.split(",") if c.strip()] or None
-    paths = rescore_tree(args.root, clt_tags=clts, force=args.force)
+    paths = rescore_tree(
+        args.root,
+        clt_tags=clts,
+        force=args.force,
+        cap_sufficiency=args.cap_sufficiency,
+        cap_necessity=args.cap_necessity,
+    )
     print(f"rescored {len(paths)} run(s) under {args.root}")
     return 0
 

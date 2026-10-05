@@ -16,24 +16,31 @@ def coalition_value(
     target: TargetId,
     nodes: set[NodeId],
     alpha: float,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> float:
     """The characteristic function v(S) of the underlying coalitional game.
 
-    v(S) = alpha * sufficiency + (1 - alpha) * (all - remove(S)).
+    v(S) = alpha * (keep_only(S) - empty) + (1 - alpha) * (all - remove(S)),
+    i.e. the alpha-mixed faithfulness_delta the games optimize (macag.md §3.0).
     Sufficiency is keep_only(S) - empty, or min(keep_only(S), all) - empty
     when ``cap_sufficiency`` is set, so a set is not rewarded for driving the
     logit gap past the clean model. Every baseline selects or ranks under
     this same v so only the selection rule differs across methods.
+
+    Caps (A2/A2', default on) bound both terms by the recoverable range:
+    sufficiency uses min(keep, all) - empty, necessity uses all - max(remove,
+    empty). All callers (Game 1, Game 2, Shapley/Banzhaf gold, prefix
+    evaluation) must pass the same flags so the gold ranks under the v Game 1
+    optimizes [G 1.3].
     """
-    if not 0.0 <= alpha <= 1.0:
-        raise ValueError("alpha must be in [0, 1].")
     metrics = compute_faithfulness_metrics(
         oracle=oracle,
         target=target,
         nodes=set(nodes),
         alpha=alpha,
         cap_sufficiency=cap_sufficiency,
+        cap_necessity=cap_necessity,
     )
     value = float(metrics.faithfulness_delta)
     if not math.isfinite(value):

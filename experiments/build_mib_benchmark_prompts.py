@@ -71,28 +71,33 @@ def _ioi_tokens(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str]:
     return _decode_token(tokenizer, correct), _decode_token(tokenizer, incorrect)
 
 
-def _single_token_id(tokenizer: Any, text: str) -> int:
-    """Return the vocab id for ``text``, preferring a space-prefixed single token.
+def _normalize_answer_index(answer_key: Any, n_choices: int) -> int:
+    """Normalize MIB answerKey (int or digit-string) to a choice index."""
+    try:
+        idx = int(answer_key)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Unrecognized answerKey {answer_key!r}") from exc
+    if not 0 <= idx < n_choices:
+        raise ValueError(f"answerKey {idx} out of range for {n_choices} choices")
+    return idx
 
-    Letter answer keys (``A``/``B``/``C``/``D``) are mid-prompt continuations after
-    ``Answer:`` and almost always need the space-prefixed BPE form. Digit foils
-    (``1``/``2``/…) stay bare when ``" 1"`` would be multi-token.
+
+def _mcqa_tokens(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str]:
+    """Foil = a WRONG option from the CLEAN prompt (logit-gap convention).
+
+    MIB's own dataloader uses the symbol-counterfactual column's correct answer
+    as the "incorrect" index for clean-vs-corrupted patching. That token (e.g.
+    '4' on an 'A-D' prompt) is not an option in the clean prompt, so scoring a
+    clean-prompt logit gap against it is invalid (A0). Here both tokens are
+    clean-prompt options: the correct label and the next wrong label
+    (round-robin, so foils stay balanced across the benchmark instead of
+    collapsing onto 'A').
     """
-    bare_ids = tokenizer(text, add_special_tokens=False).input_ids
-    if not bare_ids:
-        raise ValueError(f"empty tokenization for {text!r}")
-    if text[:1].isspace():
-        return int(bare_ids[0])
-    spaced_ids = tokenizer(f" {text}", add_special_tokens=False).input_ids
-    if len(spaced_ids) == 1 and (len(bare_ids) != 1 or spaced_ids[0] != bare_ids[0]):
-        return int(spaced_ids[0])
-    return int(bare_ids[0])
-
-
-def _mcqa_tokens(tokenizer: Any, row: dict[str, Any], counterfactual_col: dict[str, Any]) -> tuple[str, str]:
-    correct = _single_token_id(tokenizer, row["choices"]["label"][row["answerKey"]])
-    incorrect_ans = str(counterfactual_col["choices"]["label"][counterfactual_col["answerKey"]])
-    incorrect = _single_token_id(tokenizer, incorrect_ans)
+    labels = row["choices"]["label"]
+    correct_idx = _normalize_answer_index(row["answerKey"], len(labels))
+    foil_idx = (correct_idx + 1) % len(labels)
+    correct = tokenizer(str(labels[correct_idx]), add_special_tokens=False).input_ids[0]
+    incorrect = tokenizer(str(labels[foil_idx]), add_special_tokens=False).input_ids[0]
     return _decode_token(tokenizer, correct), _decode_token(tokenizer, incorrect)
 
 
@@ -164,7 +169,14 @@ def export_prompts(
                     cf_col = row[cf_type]
                     clean = row["prompt"]
                     corrupted = cf_col["prompt"]
-                    correct_tok, incorrect_tok = _mcqa_tokens(tokenizer, row, cf_col)
+                    correct_tok, incorrect_tok = _mcqa_tokens(tokenizer, row)
+                    if correct_tok == incorrect_tok:
+                        raise ValueError(f"foil equals target for {task} row {i}")
+                    if incorrect_tok not in clean and f" {incorrect_tok}" not in clean:
+                        raise ValueError(
+                            f"foil {incorrect_tok!r} not an option in the clean prompt "
+                            f"({task} row {i}; clean starts {clean[:80]!r})"
+                        )
                 elif task.startswith("arithmetic"):
                     clean = row["prompt"]
                     corrupted = row["random_counterfactual"]["prompt"]

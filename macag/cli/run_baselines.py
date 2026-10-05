@@ -49,6 +49,7 @@ from macag.baselines.common import (
 )
 from macag.baselines.eap import EAPUnavailableError, select_top_eap
 from macag.baselines.eap_syed import select_top_eap_syed
+from macag.baselines.floors import select_random, select_top_singleton
 from macag.baselines.influence import select_top_influence
 from macag.baselines.shapley_select import select_top_shapley
 from macag.cli.run_macag import _build_oracle, _load_candidates, _load_json, _sort_nodes
@@ -81,6 +82,8 @@ CANONICAL_METHODS = (
     "game1",
     "acdc",
     "acdc_native",
+    "singleton",
+    "random",
 )
 KNOWN_METHODS = CANONICAL_METHODS + tuple(METHOD_ALIASES.keys())
 DEFAULT_METHODS = "influence,eap,shapley,game1,acdc"
@@ -274,7 +277,6 @@ def _run_selection(
     """Run one selector with fresh cache + stats so per-method costs are honest."""
     oracle.clear_cache()
     oracle.reset_stats()
-
     if method == "influence":
         result = select_top_influence(graph, candidates, use_absolute=not args.influence_signed)
     elif method == "eap":
@@ -325,6 +327,8 @@ def _run_selection(
                 if method == "shapley" and args.output_json
                 else None
             ),
+            cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
         )
     elif method == "game1":
         game1 = solve_game1(
@@ -335,11 +339,14 @@ def _run_selection(
             alpha=args.alpha,
             lam=args.lam,
             budget=args.budget,
+            faithfulness_eps=args.faithfulness_eps,
+            stop_metric=args.stop_metric,
             prefilter_top_k=args.prefilter_top_k,
             min_gain=args.min_gain,
             connected=args.connected,
             progress=args.progress,
             cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
         )
         # solve_game1 resets stats internally; its counters are this method's cost.
         result = SelectionResult(
@@ -350,8 +357,22 @@ def _run_selection(
             extras={
                 "iterations": game1.iterations,
                 "stopped_early": len(game1.selected_order) < args.budget,
+                # P1-2: pool actually searched (post-prefilter) vs full universe.
+                "selection_pool_size": game1.candidate_count,
+                "total_candidates": game1.total_candidates,
             },
         )
+    elif method == "singleton":
+        result = select_top_singleton(
+            oracle,
+            target,
+            candidates,
+            alpha=args.alpha,
+            cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
+        )
+    elif method == "random":
+        result = select_random(candidates, seed=args.random_seed)
     else:
         raise ValueError(f"_run_selection does not handle method '{method}'.")
 
@@ -359,6 +380,8 @@ def _run_selection(
     return result, {
         "oracle_calls": stats["oracle_calls"],
         "cache_hits": stats["cache_hits"],
+        # P2: real model forwards (answer_span costs 2 per logical score).
+        "forwards": stats["forwards"],
     }
 
 
@@ -369,7 +392,8 @@ def _evaluate_prefixes(
     budget: int,
     alpha: float,
     lam: float,
-    cap_sufficiency: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> dict[int, dict[str, Any]]:
     """Score each k-prefix of a ranking with the games' FaithfulnessMetrics.
 
@@ -378,7 +402,8 @@ def _evaluate_prefixes(
     """
     results: dict[int, dict[str, Any]] = {}
     empty_metrics = compute_faithfulness_metrics(
-        oracle=oracle, target=target, nodes=set(), alpha=alpha, cap_sufficiency=cap_sufficiency
+        oracle=oracle, target=target, nodes=set(), alpha=alpha,
+        cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
     )
     results[0] = {
         "evidence": [],
@@ -394,6 +419,7 @@ def _evaluate_prefixes(
             nodes=evidence,
             alpha=alpha,
             cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
         results[k] = {
             "evidence": _sort_nodes(evidence),
@@ -529,7 +555,6 @@ def _comparison_block(
     comparison["spearman"] = spearman
     return comparison
 
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run baseline selectors head-to-head against MACAG Game 1 on a shared graph + oracle."
@@ -538,14 +563,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target", required=True, help="Target class/label.")
     parser.add_argument("--input-id", default="unknown", help="Input identifier for output JSON.")
     parser.add_argument("--alpha", type=float, default=0.5, help="Faithfulness mix weight.")
-    parser.add_argument(
-        "--cap-sufficiency",
-        action="store_true",
-        help=(
-            "Evaluate and search under capped sufficiency, min(keep_only, all) - empty. "
-            "Must match Game 1's --cap-sufficiency when comparing methods."
-        ),
-    )
     parser.add_argument("--lam", type=float, default=0.01, help="Sparsity lambda (Game 1 + reported utility).")
     parser.add_argument("--budget", type=int, required=True, help="Max evidence size k.")
     parser.add_argument("--candidates-file", default=None, help="Optional candidate node list (.json or text).")
@@ -574,14 +591,46 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable oracle memoization (inflates per-method oracle-call counts).",
     )
+    parser.add_argument(
+        "--cap-sufficiency",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Cap sufficiency at the clean score (default: on; see run_macag).",
+    )
+    parser.add_argument(
+        "--cap-necessity",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Cap necessity at the recoverable range (default: on; see run_macag).",
+    )
 
     parser.add_argument("--shapley-permutations", type=int, default=64, help="MC permutations for Shapley.")
     parser.add_argument("--banzhaf-samples", type=int, default=64, help="MC samples for Banzhaf.")
     parser.add_argument("--shapley-seed", type=int, default=0, help="Seed for Shapley/Banzhaf sampling.")
+    parser.add_argument("--random-seed", type=int, default=0, help="Seed for the random-k floor shuffle.")
     parser.add_argument("--no-antithetic", action="store_true", help="Disable antithetic permutation pairing.")
 
     parser.add_argument("--prefilter-top-k", type=int, default=None, help="Game 1 singleton prefilter size.")
     parser.add_argument("--min-gain", type=float, default=0.0, help="Game 1 minimum positive gain.")
+    parser.add_argument(
+        "--faithfulness-eps",
+        type=float,
+        default=None,
+        help=(
+            "Game 1 early-stop epsilon (default: None = run to budget/no-gain, preserving "
+            "legacy harness behavior). Pass alongside --stop-metric to make the harness "
+            "game1 the same method the run_macag CLI reports (P1-1)."
+        ),
+    )
+    parser.add_argument(
+        "--stop-metric",
+        choices=("normalized", "raw_relative"),
+        default="normalized",
+        help=(
+            "How --faithfulness-eps stops the harness game1 (default: normalized, matching "
+            "solve_game1). Use raw_relative to match dual-freeze CLI legs."
+        ),
+    )
     parser.add_argument(
         "--no-connected",
         action="store_false",
@@ -594,7 +643,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--acdc-taus",
         default=DEFAULT_ACDC_TAUS,
-        help=f"Comma list of ACDC thresholds to sweep (default: {DEFAULT_ACDC_TAUS}).",
+        help=(
+            f"Comma list of ACDC thresholds to sweep (default: {DEFAULT_ACDC_TAUS}). "
+            "Taus are RAW v units (logit-gap points by default), not normalized "
+            "fractions — calibrate per score_kind, or use --acdc-target-k."
+        ),
     )
     parser.add_argument(
         "--acdc-order",
@@ -699,8 +752,17 @@ def main(argv: list[str] | None = None) -> int:
                 order=args.acdc_order,
                 progress=args.progress,
                 cap_sufficiency=args.cap_sufficiency,
+                cap_necessity=args.cap_necessity,
             )
             acdc_output = {
+                "selection_stats": {
+                    "oracle_calls": stats["oracle_calls"],
+                    "cache_hits": stats["cache_hits"],
+                    # P2: real model forwards (answer_span costs 2 per score).
+                    "forwards": stats["forwards"],
+                },
+                # P1-2: ACDC sweeps the full candidate pool (no prefilter).
+                "selection_pool_size": len(candidates),
                 "sweep": [
                     {
                         "tau": result.tau,
@@ -820,6 +882,11 @@ def main(argv: list[str] | None = None) -> int:
                 "oracle_calls_note": "eap_syed uses ReplacementModel directly; oracle_calls stay 0",
             }
         selections[method] = selection
+        extras = dict(selection.extras)
+        # P1-2: pool actually searched. Ranked selectors search the full candidate
+        # pool; game1 carries its own post-prefilter count in extras already.
+        extras.setdefault("selection_pool_size", len(candidates))
+        extras.setdefault("total_candidates", len(candidates))
         method_outputs[method] = {
             "ranking": [str(node) for node in selection.ranking],
             "scores": (
@@ -828,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
                 else None
             ),
             "params": selection.params,
-            "extras": selection.extras,
+            "extras": extras,
             "selection_stats": stats,
         }
 
@@ -845,6 +912,7 @@ def main(argv: list[str] | None = None) -> int:
             args.alpha,
             args.lam,
             cap_sufficiency=args.cap_sufficiency,
+            cap_necessity=args.cap_necessity,
         )
     if acdc_output is not None:
         # ACDC produces one set per tau, not nested prefixes; score each kept
@@ -858,6 +926,7 @@ def main(argv: list[str] | None = None) -> int:
                 nodes=kept,
                 alpha=args.alpha,
                 cap_sufficiency=args.cap_sufficiency,
+                cap_necessity=args.cap_necessity,
             )
             entry["scores"] = metrics_to_dict(metrics) | {
                 "utility": game1_utility(metrics.faithfulness_delta, size=len(kept), lam=args.lam)
@@ -878,6 +947,8 @@ def main(argv: list[str] | None = None) -> int:
                 nodes=set(matched.kept),
                 alpha=args.alpha,
                 cap_sufficiency=args.cap_sufficiency,
+                cap_necessity=args.cap_necessity,
+
             )
             acdc_output["matched_k"] = {
                 "target_k": matched.params["target_k"],
@@ -924,6 +995,8 @@ def main(argv: list[str] | None = None) -> int:
                 k=k,
                 alpha=args.alpha,
                 max_evaluations=args.bruteforce_max_evals,
+                cap_sufficiency=args.cap_sufficiency,
+                cap_necessity=args.cap_necessity,
             )
             entry: dict[str, Any] = {
                 "best_set": _sort_nodes(set(result.best_set)),
@@ -971,6 +1044,15 @@ def main(argv: list[str] | None = None) -> int:
         args.budget,
         game1_marginals,
     )
+    # P1-2: pool actually searched per method, so oracle-call ratios can be read
+    # against pool size (game1 searches the prefiltered pool; Shapley/Banzhaf the
+    # full candidate pool). Costs stay in methods.*.selection_stats.
+    comparison["selection_pool_size"] = {
+        name: (output.get("extras") or {}).get("selection_pool_size")
+        for name, output in method_outputs.items()
+    }
+    if acdc_output is not None:
+        comparison["selection_pool_size"]["acdc"] = acdc_output.get("selection_pool_size")
     if acdc_output is not None and acdc_output.get("best_by_size"):
         # ACDC has no ranked prefixes, so _comparison_block skips it; mirror its
         # per-size faithfulness (and the budget-matched point when computed) into
@@ -1059,12 +1141,17 @@ def main(argv: list[str] | None = None) -> int:
             "banzhaf_samples": args.banzhaf_samples,
             "shapley_seed": args.shapley_seed,
             "antithetic": not args.no_antithetic,
+            "random_seed": args.random_seed,
             "acdc_taus": _parse_float_list(args.acdc_taus),
             "acdc_order": args.acdc_order,
             "acdc_target_k": args.acdc_target_k,
             "game1_connected": args.connected,
+            "game1_faithfulness_eps": args.faithfulness_eps,
+            "game1_stop_metric": args.stop_metric,
             "prefilter_top_k": args.prefilter_top_k,
             "candidate_count": len(candidates),
+            "cap_sufficiency": args.cap_sufficiency,
+            "cap_necessity": args.cap_necessity,
         },
         "candidates": [str(node) for node in candidates],
         "methods": {

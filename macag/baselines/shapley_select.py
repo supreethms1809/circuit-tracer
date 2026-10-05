@@ -135,6 +135,8 @@ def estimate_shapley(
     antithetic: bool = True,
     progress: bool = False,
     checkpoint_path: str | Path | None = None,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> ShapleyEstimate:
     """Permutation-sampling Shapley estimator with optional antithetic pairing.
 
@@ -160,7 +162,10 @@ def estimate_shapley(
     sums: dict[NodeId, float] = {node: 0.0 for node in pool}
     se_sums: dict[NodeId, float] = {node: 0.0 for node in pool}
     se_sumsqs: dict[NodeId, float] = {node: 0.0 for node in pool}
-    base_value = coalition_value(oracle, target, set(), alpha)
+    base_value = coalition_value(
+        oracle, target, set(), alpha,
+        cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+    )
 
     runs = 0
     independent_draws = 0
@@ -211,7 +216,10 @@ def estimate_shapley(
             ordering_marginals: dict[NodeId, float] = {}
             for node in ordering:
                 coalition.add(node)
-                value = coalition_value(oracle, target, coalition, alpha)
+                value = coalition_value(
+                    oracle, target, coalition, alpha,
+                    cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+                )
                 marginal = value - previous
                 sums[node] += marginal
                 ordering_marginals[node] = marginal
@@ -227,7 +235,10 @@ def estimate_shapley(
         if progress and runs % 8 == 0:
             LOGGER.info("Shapley: %d/%d permutations", runs, permutations)
 
-    grand_value = coalition_value(oracle, target, set(pool), alpha)
+    grand_value = coalition_value(
+        oracle, target, set(pool), alpha,
+        cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+    )
     return _finalize(
         sums,
         pool,
@@ -236,7 +247,13 @@ def estimate_shapley(
         seed=seed,
         base_value=base_value,
         grand_value=grand_value,
-        params={"alpha": alpha, "permutations": runs, "antithetic": antithetic},
+        params={
+            "alpha": alpha,
+            "permutations": runs,
+            "antithetic": antithetic,
+            "cap_sufficiency": cap_sufficiency,
+            "cap_necessity": cap_necessity,
+        },
         se_sums=se_sums,
         se_sumsqs=se_sumsqs,
         independent_draws=independent_draws,
@@ -251,6 +268,8 @@ def estimate_banzhaf(
     samples: int = 64,
     seed: int = 0,
     progress: bool = False,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> ShapleyEstimate:
     """Monte-Carlo Banzhaf: marginals against uniformly random coalitions.
 
@@ -269,22 +288,32 @@ def estimate_banzhaf(
     rng = random.Random(seed)
     sums: dict[NodeId, float] = {node: 0.0 for node in pool}
     sumsqs: dict[NodeId, float] = {node: 0.0 for node in pool}
-    base_value = coalition_value(oracle, target, set(), alpha)
+    base_value = coalition_value(
+        oracle, target, set(), alpha,
+        cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+    )
 
     for run in range(1, samples + 1):
         sample = {node for node in pool if rng.random() < 0.5}
         for node in pool:
             with_node = sample | {node}
             without_node = sample - {node}
-            marginal = coalition_value(oracle, target, with_node, alpha) - coalition_value(
-                oracle, target, without_node, alpha
+            marginal = coalition_value(
+                oracle, target, with_node, alpha,
+                cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+            ) - coalition_value(
+                oracle, target, without_node, alpha,
+                cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
             )
             sums[node] += marginal
             sumsqs[node] += marginal * marginal
         if progress and run % 8 == 0:
             LOGGER.info("Banzhaf: %d/%d samples", run, samples)
 
-    grand_value = coalition_value(oracle, target, set(pool), alpha)
+    grand_value = coalition_value(
+        oracle, target, set(pool), alpha,
+        cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
+    )
     return _finalize(
         sums,
         pool,
@@ -293,7 +322,12 @@ def estimate_banzhaf(
         seed=seed,
         base_value=base_value,
         grand_value=grand_value,
-        params={"alpha": alpha, "samples": samples},
+        params={
+            "alpha": alpha,
+            "samples": samples,
+            "cap_sufficiency": cap_sufficiency,
+            "cap_necessity": cap_necessity,
+        },
         se_sums=sums,
         se_sumsqs=sumsqs,
         independent_draws=samples,
@@ -311,6 +345,8 @@ def select_top_shapley(
     estimator: str = "shapley",
     progress: bool = False,
     checkpoint_path: str | Path | None = None,
+    cap_sufficiency: bool = True,
+    cap_necessity: bool = True,
 ) -> SelectionResult:
     """Rank candidates by estimated Shapley (or Banzhaf) value, best first."""
     if estimator == "shapley":
@@ -324,10 +360,13 @@ def select_top_shapley(
             antithetic=antithetic,
             progress=progress,
             checkpoint_path=checkpoint_path,
+            cap_sufficiency=cap_sufficiency,
+            cap_necessity=cap_necessity,
         )
     elif estimator == "banzhaf":
         estimate = estimate_banzhaf(
-            oracle, target, candidates, alpha=alpha, samples=permutations, seed=seed, progress=progress
+            oracle, target, candidates, alpha=alpha, samples=permutations, seed=seed, progress=progress,
+            cap_sufficiency=cap_sufficiency, cap_necessity=cap_necessity,
         )
     else:
         raise ValueError("estimator must be 'shapley' or 'banzhaf'.")

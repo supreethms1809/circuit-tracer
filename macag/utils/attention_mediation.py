@@ -53,6 +53,10 @@ class AttentionMediationDiagnostic:
     early_count_unfrozen: int | None
     n_layers: int | None
     final_ctx_idx: int | None
+    # P1-5: dead-band half-width used for the verdict (0.0 = legacy strict-zero).
+    margin: float = 0.0
+    frozen_zone: str = "unknown"
+    unfrozen_zone: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -133,31 +137,59 @@ def _upstream_early_counts(
     return upstream, early
 
 
+def _zone(value: float, margin: float) -> str:
+    """Classify a recoverable range against the dead-band ``[-margin, +margin]``."""
+    if value < -margin:
+        return "negative"
+    if value > margin:
+        return "positive"
+    return "band"
+
+
 def compute_attention_mediation_diagnostic(
     graph: CircuitGraph,
     frozen_metrics: FaithfulnessMetrics,
     unfrozen_metrics: FaithfulnessMetrics,
     frozen_evidence: set[NodeId],
     unfrozen_evidence: set[NodeId],
+    margin: float = 0.0,
 ) -> AttentionMediationDiagnostic:
     """Build the per-prompt diagnostic from matched frozen/unfrozen Game 1 legs.
 
-    Verdict rule (strict zero threshold; raw ranges are reported alongside so
-    confidence bands can be applied downstream):
-      * range_frozen < 0, range_unfrozen >= 0  -> attention_mediated (the §10.4 flip)
-      * both >= 0                              -> feature_mediated
-      * both < 0                               -> indeterminate (behavior not
-        recoverable from features under either convention)
-      * range_frozen >= 0, range_unfrozen < 0  -> indeterminate, reverse_flip=True
-        (unexpected inversion: recomputed attention destroyed recoverability)
+    Verdict rule with dead-band ``margin`` (P1-5; default 0.0 = legacy
+    strict-zero rule, except the exact (0, 0) corner which is now
+    ``indeterminate`` rather than ``feature_mediated`` — a zero recoverable
+    range under both conventions means nothing was recovered):
+
+      * frozen robustly negative, unfrozen not robustly negative
+        -> attention_mediated (the §10.4 flip)
+      * neither robustly negative, at least one robustly positive
+        -> feature_mediated
+      * frozen not robustly negative, unfrozen robustly negative
+        -> indeterminate, reverse_flip=True (unexpected inversion:
+        recomputed attention destroyed recoverability)
+      * otherwise (both robustly negative, or both inside the band)
+        -> indeterminate
+
+    Raw ranges are always reported alongside the verdict so confidence bands
+    can be applied downstream; ``frozen_zone``/``unfrozen_zone`` record the
+    per-leg ``negative``/``band``/``positive`` classification.
     """
+    if margin < 0.0:
+        raise ValueError(f"Verdict margin must be non-negative, got {margin}.")
     range_frozen = frozen_metrics.recoverable_range
     range_unfrozen = unfrozen_metrics.recoverable_range
-    range_flip = range_frozen < 0.0 and range_unfrozen >= 0.0
-    reverse_flip = range_frozen >= 0.0 and range_unfrozen < 0.0
+    frozen_zone = _zone(range_frozen, margin)
+    unfrozen_zone = _zone(range_unfrozen, margin)
+    frozen_neg = frozen_zone == "negative"
+    unfrozen_neg = unfrozen_zone == "negative"
+    range_flip = frozen_neg and not unfrozen_neg
+    reverse_flip = not frozen_neg and unfrozen_neg
     if range_flip:
         verdict = VERDICT_ATTENTION_MEDIATED
-    elif range_frozen >= 0.0 and range_unfrozen >= 0.0:
+    elif not frozen_neg and not unfrozen_neg and (
+        frozen_zone == "positive" or unfrozen_zone == "positive"
+    ):
         verdict = VERDICT_FEATURE_MEDIATED
     else:
         verdict = VERDICT_INDETERMINATE
@@ -193,4 +225,7 @@ def compute_attention_mediation_diagnostic(
         early_count_unfrozen=early_unfrozen,
         n_layers=n_layers,
         final_ctx_idx=final_ctx_idx,
+        margin=margin,
+        frozen_zone=frozen_zone,
+        unfrozen_zone=unfrozen_zone,
     )

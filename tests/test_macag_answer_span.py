@@ -109,7 +109,9 @@ def test_shared_first_token_disambiguated_by_span() -> None:
     assert span_gap != 0.0
 
     gap_scorer, _ = _scorer(rows, {"y": [3], "y_foil": [3]}, score_kind="logit_gap")
-    assert gap_scorer.score_all("y") == pytest.approx(0.0, abs=1e-6)
+    # P2: the degenerate first-token gap now fails fast instead of scoring 0.0.
+    with pytest.raises(ValueError, match="identically zero"):
+        gap_scorer.score_all("y")
 
 
 def test_interventions_and_forward_accounting() -> None:
