@@ -12,6 +12,7 @@ from macag.utils.final_protocol import (
     assign_subset_flags,
     matched_k_read,
     mean_prefix_scores,
+    primary_leg,
 )
 
 
@@ -27,6 +28,13 @@ def _game1(frozen_k: int, unfrozen_k: int, unfrozen_degenerate: bool = False) ->
         "frozen": leg(frozen_k, False),
         "unfrozen": leg(unfrozen_k, unfrozen_degenerate),
     }
+
+
+def test_primary_leg_rule_d2():
+    game1 = _game1(4, 3, unfrozen_degenerate=True)
+    assert primary_leg(game1) == ("frozen", "frozen")
+    assert primary_leg(_game1(0, 3, unfrozen_degenerate=False)) == ("unfrozen", "unfrozen")
+    assert primary_leg(_game1(0, 0, unfrozen_degenerate=True)) == (None, "excluded")
 
 
 def test_acdc_target_skips_degenerate_and_over_budget():

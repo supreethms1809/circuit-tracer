@@ -1,0 +1,249 @@
+{
+  "input_id": "mib_llama3_ioi_0020",
+  "target": "y",
+  "foil": null,
+  "game": "game1",
+  "freeze_mode": "both",
+  "code_version": {
+    "git_commit": "610780197708bb8d22d9c9369c64b43797107408",
+    "git_dirty": true
+  },
+  "params": {
+    "alpha": 0.5,
+    "lambda": 0.02,
+    "budget": null,
+    "faithfulness_eps": 0.1,
+    "stop_metric": "raw_relative",
+    "prefilter_top_k": null,
+    "connected": false,
+    "min_gain": 0.0,
+    "cap_sufficiency": true,
+    "cap_necessity": true,
+    "verdict_margin": 0.0,
+    "matched": true
+  },
+  "frozen": {
+    "params": {
+      "alpha": 0.5,
+      "lambda": 0.02,
+      "budget": null,
+      "faithfulness_eps": 0.1,
+      "stop_metric": "raw_relative",
+      "prefilter_top_k": null,
+      "connected": false,
+      "min_gain": 0.0,
+      "fill_budget": false,
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "freeze_attention": true
+    },
+    "degenerate": false,
+    "evidence": {
+      "E_star": [
+        "0_22128_12",
+        "0_2524_12",
+        "0_28569_16",
+        "0_32732_6"
+      ],
+      "E_y": [
+        "0_22128_12",
+        "0_2524_12",
+        "0_28569_16",
+        "0_32732_6"
+      ],
+      "E_foil": [],
+      "shared": [],
+      "unique_y": [
+        "0_22128_12",
+        "0_2524_12",
+        "0_28569_16",
+        "0_32732_6"
+      ],
+      "unique_foil": []
+    },
+    "scores": {
+      "all": 4.875,
+      "empty": 1.53125,
+      "keep_only": 6.28125,
+      "remove": 1.6875,
+      "sufficiency": 3.34375,
+      "necessity": 3.1875,
+      "faithfulness": 3.265625,
+      "error_floor": 1.53125,
+      "recoverable_range": 3.34375,
+      "sufficiency_normalized": 1.0,
+      "necessity_normalized": 0.9532710280373832,
+      "faithfulness_normalized": 0.9766355140186915,
+      "sufficiency_uncapped": 4.75,
+      "sufficiency_capped": 3.34375,
+      "necessity_uncapped": 3.1875,
+      "keep_excess": 1.40625,
+      "keep_distance": 1.40625,
+      "remove_below_empty": 0.0,
+      "is_degenerate": false,
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "utility": 3.185625
+    },
+    "stats": {
+      "oracle_calls": 8554,
+      "cache_hits": 8550,
+      "cache_size": 8554,
+      "iterations": 4,
+      "total_candidates": 857,
+      "prefiltered_candidate_count": 857,
+      "sparsity": 0.9953325554259043
+    },
+    "kl_faithfulness": {
+      "all": 0.0,
+      "empty": -12.6875,
+      "keep_only": -10.3125,
+      "remove": -4.84375,
+      "sufficiency": 2.375,
+      "necessity": 4.84375,
+      "faithfulness": 3.609375,
+      "error_floor": -12.6875,
+      "recoverable_range": 12.6875,
+      "sufficiency_normalized": 0.18719211822660098,
+      "necessity_normalized": 0.3817733990147783,
+      "faithfulness_normalized": 0.2844827586206896,
+      "sufficiency_uncapped": 2.375,
+      "sufficiency_capped": 2.375,
+      "necessity_uncapped": 4.84375,
+      "keep_excess": 0.0,
+      "keep_distance": 10.3125,
+      "remove_below_empty": 0.0,
+      "is_degenerate": false,
+      "cap_sufficiency": true,
+      "cap_necessity": true
+    },
+    "kl_faithfulness_caps": {
+      "cap_sufficiency": true,
+      "cap_necessity": true
+    }
+  },
+  "unfrozen": {
+    "params": {
+      "alpha": 0.5,
+      "lambda": 0.02,
+      "budget": null,
+      "faithfulness_eps": 0.1,
+      "stop_metric": "raw_relative",
+      "prefilter_top_k": null,
+      "connected": false,
+      "min_gain": 0.0,
+      "fill_budget": false,
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "freeze_attention": false
+    },
+    "degenerate": false,
+    "evidence": {
+      "E_star": [
+        "0_16860_8",
+        "0_28569_16"
+      ],
+      "E_y": [
+        "0_16860_8",
+        "0_28569_16"
+      ],
+      "E_foil": [],
+      "shared": [],
+      "unique_y": [
+        "0_16860_8",
+        "0_28569_16"
+      ],
+      "unique_foil": []
+    },
+    "scores": {
+      "all": 4.875,
+      "empty": 2.265625,
+      "keep_only": 5.0,
+      "remove": 0.75,
+      "sufficiency": 2.609375,
+      "necessity": 2.609375,
+      "faithfulness": 2.609375,
+      "error_floor": 2.265625,
+      "recoverable_range": 2.609375,
+      "sufficiency_normalized": 1.0,
+      "necessity_normalized": 1.0,
+      "faithfulness_normalized": 1.0,
+      "sufficiency_uncapped": 2.734375,
+      "sufficiency_capped": 2.609375,
+      "necessity_uncapped": 4.125,
+      "keep_excess": 0.125,
+      "keep_distance": 0.125,
+      "remove_below_empty": 1.515625,
+      "is_degenerate": false,
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "utility": 2.569375
+    },
+    "stats": {
+      "oracle_calls": 5140,
+      "cache_hits": 5136,
+      "cache_size": 5140,
+      "iterations": 2,
+      "total_candidates": 857,
+      "prefiltered_candidate_count": 857,
+      "sparsity": 0.9976662777129521
+    },
+    "kl_faithfulness": {
+      "all": 0.0,
+      "empty": -8.125,
+      "keep_only": -6.15625,
+      "remove": -7.96875,
+      "sufficiency": 1.96875,
+      "necessity": 7.96875,
+      "faithfulness": 4.96875,
+      "error_floor": -8.125,
+      "recoverable_range": 8.125,
+      "sufficiency_normalized": 0.2423076923076923,
+      "necessity_normalized": 0.9807692307692307,
+      "faithfulness_normalized": 0.6115384615384615,
+      "sufficiency_uncapped": 1.96875,
+      "sufficiency_capped": 1.96875,
+      "necessity_uncapped": 7.96875,
+      "keep_excess": 0.0,
+      "keep_distance": 6.15625,
+      "remove_below_empty": 0.0,
+      "is_degenerate": false,
+      "cap_sufficiency": true,
+      "cap_necessity": true
+    },
+    "kl_faithfulness_caps": {
+      "cap_sufficiency": true,
+      "cap_necessity": true
+    }
+  },
+  "attention_mediation": {
+    "range_frozen": 3.34375,
+    "range_unfrozen": 2.609375,
+    "range_flip": false,
+    "reverse_flip": false,
+    "verdict": "feature_mediated",
+    "evidence_size_frozen": 4,
+    "evidence_size_unfrozen": 2,
+    "evidence_jaccard": 0.2,
+    "evidence_shared": [
+      "0_28569_16"
+    ],
+    "evidence_only_frozen": [
+      "0_22128_12",
+      "0_2524_12",
+      "0_32732_6"
+    ],
+    "evidence_only_unfrozen": [
+      "0_16860_8"
+    ],
+    "upstream_count_frozen": 3,
+    "upstream_count_unfrozen": 1,
+    "early_count_frozen": 4,
+    "early_count_unfrozen": 2,
+    "n_layers": 16,
+    "final_ctx_idx": 16,
+    "margin": 0.0,
+    "frozen_zone": "positive",
+    "unfrozen_zone": "positive"
+  }
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,21 +19,57 @@ def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
+def _dirty_outside_allowlist(allow_prefixes: list[str]) -> str | None:
+    """Return porcelain lines for tracked edits outside allow_prefixes, else None."""
+    dirty = _git("status", "--porcelain", "--untracked-files=no")
+    if not dirty:
+        return None
+    blocked: list[str] = []
+    for line in dirty.splitlines():
+        # Porcelain: XY + space + path (X/Y may be space for unstaged/staged).
+        path = line[2:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if any(
+            path == pref
+            or path.startswith(pref.rstrip("/") + "/")
+            or (pref.endswith("/") and path.startswith(pref))
+            for pref in allow_prefixes
+        ):
+            continue
+        blocked.append(line)
+    return "\n".join(blocked) if blocked else None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", default="macag-final-v1")
     parser.add_argument("--prompts", required=True)
     parser.add_argument("--prompts-sha256", default=None)
     parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument(
+        "--allow-dirty-prefix",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Tracked path or dir prefix that may differ from the tag commit (repeatable).",
+    )
     args = parser.parse_args()
 
+    allow_prefixes = list(args.allow_dirty_prefix)
+    env_prefixes = os.environ.get("MACAG_DIRTY_OK_PREFIXES", "")
+    if env_prefixes:
+        allow_prefixes.extend(p for p in env_prefixes.split(":") if p)
+
     if not args.allow_dirty:
-        # Untracked local notes are not part of the run. A modified tracked
-        # file is: the job would not match the tag.
-        dirty = _git("status", "--porcelain", "--untracked-files=no")
-        if dirty:
-            print("refusing launch: git worktree is dirty", file=sys.stderr)
-            print(dirty, file=sys.stderr)
+        # Untracked local notes are not part of the run. Analysis-only edits
+        # may be allowlisted so long as HEAD still matches the campaign tag.
+        blocked = _dirty_outside_allowlist(allow_prefixes)
+        if blocked:
+            print("refusing launch: git worktree has disallowed edits", file=sys.stderr)
+            print(blocked, file=sys.stderr)
+            if allow_prefixes:
+                print(f"(allowed prefixes: {allow_prefixes})", file=sys.stderr)
             return 2
     head = _git("rev-parse", "HEAD")
     try:

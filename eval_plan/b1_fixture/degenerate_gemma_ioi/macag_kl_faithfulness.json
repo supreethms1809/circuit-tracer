@@ -1,0 +1,217 @@
+{
+  "run_dir": "/gscratch/ssuresh/paper_final/macag/gemma2-426k/mib_gemma2_ioi_0071/logit_gap",
+  "score_kind": "kl_divergence",
+  "target": "y",
+  "foil": "y_foil",
+  "code_version": {
+    "git_commit": "610780197708bb8d22d9c9369c64b43797107408",
+    "git_dirty": true
+  },
+  "cap_sufficiency": true,
+  "cap_necessity": true,
+  "game1": {
+    "frozen": {
+      "evidence_size": 0,
+      "alpha": 0.5,
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "logit_gap": {
+        "faithfulness": -9.125,
+        "sufficiency": -9.125,
+        "recoverable_range": -9.125
+      },
+      "kl_divergence": {
+        "all": 0.0,
+        "empty": -8.25,
+        "keep_only": -8.1875,
+        "remove": 0.000946044921875,
+        "sufficiency": 0.0625,
+        "necessity": -0.000946044921875,
+        "faithfulness": 0.0307769775390625,
+        "error_floor": -8.25,
+        "recoverable_range": 8.25,
+        "sufficiency_normalized": 0.007575757575757576,
+        "necessity_normalized": -0.00011467211174242425,
+        "faithfulness_normalized": 0.003730542732007576,
+        "sufficiency_uncapped": 0.0625,
+        "sufficiency_capped": 0.0625,
+        "necessity_uncapped": -0.000946044921875,
+        "keep_excess": 0.0,
+        "keep_distance": 8.1875,
+        "remove_below_empty": 0.0,
+        "is_degenerate": false,
+        "cap_sufficiency": true,
+        "cap_necessity": true
+      },
+      "oracle_calls": 4
+    },
+    "unfrozen": {
+      "evidence_size": 3,
+      "alpha": 0.5,
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "logit_gap": {
+        "faithfulness": 4.5625,
+        "sufficiency": 8.875,
+        "recoverable_range": 8.875
+      },
+      "kl_divergence": {
+        "all": 0.0,
+        "empty": -18.375,
+        "keep_only": -3.296875,
+        "remove": -0.0267333984375,
+        "sufficiency": 15.078125,
+        "necessity": 0.0267333984375,
+        "faithfulness": 7.55242919921875,
+        "error_floor": -18.375,
+        "recoverable_range": 18.375,
+        "sufficiency_normalized": 0.8205782312925171,
+        "necessity_normalized": 0.0014548788265306123,
+        "faithfulness_normalized": 0.41101655505952384,
+        "sufficiency_uncapped": 15.078125,
+        "sufficiency_capped": 15.078125,
+        "necessity_uncapped": 0.0267333984375,
+        "keep_excess": 0.0,
+        "keep_distance": 3.296875,
+        "remove_below_empty": 0.0,
+        "is_degenerate": false,
+        "cap_sufficiency": true,
+        "cap_necessity": true
+      },
+      "oracle_calls": 4
+    }
+  },
+  "baselines": {
+    "per_leg": true,
+    "frozen": {
+      "matched_k": null,
+      "matched_k_status": "degenerate_leg",
+      "methods": {},
+      "cap_sufficiency": true,
+      "cap_necessity": true
+    },
+    "unfrozen": {
+      "alpha": 0.5,
+      "budget": 128,
+      "methods": {
+        "random": {
+          "evidence_size": 3,
+          "logit_gap_faithfulness": 0.187890625,
+          "kl_divergence": {
+            "all": 0.0,
+            "empty": -17.25,
+            "keep_only": -15.9375,
+            "remove": -0.002685546875,
+            "sufficiency": 1.3125,
+            "necessity": 0.002685546875,
+            "faithfulness": 0.6575927734375,
+            "error_floor": -17.25,
+            "recoverable_range": 17.25,
+            "sufficiency_normalized": 0.07608695652173914,
+            "necessity_normalized": 0.0001556838768115942,
+            "faithfulness_normalized": 0.03812132019927537,
+            "sufficiency_uncapped": 1.3125,
+            "sufficiency_capped": 1.3125,
+            "necessity_uncapped": 0.002685546875,
+            "keep_excess": 0.0,
+            "keep_distance": 15.9375,
+            "remove_below_empty": 0.0,
+            "is_degenerate": false,
+            "cap_sufficiency": true,
+            "cap_necessity": true
+          },
+          "oracle_calls": 4
+        },
+        "influence": {
+          "evidence_size": 3,
+          "logit_gap_faithfulness": 3.3125,
+          "kl_divergence": {
+            "all": 0.0,
+            "empty": -17.125,
+            "keep_only": -2.6875,
+            "remove": -0.3828125,
+            "sufficiency": 14.4375,
+            "necessity": 0.3828125,
+            "faithfulness": 7.41015625,
+            "error_floor": -17.125,
+            "recoverable_range": 17.125,
+            "sufficiency_normalized": 0.843065693430657,
+            "necessity_normalized": 0.022354014598540146,
+            "faithfulness_normalized": 0.43270985401459855,
+            "sufficiency_uncapped": 14.4375,
+            "sufficiency_capped": 14.4375,
+            "necessity_uncapped": 0.3828125,
+            "keep_excess": 0.0,
+            "keep_distance": 2.6875,
+            "remove_below_empty": 0.0,
+            "is_degenerate": false,
+            "cap_sufficiency": true,
+            "cap_necessity": true
+          },
+          "oracle_calls": 4
+        },
+        "eap_syed": {
+          "evidence_size": 3,
+          "logit_gap_faithfulness": -0.234375,
+          "kl_divergence": {
+            "all": 0.0,
+            "empty": -16.875,
+            "keep_only": -16.25,
+            "remove": -0.006256103515625,
+            "sufficiency": 0.625,
+            "necessity": 0.006256103515625,
+            "faithfulness": 0.3156280517578125,
+            "error_floor": -16.875,
+            "recoverable_range": 16.875,
+            "sufficiency_normalized": 0.037037037037037035,
+            "necessity_normalized": 0.0003707320601851852,
+            "faithfulness_normalized": 0.01870388454861111,
+            "sufficiency_uncapped": 0.625,
+            "sufficiency_capped": 0.625,
+            "necessity_uncapped": 0.006256103515625,
+            "keep_excess": 0.0,
+            "keep_distance": 16.25,
+            "remove_below_empty": 0.0,
+            "is_degenerate": false,
+            "cap_sufficiency": true,
+            "cap_necessity": true
+          },
+          "oracle_calls": 4
+        },
+        "singleton": {
+          "evidence_size": 3,
+          "logit_gap_faithfulness": 2.71875,
+          "kl_divergence": {
+            "all": 0.0,
+            "empty": -17.375,
+            "keep_only": -5.5,
+            "remove": -0.7890625,
+            "sufficiency": 11.875,
+            "necessity": 0.7890625,
+            "faithfulness": 6.33203125,
+            "error_floor": -17.375,
+            "recoverable_range": 17.375,
+            "sufficiency_normalized": 0.6834532374100719,
+            "necessity_normalized": 0.045413669064748204,
+            "faithfulness_normalized": 0.36443345323741005,
+            "sufficiency_uncapped": 11.875,
+            "sufficiency_capped": 11.875,
+            "necessity_uncapped": 0.7890625,
+            "keep_excess": 0.0,
+            "keep_distance": 5.5,
+            "remove_below_empty": 0.0,
+            "is_degenerate": false,
+            "cap_sufficiency": true,
+            "cap_necessity": true
+          },
+          "oracle_calls": 4
+        }
+      },
+      "cap_sufficiency": true,
+      "cap_necessity": true,
+      "matched_k": 3,
+      "eval_k": 3,
+      "matched_k_status": "ok"
+    }
+  }
+}

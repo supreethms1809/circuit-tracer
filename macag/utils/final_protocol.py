@@ -45,6 +45,19 @@ def leg_is_degenerate(game1: Mapping[str, Any] | None, leg: str) -> bool:
     return bool((block.get("scores") or {}).get("is_degenerate", False))
 
 
+def primary_leg(game1: Mapping[str, Any] | None) -> tuple[str | None, str]:
+    """D2: frozen if non-degenerate, else unfrozen if non-degenerate, else excluded."""
+    if not game1:
+        return None, "no_game1"
+    if game1.get("freeze_mode") != "both":
+        return None, "single_freeze_mode"
+    if not leg_is_degenerate(game1, "frozen"):
+        return "frozen", "frozen"
+    if not leg_is_degenerate(game1, "unfrozen"):
+        return "unfrozen", "unfrozen"
+    return None, "excluded"
+
+
 def leg_evidence_size(game1: Mapping[str, Any] | None, leg: str) -> int | None:
     """|E*| for one leg. None when that leg is absent. 0 is a real empty selection."""
     block = leg_block(game1, leg)
